@@ -1,0 +1,81 @@
+# CLAUDE.md
+
+## 서비스 개요
+
+러닝 관련 서비스 (가제, 제품명 미정). 팀메추리의 세 번째 프로덕트.
+**현재 `ideation` 단계 — 아직 코드가 없다.** 배경: [docs/meetings/2026-07-14/synthesis.md](docs/meetings/2026-07-14/synthesis.md)
+
+## 기획 문서의 정본 (이 레포)
+
+기능의 **무엇·왜**(정책·기능정의·요구사항)는 이 레포의 `docs/specs/frd/`가 유일한 진실이다.
+아이디에이션 → 회의 → 결정 → 스펙 → 구현이 **한 레포 안에서** 이어진다.
+
+- `docs/specs/frd/` — 기능정의서(FRD). **approved만 구현 근거**다. draft/review는 아니다
+- `docs/specs/prd/` — 제품 요구 문서(PRD)
+- `docs/product/features/` — 기능별 **구현 노트**(FRD 링크 + 코드 구조·기술 선택). 규칙 원문을 복사하지 않는다
+- `docs/decisions/`, `docs/meetings/`, `docs/topics/`, `docs/ideation/<닉네임>/` — 결정·회의·주제 종합·개인 raw
+
+스펙과 구현이 같은 레포에 있으므로, **불일치를 발견하면 같은 PR에서 함께 고치는 것을 기본**으로 한다.
+
+> **부트스트랩 배경**: kill-betting 제품에서 먼저 검증된 구조([2026-08-03 결정](https://github.com/everyware-ie/mechuri-docs/blob/main/team/decisions/2026-08-03-ideation-pipeline-location.md))를 템플릿으로 이 레포를 새로 만들었다(2026-08-04). 허브(mechuri-docs)에 쌓여 있던 `products/running/` 아이디에이션 원문을 그대로 이관했다.
+
+### 허브에 남는 것
+
+- **제품 대장**(어느 제품이 어느 repo인지) · **팀 공통 프로세스 결정·컨벤션** · **여러 제품 통합 회의 기록** · 노션 이관 아카이브
+
+### 아이디에이션 규약
+
+- 브랜치 **`idea/<닉네임>`**(개인 상시, 머지 후 재사용), 경로 **`docs/ideation/<본인 닉네임>/`**
+- raw는 불변 — 고쳐 쓰지 않고 새 노트로 보완. 타인 폴더는 읽기 전용
+
+## 레포 구조
+
+```
+/
+├── docs/
+│   ├── ideation/<닉네임>/    # 개인 아이디어 원문 (raw, 불변)
+│   ├── meetings/             # 회의 종합
+│   ├── decisions/            # 의사결정
+│   ├── specs/
+│   │   ├── frd/               # 기능정의서 — 구현 근거 (approved만 유효)
+│   │   └── prd/               # 제품 요구 문서
+│   ├── topics/                # 주제별 종합
+│   ├── ops/                   # 운영
+│   ├── marketing/
+│   └── product/features/      # 기능별 구현 노트 (코드 착수 후 생성)
+├── scripts/hooks/              # git 훅 (아래 "강제 게이트" 참고)
+├── .claude/conventions/git.md  # 브랜치·커밋 규칙
+└── CLAUDE.md
+```
+
+**아직 없는 것** (코드 착수 시점에 결정·추가):
+- `backend/`, `frontend/` — 기술 스택 미정
+- `.claude/domain/glossary.md` — 도메인 용어 미확정
+- `docs/architecture/` — 아키텍처 결정 없음
+
+## 강제 게이트 (훅으로 자동 적용)
+
+kill-betting에서 검증된 훅을 그대로 설치했다. **아직 코드가 없어 지금은 발동하지 않는다** — `backend/src/main`·`frontend/{app,components,features,lib}` 편집 시점부터 동작한다.
+
+approved FRD라도 착수 전 확인 단계를 건너뛰지 못하도록 두 지점에서 훅이 강제한다:
+
+1. **구현 착수 시점** (`pre-implementation-frd-check.sh`): 구현 메인 소스를 편집할 때, **이 브랜치에** 확인 노트(`docs/product/features/<기능>.md`, FRD 링크 포함)가 하나도 없으면 편집이 차단된다. 테스트 파일은 대상 아님(TDD test-first 허용), 브랜치 타입 `chore`·`docs`는 면제. 노트를 만들려면 `docs/specs/frd/`의 FRD를 가져와 사용자에게 보여주고 확인받는 단계를 거쳐야 한다. **"바로 진행"으로도 이 단계는 건너뛸 수 없다.**
+2. **PR 생성 시점** (`pre-pr-checklist.sh`): PR이 참조하는 FRD(본문·`--body-file`·이 브랜치의 구현 노트 링크에서 수집)의 `status`가 `approved`가 아니면 PR 생성이 차단된다.
+
+로컬 설치: `sh scripts/hooks/install.sh`
+
+## 팀 & 스택
+
+- 담당: phs00(기획) · JiEung2(백엔드) · jminkkk(백엔드)
+- 개발 방식: 사이드 프로젝트
+- 기술 스택: **미정** — 코드 착수 전 결정 필요, 결정되면 이 섹션과 레포 구조를 갱신한다
+
+## 기능 시작 워크플로우 (코드 착수 후 적용)
+
+1. `/feature-start` — 요구사항 그릴링 + 설계 (한 세션)
+2. `/to-prd` — 세션 내용을 PRD로 정리
+3. `/to-issues` — PRD를 독립 이슈로 분해 후 GitHub에 등록
+4. `tdd` — 이슈 단위로 구현
+
+**PRD 없이 구현 시작 금지.**
+PRD는 `docs/specs/prd/`에, FRD는 `docs/specs/frd/`에 저장한다.

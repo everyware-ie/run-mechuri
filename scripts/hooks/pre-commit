@@ -1,0 +1,16 @@
+#!/bin/sh
+# 민감 파일 커밋 차단
+
+SENSITIVE_PATTERNS="\\.env$|\\.pem$|\\.key$|application-local\\.yml$|application-secret\\.yml$"
+
+staged=$(git diff --cached --name-only)
+
+for file in $staged; do
+    if echo "$file" | grep -qE "$SENSITIVE_PATTERNS"; then
+        echo "[pre-commit] 민감 파일 커밋 차단: $file"
+        echo "  .gitignore에 추가하거나, 환경변수로 대체하세요."
+        exit 1
+    fi
+done
+
+exit 0

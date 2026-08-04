@@ -1,0 +1,23 @@
+#!/bin/sh
+# 커밋 메시지 형식 강제: type(scope): description
+
+MSG=$(cat "$1")
+
+# Merge, Revert 커밋은 검사 제외
+if echo "$MSG" | grep -qE "^(Merge|Revert)"; then
+    exit 0
+fi
+
+PATTERN="^(feat|fix|refactor|test|docs|chore|style|perf)\([^)]+\): .+"
+
+if ! echo "$MSG" | grep -qE "$PATTERN"; then
+    echo "[commit-msg] 커밋 메시지 형식 오류"
+    echo "  올바른 형식: type(scope): 설명"
+    echo "  예시: feat(session): 세션 생성 API 추가"
+    echo "  허용 type: feat, fix, refactor, test, docs, chore, style, perf"
+    echo ""
+    echo "  입력한 메시지: $MSG"
+    exit 1
+fi
+
+exit 0
