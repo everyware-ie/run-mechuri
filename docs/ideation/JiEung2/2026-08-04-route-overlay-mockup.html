@@ -1,0 +1,568 @@
+<title>경로 오버레이 — 릴스 공유 UI 목업</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* page chrome */
+    --bg:      #F4F2EE;
+    --bg2:     #E8E5DF;
+    --fg:      #17202B;
+    --fg-mute: #5D6874;
+    --rule:    #D6D2CA;
+    --card:    #FBFAF8;
+    --accent:  #E0522F;
+    --accent2: #1D6E63;
+
+    /* overlay palette (fixed — it lives inside the video) */
+    --line-dim:  rgba(255,255,255,.22);
+    --line-hot:  #FFF3EC;
+    --glow:      #FF6B4A;
+    --slow:      #7C6BF5;
+    --fast:      #FF6B4A;
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151B; --bg2: #171E26; --fg: #E9EDF2;
+      --fg-mute: #93A0AE; --rule: #26303B; --card: #161D25;
+      --accent: #FF7A57; --accent2: #4FBFAE;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10151B; --bg2: #171E26; --fg: #E9EDF2;
+    --fg-mute: #93A0AE; --rule: #26303B; --card: #161D25;
+    --accent: #FF7A57; --accent2: #4FBFAE;
+  }
+  :root[data-theme="light"] {
+    --bg: #F4F2EE; --bg2: #E8E5DF; --fg: #17202B;
+    --fg-mute: #5D6874; --rule: #D6D2CA; --card: #FBFAF8;
+    --accent: #E0522F; --accent2: #1D6E63;
+  }
+
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+
+  .wrap {
+    max-width: 1080px; margin: 0 auto;
+    padding: clamp(26px, 5vw, 60px) clamp(18px, 4vw, 40px) 72px;
+    display: flex; flex-direction: column; gap: clamp(28px, 4vw, 44px);
+  }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--fg-mute); display: flex; flex-wrap: wrap; gap: 9px; align-items: center;
+  }
+  .eyebrow b { color: var(--accent); font-weight: 700; }
+  .eyebrow .sep { opacity: .4; }
+  h1 {
+    font-size: clamp(25px, 4vw, 38px); font-weight: 800; letter-spacing: -.03em;
+    line-height: 1.18; margin: 8px 0 10px; text-wrap: balance;
+  }
+  .lede { max-width: 60ch; color: var(--fg-mute); font-size: clamp(14px, 1.5vw, 16px); margin: 0; }
+
+  /* ---------- composer ---------- */
+  .composer {
+    display: grid; grid-template-columns: 300px minmax(0, 1fr);
+    gap: clamp(20px, 4vw, 40px); align-items: start;
+  }
+  @media (max-width: 720px) { .composer { grid-template-columns: 1fr; justify-items: center; } }
+
+  .device {
+    width: 300px; height: 533px; position: relative;
+    border-radius: 22px; overflow: hidden; background: #0A0E13;
+    box-shadow: 0 18px 40px -18px rgba(10,14,19,.6), 0 0 0 1px var(--rule);
+  }
+  #stage { display: block; width: 100%; height: 100%; }
+
+  /* stats burned into the clip */
+  .statlay {
+    position: absolute; left: 18px; right: 18px; bottom: 108px; z-index: 3;
+    display: flex; gap: 16px; align-items: flex-end; pointer-events: none;
+    font-family: var(--mono); color: #FFF3EC;
+    text-shadow: 0 1px 6px rgba(0,0,0,.55);
+  }
+  .statlay .d { font-size: 30px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+  .statlay .d small { font-size: 13px; font-weight: 400; opacity: .8; margin-left: 3px; }
+  .statlay .sub { display: flex; flex-direction: column; gap: 3px; font-size: 11px; letter-spacing: .04em; opacity: .9; font-variant-numeric: tabular-nums; }
+
+  /* instagram-safe guides */
+  .safe { position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  .safe.on { opacity: 1; }
+  .safe i {
+    position: absolute; left: 0; right: 0; background: rgba(255,107,74,.14);
+    border-color: rgba(255,107,74,.6); border-style: dashed; border-width: 0;
+  }
+  .safe i.t { top: 0; height: 14%; border-bottom-width: 1px; }
+  .safe i.b { bottom: 0; height: 20%; border-top-width: 1px; }
+  .safe span {
+    position: absolute; right: 8px; font-family: var(--mono); font-size: 9px; letter-spacing: .1em;
+    color: #FFCDBE; text-transform: uppercase;
+  }
+  .safe span.t { top: calc(14% - 14px); }
+  .safe span.b { bottom: calc(20% - 14px); }
+
+  .clipmark {
+    position: absolute; top: 10px; left: 12px; z-index: 3;
+    font-family: var(--mono); font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(255,255,255,.6); background: rgba(0,0,0,.3); padding: 3px 7px; border-radius: 3px;
+  }
+
+  /* ---------- controls ---------- */
+  .panel { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 460px; }
+
+  .plabel {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--fg-mute); margin-bottom: 9px;
+  }
+
+  .reco {
+    background: var(--card); border: 1px solid var(--rule); border-left: 3px solid var(--accent2);
+    padding: 13px 15px; display: flex; flex-direction: column; gap: 5px;
+  }
+  .reco b { font-size: 14px; font-weight: 700; }
+  .reco b em { font-style: normal; color: var(--accent2); }
+  .reco p { margin: 0; font-size: 13px; color: var(--fg-mute); }
+
+  .presets { display: flex; flex-direction: column; gap: 7px; }
+  .preset {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: center;
+    background: var(--card); border: 1px solid var(--rule); padding: 11px 13px;
+    cursor: pointer; text-align: left; font-family: inherit; color: inherit; width: 100%;
+    transition: border-color .15s, background .15s;
+  }
+  .preset:hover { border-color: var(--fg-mute); }
+  .preset[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--card)); }
+  .preset:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto; position: relative; overflow: hidden; background: #0A0E13; }
+  .preset .nm { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+  .preset .ds { font-size: 12px; color: var(--fg-mute); display: block; font-weight: 400; }
+  .badge {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent2); border: 1px solid currentColor; padding: 2px 5px; white-space: nowrap;
+  }
+
+  .transport { display: flex; align-items: center; gap: 12px; }
+  .pp {
+    width: 40px; height: 40px; flex: 0 0 auto; border: 1px solid var(--rule); background: var(--card);
+    cursor: pointer; color: var(--fg); display: grid; place-items: center; font-size: 13px;
+  }
+  .pp:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  .scrub { flex: 1; -webkit-appearance: none; appearance: none; background: transparent; height: 22px; cursor: pointer; }
+  .scrub::-webkit-slider-runnable-track { height: 3px; background: var(--rule); }
+  .scrub::-moz-range-track { height: 3px; background: var(--rule); }
+  .scrub::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); margin-top: -5px;
+  }
+  .scrub::-moz-range-thumb { width: 13px; height: 13px; border: 0; border-radius: 50%; background: var(--accent); }
+  .scrub:focus-visible { outline: 2px solid var(--accent2); outline-offset: 3px; }
+  .tc { font-family: var(--mono); font-size: 11px; color: var(--fg-mute); font-variant-numeric: tabular-nums; }
+
+  .toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tg {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    border: 1px solid var(--rule); background: var(--card); color: var(--fg-mute);
+    padding: 7px 11px; cursor: pointer;
+  }
+  .tg[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .tg:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+
+  .export {
+    font-family: inherit; font-size: 14px; font-weight: 700; letter-spacing: -.01em;
+    padding: 13px; background: var(--fg); color: var(--bg); border: 0; cursor: pointer; width: 100%;
+  }
+  .export:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .exnote { font-size: 12px; color: var(--fg-mute); margin: 7px 0 0; }
+
+  /* ---------- notes ---------- */
+  .notes {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;
+    border-top: 1px solid var(--rule); padding-top: clamp(22px, 4vw, 36px);
+  }
+  .note h3 {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--fg-mute); margin: 0 0 9px; font-weight: 700;
+  }
+  .note ul { margin: 0; padding-left: 17px; font-size: 14px; color: var(--fg-mute); display: flex; flex-direction: column; gap: 7px; }
+  .note p { margin: 0; font-size: 14px; color: var(--fg-mute); }
+  .note strong { color: var(--fg); font-weight: 650; }
+  .foot {
+    font-family: var(--mono); font-size: 11px; color: var(--fg-mute);
+    border-top: 1px solid var(--rule); padding-top: 16px; letter-spacing: .03em;
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span>raw / running / <b>JiEung2</b></span><span class="sep">—</span>
+      <span>2026-08-04</span><span class="sep">—</span><span>개인 가설 · 결정 아님</span>
+    </div>
+    <h1>경로가 영상 위에서 살아 움직이는 공유 화면</h1>
+    <p class="lede">
+      GPS 트랙을 이미지가 아니라 <strong>선</strong>으로 다루면 시간이 생긴다. 아래 프리셋 5개는 전부 같은 렌더러이고,
+      진행률을 어떻게 칠하느냐만 다르다 — 그래서 하나를 만들면 나머지는 거의 공짜다.
+    </p>
+  </header>
+
+  <div class="composer">
+
+    <div class="device">
+      <canvas id="stage" width="600" height="1066" role="img"
+        aria-label="세로 영상 위에 러닝 경로가 겹쳐진 미리보기. 경로를 따라 불빛이 이동하며 지나온 구간이 밝아진다"></canvas>
+      <div class="clipmark">영상 자리 · 샘플</div>
+      <div class="statlay">
+        <div class="d">4.2<small>km</small></div>
+        <div class="sub">
+          <span>6'17" /km</span>
+          <span>26:24</span>
+        </div>
+      </div>
+      <div class="safe" id="safe">
+        <i class="t"></i><i class="b"></i>
+        <span class="t">인스타 UI 영역</span>
+        <span class="b">인스타 UI 영역</span>
+      </div>
+    </div>
+
+    <div class="panel">
+
+      <div class="reco">
+        <b>이 코스는 <em>닫힌 고리</em>입니다 · 4.2km</b>
+        <p>시작점과 끝점이 만나서 한 바퀴가 닫힙니다. 불빛이 출발점으로 돌아오는 순간이 그대로 완주 장면이 됩니다.</p>
+      </div>
+
+      <div>
+        <div class="plabel">효과</div>
+        <div class="presets" id="presets" role="group" aria-label="오버레이 효과 프리셋"></div>
+      </div>
+
+      <div>
+        <div class="plabel">미리보기</div>
+        <div class="transport">
+          <button class="pp" id="pp" aria-label="재생 / 일시정지">❚❚</button>
+          <input type="range" class="scrub" id="scrub" min="0" max="1000" value="0" aria-label="미리보기 진행 위치">
+          <span class="tc" id="tc">0.0s</span>
+        </div>
+        <div class="toggles" style="margin-top:11px">
+          <button class="tg" id="tSafe" aria-pressed="false">안전 영역</button>
+          <button class="tg" id="tSpeed" aria-pressed="false">15초 클립</button>
+        </div>
+      </div>
+
+      <div>
+        <button class="export">인스타그램으로 내보내기</button>
+        <p class="exnote">32분 러닝을 클립 길이에 균등 압축한다. 영상을 러닝 중에 찍은 경우에만 실제 시각과 맞추는 모드가 따로 필요하다 — 미결.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>이 목업이 보여주는 것</h3>
+      <ul>
+        <li><strong>프리셋 전환이 즉시</strong>인 이유 — 렌더러는 하나고 진행률 칠하는 방식만 바뀐다.</li>
+        <li><strong>코스 모양이 효과를 정한다.</strong> 닫힌 고리라 불빛 순회를 추천했고, 그 이유를 화면에 적었다.</li>
+        <li>화면의 <strong>모든 요소가 러닝 데이터에서</strong> 나온다. 장식 파티클도, 프레임도 없다.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>이 목업이 정하지 않은 것</h3>
+      <ul>
+        <li>클립을 <strong>고르는 화면</strong>이 없다. 영상은 자리만 잡아뒀다.</li>
+        <li>오버레이 <strong>위치·크기 드래그</strong>는 넣지 않았다.</li>
+        <li>선 색은 지금 고정이다. 영상 밝기에서 자동으로 뽑는 건 미구현.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>왕복 코스 문제</h3>
+      <p>
+        같은 길을 되돌아오는 코스는 선이 겹쳐서 불빛 순회가 안 예쁘다.
+        <strong>고도 리본</strong> 프리셋을 눌러 보면 그 경우에 왜 다른 표현이 필요한지 보인다.
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">JiEung2 · 2026-08-04 · 경로 오버레이 컨셉의 움직이는 목업</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var cv = document.getElementById("stage"), ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height;                 /* 600 × 1066, 9:16 */
+
+  /* ---------- synthetic GPS loop: wobbly closed circle ---------- */
+  var PTS = [], CUM = [], TOTAL = 0, PACE = [];
+  (function buildRoute() {
+    var N = 460, cx = 168, cy = 720, R = 96;
+    for (var i = 0; i < N; i++) {
+      var a = i / N * Math.PI * 2;
+      var r = R * (1 + 0.20 * Math.sin(a * 3 + 0.7) + 0.11 * Math.cos(a * 5 - 1.2) + 0.06 * Math.sin(a * 8));
+      PTS.push({ x: cx + Math.cos(a) * r * 1.18, y: cy + Math.sin(a) * r * 1.34 });
+      /* synthetic pace 0 (slow) .. 1 (fast) */
+      PACE.push(0.5 + 0.36 * Math.sin(a * 2.3 + 0.4) + 0.14 * Math.sin(a * 7));
+    }
+    PTS.push(PTS[0]); PACE.push(PACE[0]);          /* close the loop */
+    CUM.push(0);
+    for (var k = 1; k < PTS.length; k++) {
+      var dx = PTS[k].x - PTS[k - 1].x, dy = PTS[k].y - PTS[k - 1].y;
+      TOTAL += Math.hypot(dx, dy);
+      CUM.push(TOTAL);
+    }
+  })();
+
+  var DIST_KM = 4.2;
+  function idxAt(p) {                              /* progress → point index */
+    var target = p * TOTAL, lo = 0, hi = CUM.length - 1;
+    while (lo < hi) { var m = (lo + hi) >> 1; if (CUM[m] < target) lo = m + 1; else hi = m; }
+    return lo;
+  }
+  function lerpColor(a, b, t) {
+    return "rgb(" + Math.round(a[0] + (b[0] - a[0]) * t) + "," +
+                    Math.round(a[1] + (b[1] - a[1]) * t) + "," +
+                    Math.round(a[2] + (b[2] - a[2]) * t) + ")";
+  }
+  var SLOW = [124, 107, 245], FAST = [255, 107, 74];
+
+  /* ---------- fake dusk footage ---------- */
+  function drawClip(time) {
+    var bob = Math.sin(time * 3.1) * 5 + Math.sin(time * 5.7) * 2;   /* handheld run bob */
+
+    var sky = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+    sky.addColorStop(0, "#161E2B");
+    sky.addColorStop(0.55, "#33313F");
+    sky.addColorStop(1, "#7A5252");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H * 0.62 + bob);
+
+    /* low sun */
+    var g = ctx.createRadialGradient(410, H * 0.55 + bob, 6, 410, H * 0.55 + bob, 190);
+    g.addColorStop(0, "rgba(255,186,140,.85)");
+    g.addColorStop(1, "rgba(255,150,110,0)");
+    ctx.fillStyle = g; ctx.fillRect(180, H * 0.35, 480, 300);
+
+    /* tree line — slow parallax */
+    ctx.fillStyle = "#1B2028";
+    var off = (time * 26) % 90;
+    for (var t = -1; t < 9; t++) {
+      var bx = t * 90 - off, bh = 60 + ((t * 37) % 5) * 26;
+      ctx.beginPath();
+      ctx.moveTo(bx, H * 0.62 + bob);
+      ctx.lineTo(bx + 45, H * 0.62 - bh + bob);
+      ctx.lineTo(bx + 90, H * 0.62 + bob);
+      ctx.closePath(); ctx.fill();
+    }
+
+    /* ground */
+    var grd = ctx.createLinearGradient(0, H * 0.62 + bob, 0, H);
+    grd.addColorStop(0, "#232A31");
+    grd.addColorStop(1, "#0D1116");
+    ctx.fillStyle = grd; ctx.fillRect(0, H * 0.62 + bob, W, H);
+
+    /* path stripes rushing past — sells motion */
+    ctx.fillStyle = "rgba(255,255,255,.05)";
+    var so = (time * 300) % 160;
+    for (var s = 0; s < 9; s++) {
+      var y = H * 0.62 + bob + s * 160 - so;
+      var w = 40 + s * 46;
+      ctx.fillRect(W / 2 - w / 2 + Math.sin(time * 2) * 12, y, w, 9 + s * 2);
+    }
+
+    /* vignette + grain */
+    var vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.72);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.55)");
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(255,255,255,.03)";
+    for (var n = 0; n < 90; n++)
+      ctx.fillRect(Math.random() * W | 0, Math.random() * H | 0, 2, 2);
+  }
+
+  /* ---------- overlay presets ---------- */
+  function strokePath(from, to, style, width, blur, blurColor) {
+    if (to <= from) return;
+    ctx.save();
+    ctx.lineWidth = width; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.strokeStyle = style;
+    if (blur) { ctx.shadowBlur = blur; ctx.shadowColor = blurColor || style; }
+    ctx.beginPath();
+    ctx.moveTo(PTS[from].x, PTS[from].y);
+    for (var i = from + 1; i <= to; i++) ctx.lineTo(PTS[i].x, PTS[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  var PRESETS = [
+    {
+      id: "beacon", name: "불빛 러너", desc: "빛이 경로를 달리고 지나온 길에 잔광", reco: true,
+      draw: function (p, time) {
+        var i = idxAt(p);
+        strokePath(0, PTS.length - 1, "rgba(255,255,255,.20)", 3, 0);
+        strokePath(0, i, "rgba(255,243,236,.55)", 4, 10, "#FF6B4A");
+        var tail = Math.max(0, i - 46);
+        strokePath(tail, i, "#FFF3EC", 5, 22, "#FF6B4A");      /* hot recent trail */
+        var h = PTS[i];
+        ctx.save();
+        ctx.shadowBlur = 34; ctx.shadowColor = "#FF6B4A";
+        ctx.fillStyle = "#FFFFFF";
+        ctx.beginPath(); ctx.arc(h.x, h.y, 7.5, 0, 7); ctx.fill();
+        ctx.shadowBlur = 60; ctx.fill();
+        ctx.restore();
+        if (p > 0.985) {                                        /* loop closes = 완주 */
+          var f = (p - 0.985) / 0.015;
+          strokePath(0, PTS.length - 1, "rgba(255,243,236," + (0.9 * f) + ")", 5 + f * 4, 30 + f * 30, "#FF6B4A");
+        }
+      }
+    },
+    {
+      id: "segments", name: "구간 점등", desc: "km 단위로 구간이 하나씩 켜짐 — 4km면 4번",
+      draw: function (p) {
+        strokePath(0, PTS.length - 1, "rgba(255,255,255,.18)", 3, 0);
+        var segs = Math.ceil(DIST_KM);
+        for (var s = 0; s < segs; s++) {
+          var a = s / DIST_KM, b = Math.min(1, (s + 1) / DIST_KM);
+          if (p <= a) break;
+          var done = p >= b;
+          var justLit = done ? Math.max(0, 1 - (p - b) * 14) : 0;   /* flash on completion */
+          var end = done ? idxAt(b) : idxAt(p);
+          strokePath(idxAt(a), end, "rgba(255,243,236," + (done ? 0.95 : 0.5) + ")",
+                     4 + justLit * 4, done ? 14 + justLit * 26 : 6, "#FF6B4A");
+          if (done) {
+            var m = PTS[idxAt(b)];
+            ctx.save(); ctx.shadowBlur = 16 + justLit * 24; ctx.shadowColor = "#FF6B4A";
+            ctx.fillStyle = "#FFF3EC";
+            ctx.beginPath(); ctx.arc(m.x, m.y, 4 + justLit * 3, 0, 7); ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+    },
+    {
+      id: "draw", name: "드로잉", desc: "경로가 처음부터 그려져 나감 — 기본값",
+      draw: function (p) {
+        strokePath(0, idxAt(p), "#FFF3EC", 4.5, 8, "rgba(255,255,255,.6)");
+      }
+    },
+    {
+      id: "pace", name: "페이스 색상", desc: "빠른 구간 뜨겁게, 느린 구간 차갑게",
+      draw: function (p) {
+        strokePath(0, PTS.length - 1, "rgba(255,255,255,.16)", 3, 0);
+        var i = idxAt(p);
+        ctx.save(); ctx.lineWidth = 5; ctx.lineCap = "round";
+        ctx.shadowBlur = 12;
+        for (var k = 1; k <= i; k++) {
+          var v = Math.max(0, Math.min(1, PACE[k]));
+          var col = lerpColor(SLOW, FAST, v);
+          ctx.strokeStyle = col; ctx.shadowColor = col;
+          ctx.beginPath(); ctx.moveTo(PTS[k - 1].x, PTS[k - 1].y); ctx.lineTo(PTS[k].x, PTS[k].y); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    },
+    {
+      id: "elev", name: "고도 리본", desc: "옆에서 본 고도가 차오름 — 왕복 코스용",
+      draw: function (p) {
+        var x0 = 44, x1 = W - 44, yb = 812, hMax = 150;
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,.18)"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x0, yb); ctx.lineTo(x1, yb); ctx.stroke();
+
+        function elevAt(u) { return (Math.sin(u * 6.1) * 0.5 + Math.sin(u * 2.2 + 1) * 0.5) * 0.5 + 0.5; }
+        var n = 150, upto = Math.max(1, Math.round(n * p));
+        var grad = ctx.createLinearGradient(0, yb - hMax, 0, yb);
+        grad.addColorStop(0, "rgba(255,107,74,.75)");
+        grad.addColorStop(1, "rgba(124,107,245,.15)");
+        ctx.beginPath(); ctx.moveTo(x0, yb);
+        for (var k = 0; k <= upto; k++) {
+          var u = k / n;
+          ctx.lineTo(x0 + (x1 - x0) * u, yb - elevAt(u) * hMax);
+        }
+        ctx.lineTo(x0 + (x1 - x0) * (upto / n), yb);
+        ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+
+        ctx.beginPath();
+        for (var j = 0; j <= upto; j++) {
+          var u2 = j / n, xx = x0 + (x1 - x0) * u2, yy = yb - elevAt(u2) * hMax;
+          if (j === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+        }
+        ctx.strokeStyle = "#FFF3EC"; ctx.lineWidth = 4; ctx.lineCap = "round";
+        ctx.shadowBlur = 16; ctx.shadowColor = "#FF6B4A"; ctx.stroke();
+        ctx.restore();
+      }
+    }
+  ];
+
+  /* ---------- state + loop ---------- */
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var cur = PRESETS[0], playing = !reduce, p = reduce ? 1 : 0, dur = 7, t0 = performance.now();
+
+  function frame(now) {
+    var time = now / 1000;
+    if (playing) {
+      p += (now - t0) / 1000 / dur;
+      if (p > 1.12) p = 0;
+    }
+    t0 = now;
+    ctx.clearRect(0, 0, W, H);
+    drawClip(time);
+    cur.draw(Math.min(1, p), time);
+    scrub.value = Math.min(1, p) * 1000;
+    tc.textContent = (Math.min(1, p) * dur).toFixed(1) + "s";
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- preset UI ---------- */
+  var host = document.getElementById("presets");
+  PRESETS.forEach(function (preset) {
+    var b = document.createElement("button");
+    b.className = "preset"; b.type = "button";
+    b.setAttribute("aria-pressed", String(preset === cur));
+    b.innerHTML =
+      '<span class="swatch" style="background:' +
+        (preset.id === "pace"
+          ? "linear-gradient(135deg,#7C6BF5,#FF6B4A)"
+          : preset.id === "elev"
+            ? "linear-gradient(180deg,#FF6B4A,#7C6BF5)"
+            : "radial-gradient(circle at 32% 32%,#FFF3EC,#FF6B4A 62%,#2A1A18)") + '"></span>' +
+      '<span><span class="nm">' + preset.name + '</span><span class="ds">' + preset.desc + '</span></span>' +
+      (preset.reco ? '<span class="badge">추천</span>' : '<span></span>');
+    b.addEventListener("click", function () {
+      cur = preset;
+      [].forEach.call(host.children, function (el, i) {
+        el.setAttribute("aria-pressed", String(PRESETS[i] === cur));
+      });
+    });
+    host.appendChild(b);
+  });
+
+  /* ---------- transport ---------- */
+  var scrub = document.getElementById("scrub"), tc = document.getElementById("tc"),
+      pp = document.getElementById("pp");
+  pp.textContent = playing ? "❚❚" : "▶";
+  pp.addEventListener("click", function () {
+    playing = !playing;
+    pp.textContent = playing ? "❚❚" : "▶";
+  });
+  scrub.addEventListener("input", function () {
+    playing = false; pp.textContent = "▶";
+    p = parseInt(scrub.value, 10) / 1000;
+  });
+
+  document.getElementById("tSafe").addEventListener("click", function () {
+    var on = this.getAttribute("aria-pressed") !== "true";
+    this.setAttribute("aria-pressed", String(on));
+    document.getElementById("safe").classList.toggle("on", on);
+  });
+  document.getElementById("tSpeed").addEventListener("click", function () {
+    var on = this.getAttribute("aria-pressed") !== "true";
+    this.setAttribute("aria-pressed", String(on));
+    dur = on ? 15 : 7;                     /* same 32-min run, squeezed into a longer clip */
+  });
+
+  requestAnimationFrame(function (n) { t0 = n; frame(n); });
+})();
+</script>
