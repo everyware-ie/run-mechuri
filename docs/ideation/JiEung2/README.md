@@ -7,12 +7,25 @@
 | 날짜 | 주제 | 상태 | 원문 |
 |---|---|---|---|
 | 2026-08-10 | 러닝 공유의 사회적 확장: 크루 콜라주·대결·성장 비교·실행 가능한 코스 공유 | 진행 중 | [원문](2026-08-10-crew-collage-and-runnable-course-share.md) |
+| 2026-08-04 | 경로 오버레이 공유: 릴스 영상 위에서 경로가 움직이는 앱 | 진행 중 | [원문](2026-08-04-route-overlay-share-concept.md) |
+| 2026-08-04 | 위 컨셉의 움직이는 목업 (프리셋 5개 비교) | 진행 중 | [목업](2026-08-04-route-overlay-mockup.html) |
+| 2026-08-04 | 보스 레이드 러닝: 거리로 새총을 당겨 보스 격파 (레트로 픽셀) | 진행 중 | [원문](2026-08-04-boss-raid-slingshot-concept.md) |
+| 2026-08-04 | 위 컨셉의 아이폰 UI 목업 (3화면, 발사 동작) | 진행 중 | [목업](2026-08-04-ui-mockup.html) |
 
 ## 주제별 지도
 
-- 컨셉 발산: [크루 콜라주·대결·성장 비교·실행 가능한 코스 공유](2026-08-10-crew-collage-and-runnable-course-share.md) — [2026-08-04 경로 오버레이 공유](https://github.com/everyware-ie/mechuri-docs/blob/idea/JiEung2/products/running/raw/JiEung2/2026-08-04-route-overlay-share-concept.md)의 후속(소셜 레이어)
-- 회의에서 확인할 질문: 각 원문의 `검증 질문` 절
+- **컨셉 발산**: [크루 콜라주·대결·성장 비교·실행 가능한 코스 공유](2026-08-10-crew-collage-and-runnable-course-share.md) — [경로 오버레이 공유](2026-08-04-route-overlay-share-concept.md)의 후속(소셜 레이어) · [보스 레이드 러닝](2026-08-04-boss-raid-slingshot-concept.md) — 위 둘과 독립된 별개 안
+- **시각 자료**: [경로 오버레이 목업](2026-08-04-route-overlay-mockup.html) · [보스 레이드 UI 목업](2026-08-04-ui-mockup.html) — 브라우저로 열어서 확인. 소스 HTML 한 파일씩이라 언제든 수정·재생성 가능
+- **폐기한 가지**: 1km 자동 촬영 / 1km 버튼 안 → [경로 오버레이 노트](2026-08-04-route-overlay-share-concept.md)의 `어떻게 여기까지 왔나` 절에 폐기 사유까지 기록
+- **회의에서 확인할 질문**: 각 원문의 `검증 질문` 절
 
-## 참고
+## 기록 원칙
 
-- 08-04에 쓴 [경로 오버레이 공유](https://github.com/everyware-ie/mechuri-docs/blob/idea/JiEung2/products/running/raw/JiEung2/2026-08-04-route-overlay-share-concept.md) 원문(+ 움직이는 목업)은 아직 허브(mechuri-docs)의 `idea/JiEung2` 브랜치에 남아있고 이 repo로는 이관되지 않았다 — 필요하면 다음에 옮길 것.
+- 사실에는 원문 URL과 확인일을 남긴다.
+- 개인 가설과 팀 결정을 구분한다. 팀 결정은 회의 종합·decision 문서가 근거다.
+- 한 노트는 한 가지 재사용 목적만 다룬다. 주제가 달라지면 새 날짜 파일을 만든다.
+- 새 생각·정정은 기존 raw 원문을 고치지 않고 후속 노트에 기록한다.
+
+## 이관 기록
+
+08-04 노트 4건(경로 오버레이 컨셉·목업, 보스 레이드 컨셉·목업)은 원래 허브(mechuri-docs)의 `products/running/raw/JiEung2/`에 있었다. 이 repo 신설(2026-08-04 저녁)보다 먼저 작성돼 초기 이관에 딸려오지 못했던 것을, **2026-08-11 회의 결정**에 따라 옮겨왔다. 내용은 수정하지 않았고, 이관으로 어긋난 상대경로 링크만 정정했다.

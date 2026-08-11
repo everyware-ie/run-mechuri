@@ -1,0 +1,1029 @@
+<title>보스 레이드 러닝 — UI 목업</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --void:   #0E0A1C;
+    --panel:  #1D1435;
+    --panel2: #150E28;
+    --line:   #3B2C63;
+    --ivory:  #F2E9FF;
+    --muted:  #9A8CC4;
+    --amber:  #FFC247;
+    --cyan:   #3FE0C8;
+    --rose:   #FF4D6D;
+
+    /* page chrome — theme aware */
+    --bg:      #EFEAF6;
+    --bg2:     #E4DDF0;
+    --fg:      #1B1330;
+    --fg-mute: #5B4E7A;
+    --rule:    #CFC5E4;
+    --card:    #F7F4FB;
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B0816; --bg2: #120C22; --fg: #EDE6FA;
+      --fg-mute: #9F92C4; --rule: #2A1F47; --card: #150E28;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0B0816; --bg2: #120C22; --fg: #EDE6FA;
+    --fg-mute: #9F92C4; --rule: #2A1F47; --card: #150E28;
+  }
+  :root[data-theme="light"] {
+    --bg: #EFEAF6; --bg2: #E4DDF0; --fg: #1B1330;
+    --fg-mute: #5B4E7A; --rule: #CFC5E4; --card: #F7F4FB;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 64px) clamp(18px, 4vw, 40px) 80px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(32px, 5vw, 56px);
+  }
+
+  /* ---------- header ---------- */
+  .head { display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--fg-mute);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .eyebrow b { color: var(--amber); font-weight: 700; }
+  .eyebrow .sep { opacity: .4; }
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(26px, 4.4vw, 42px);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.15;
+    text-wrap: balance;
+    margin: 0;
+  }
+  h1 span { color: var(--amber); }
+  .lede {
+    max-width: 62ch;
+    font-size: clamp(15px, 1.6vw, 17px);
+    color: var(--fg-mute);
+    margin: 0;
+  }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  }
+  .meta span {
+    border: 1px solid var(--rule);
+    background: var(--card);
+    padding: 4px 9px;
+    color: var(--fg-mute);
+  }
+
+  /* ---------- phone rail ---------- */
+  .rail {
+    display: flex;
+    gap: clamp(20px, 3vw, 44px);
+    overflow-x: auto;
+    padding-bottom: 14px;
+    scroll-snap-type: x proximity;
+  }
+  .slot {
+    flex: 0 0 auto;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-snap-align: start;
+  }
+  .slot-head { display: flex; flex-direction: column; gap: 4px; }
+  .slot-no {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--amber);
+  }
+  .slot-title { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+  .slot-note { font-size: 13px; color: var(--fg-mute); }
+
+  /* ---------- device ---------- */
+  .phone {
+    width: 320px; height: 694px;
+    background: #05030C;
+    border-radius: 40px;
+    padding: 9px;
+    box-shadow: 0 0 0 1.5px var(--line), 0 22px 44px -22px rgba(14,10,28,.75);
+    flex: 0 0 auto;
+  }
+  .screen {
+    position: relative;
+    width: 100%; height: 100%;
+    border-radius: 32px;
+    overflow: hidden;
+    background: var(--void);
+    color: var(--ivory);
+    font-family: var(--mono);
+    display: flex;
+    flex-direction: column;
+  }
+  .screen::after {   /* CRT scanlines */
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 40;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,.045) 0 1px, transparent 1px 3px);
+  }
+  .island {
+    position: absolute; top: 9px; left: 50%; transform: translateX(-50%);
+    width: 88px; height: 25px; border-radius: 999px; background: #05030C; z-index: 30;
+  }
+  .statusbar {
+    position: relative; z-index: 20;
+    height: 43px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    font-size: 11px; letter-spacing: .04em; color: var(--ivory);
+  }
+  .statusbar .sig { display: flex; gap: 3px; align-items: flex-end; }
+  .statusbar .sig i { display: block; width: 3px; background: var(--ivory); }
+  .home {
+    position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%);
+    width: 118px; height: 4px; border-radius: 999px; background: rgba(242,233,255,.4); z-index: 30;
+  }
+
+  /* pixel canvas */
+  .art { display: block; width: 100%; image-rendering: pixelated; }
+  .stage-art { position: relative; flex: 0 0 auto; }
+
+  /* HUD overlay on art */
+  .hud { position: absolute; inset: 0; z-index: 10; pointer-events: none; padding: 10px 12px; }
+  .hud-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .tag {
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--amber); text-shadow: 1px 1px 0 #05030C;
+  }
+  .boss-name { font-size: 11px; letter-spacing: .1em; text-shadow: 1px 1px 0 #05030C; text-align: right; }
+  .boss-sub { font-size: 9px; color: var(--rose); letter-spacing: .08em; text-align: right; }
+
+  .hpwrap { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+  .hpbar {
+    height: 9px; background: #2B1B3D; border: 2px solid #05030C;
+    display: flex; overflow: hidden;
+  }
+  .hpfill { background: var(--rose); height: 100%; width: 68%; transition: width .5s steps(12); }
+  .hpnum {
+    font-size: 9px; letter-spacing: .06em; color: var(--ivory);
+    font-variant-numeric: tabular-nums; text-shadow: 1px 1px 0 #05030C; text-align: right;
+  }
+
+  /* pull marker that rides with the character */
+  .pullmark {
+    position: absolute; z-index: 14; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: .06em; color: var(--amber);
+    text-shadow: 1px 1px 0 #05030C; white-space: nowrap; pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .pullmark::after {
+    content: ""; display: block; width: 2px; height: 9px; background: var(--amber);
+    margin: 2px auto 0;
+  }
+  /* boss off-screen indicator */
+  .offscreen {
+    position: absolute; z-index: 14; left: 8px; top: 46%;
+    font-size: 10px; letter-spacing: .08em; color: var(--rose);
+    text-shadow: 1px 1px 0 #05030C; pointer-events: none;
+    opacity: 0; transition: opacity .18s steps(3);
+    font-variant-numeric: tabular-nums;
+  }
+  .offscreen.on { opacity: 1; }
+
+  .pop {
+    position: absolute; z-index: 15; font-size: 22px; font-weight: 700; color: var(--amber);
+    text-shadow: 2px 2px 0 #05030C; letter-spacing: -.02em; opacity: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .pop.go { animation: pop 1.1s steps(9) forwards; }
+  @keyframes pop {
+    0%   { opacity: 0; transform: translateY(6px) scale(.7); }
+    18%  { opacity: 1; transform: translateY(-4px) scale(1.15); }
+    45%  { opacity: 1; transform: translateY(-14px) scale(1); }
+    100% { opacity: 0; transform: translateY(-34px) scale(1); }
+  }
+
+  /* ---------- panel (lower half of screen) ---------- */
+  .panel {
+    flex: 1 1 auto; min-height: 0;
+    background: var(--panel2);
+    border-top: 2px solid var(--line);
+    padding: 14px 16px 26px;
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden;
+  }
+  .plabel {
+    font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+  }
+  .card {
+    background: var(--panel); border: 2px solid var(--line);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .kv { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .kv .k { font-size: 10px; color: var(--muted); letter-spacing: .1em; }
+  .kv .v { font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .big { font-size: 26px; font-weight: 700; color: var(--cyan); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .big.amber { color: var(--amber); }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 14px; background: transparent; margin: 0; cursor: ew-resize;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px; background: #2B1B3D; border: 2px solid var(--line);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 8px; background: #2B1B3D; border: 2px solid var(--line);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 18px; background: var(--amber); border: 2px solid #05030C;
+    margin-top: -7px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 18px; background: var(--amber); border: 2px solid #05030C; border-radius: 0;
+  }
+  input[type="range"]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    padding: 5px 8px; background: transparent; color: var(--muted);
+    border: 2px solid var(--line); cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--cyan); color: #05030C; border-color: var(--cyan); font-weight: 700; }
+  .chip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  .fire {
+    font-family: var(--mono); font-size: 14px; font-weight: 700; letter-spacing: .22em;
+    padding: 13px; width: 100%;
+    background: var(--amber); color: #05030C;
+    border: 0; border-bottom: 4px solid #A9762B;
+    cursor: pointer; text-transform: uppercase;
+  }
+  .fire:active { transform: translateY(2px); border-bottom-width: 2px; }
+  .fire:disabled { background: var(--line); color: var(--muted); border-bottom-color: #241A40; cursor: default; transform: none; }
+  .fire:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .formula {
+    font-size: 10px; color: var(--muted); letter-spacing: .02em; line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
+  .formula b { color: var(--ivory); font-weight: 400; }
+  .formula em { color: var(--cyan); font-style: normal; }
+
+  /* rank rows (screen 2) */
+  .rows { display: flex; flex-direction: column; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 16px 1fr auto; gap: 9px; align-items: center;
+    background: var(--panel); border: 2px solid var(--line); padding: 8px 10px;
+  }
+  .row.me { border-color: var(--cyan); }
+  .row .rk { font-size: 11px; color: var(--muted); }
+  .row .nm { font-size: 12px; letter-spacing: .04em; }
+  .row.me .nm { color: var(--cyan); }
+  .row .st { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--amber); letter-spacing: .04em; }
+
+  .track { display: flex; gap: 3px; margin-top: 2px; }
+  .track i { display: block; height: 5px; flex: 1; background: #2B1B3D; }
+  .track i.on { background: var(--cyan); }
+  .track i.cur { background: var(--amber); }
+
+  /* evolution (screen 3) */
+  .evo { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .evo div {
+    border: 2px solid var(--line); background: var(--panel); padding: 8px 6px;
+    text-align: center; font-size: 9px; letter-spacing: .06em; color: var(--muted);
+  }
+  .evo div.on { border-color: var(--amber); color: var(--amber); }
+  .evo div.locked { opacity: .45; }
+  .evo b { display: block; font-size: 11px; color: var(--ivory); font-weight: 400; margin-bottom: 2px; }
+  .evo div.on b { color: var(--amber); }
+
+  /* ---------- notes ---------- */
+  .notes {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    border-top: 1px solid var(--rule); padding-top: clamp(24px, 4vw, 40px);
+  }
+  .note h3 {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--fg-mute); margin: 0 0 8px; font-weight: 700;
+  }
+  .note p { margin: 0; font-size: 14px; color: var(--fg-mute); }
+  .note ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--fg-mute); display: flex; flex-direction: column; gap: 6px; }
+  .note strong { color: var(--fg); font-weight: 600; }
+  .note code {
+    font-family: var(--mono); font-size: .88em;
+    background: var(--bg2); padding: 1px 5px; color: var(--fg);
+  }
+
+  .foot {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em; color: var(--fg-mute);
+    border-top: 1px solid var(--rule); padding-top: 18px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pop.go { animation-duration: .01ms; }
+    .hpfill { transition: none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="head">
+    <div class="eyebrow">
+      <span>raw / running / <b>JiEung2</b></span>
+      <span class="sep">—</span>
+      <span>2026-08-04</span>
+      <span class="sep">—</span>
+      <span>개인 가설 · 결정 아님</span>
+    </div>
+    <h1>보스 레이드 러닝 — <span>UI 목업</span></h1>
+    <p class="lede">
+      오늘 뛴 거리가 곧 새총을 당기는 힘이다. 당긴 만큼 데미지가 세지고, 스테이지마다 다른 보스를 잡아 올라간다.
+      아래 첫 화면은 실제로 조작된다 — 거리를 올리면 화면이 오른쪽으로 끌려가며 배경이 흐르고, 발사하면 그 거리를 되돌아 날아가 보스를 때린다.
+    </p>
+    <div class="meta">
+      <span>iPhone 15 Pro · 393×852</span>
+      <span>8bit 픽셀 · 3화면</span>
+      <span>목업 — 구현 스펙 아님</span>
+    </div>
+  </header>
+
+  <div class="rail">
+
+    <!-- ============ SCREEN 1 ============ -->
+    <section class="slot">
+      <div class="slot-head">
+        <div class="slot-no">핵심 루프</div>
+        <div class="slot-title">러닝 종료 → 발사</div>
+        <div class="slot-note">거리를 올릴수록 오른쪽으로 끌려갑니다. 1km마다 표지가 지나갑니다 — 15km면 화면 2.4개 분량.</div>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar">
+            <span>21:04</span>
+            <span class="sig">
+              <i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+            </span>
+          </div>
+
+          <div class="stage-art">
+            <canvas id="scene" class="art" width="80" height="120" role="img"
+              aria-label="픽셀 아트 장면: 왼쪽에 거대 보스가 서 있고, 새총에 올라탄 러너 캐릭터가 오른쪽으로 당겨져 있다. 당긴 거리만큼 배경이 흘러간다"></canvas>
+            <div class="pullmark" id="pullmark">5.2km 당김</div>
+            <div class="offscreen" id="offscreen">◀ 고자리온</div>
+            <div class="hud">
+              <div class="hud-row">
+                <div class="tag">stage 07</div>
+                <div>
+                  <div class="boss-name">고자리온</div>
+                  <div class="boss-sub">거대 파충류형</div>
+                </div>
+              </div>
+              <div class="hpwrap">
+                <div class="hpbar"><div class="hpfill" id="hpfill"></div></div>
+                <div class="hpnum"><span id="hpnow">16,320</span> / 24,000</div>
+              </div>
+            </div>
+            <div class="pop" id="pop" style="left:26%; top:36%"></div>
+          </div>
+
+          <div class="panel">
+            <div class="plabel">오늘의 러닝</div>
+            <div class="card">
+              <div class="kv">
+                <span class="k">거리</span>
+                <span class="v"><span id="dnum">5.2</span> km · 32분 41초</span>
+              </div>
+              <input type="range" id="dist" min="10" max="150" value="52" step="1"
+                aria-label="오늘 뛴 거리 (킬로미터)">
+              <div class="plabel">보너스 (검증 대상)</div>
+              <div class="chips">
+                <button class="chip" id="bStreak" aria-pressed="true">꾸준함 6일 ×1.3</button>
+                <button class="chip" id="bBack" aria-pressed="false">복귀 ×1.2</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="kv">
+                <span class="k">예상 데미지</span>
+                <span class="big amber" id="dmg">4,056</span>
+              </div>
+              <div class="formula" id="formula"></div>
+            </div>
+
+            <button class="fire" id="fire">발사</button>
+          </div>
+
+          <div class="home"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN 2 ============ -->
+    <section class="slot">
+      <div class="slot-head">
+        <div class="slot-no">부가 1순위</div>
+        <div class="slot-title">스테이지 맵 · 진도 경쟁</div>
+        <div class="slot-note">1인 보스전이 기본. 경쟁은 순위표가 아니라 “누가 더 앞 스테이지에 있나”.</div>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar">
+            <span>21:06</span>
+            <span class="sig">
+              <i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+            </span>
+          </div>
+
+          <div class="stage-art">
+            <canvas id="map" class="art" width="80" height="76" role="img"
+              aria-label="픽셀 아트 스테이지 맵: 8개의 스테이지 노드가 길로 이어져 있고 7번이 현재 위치"></canvas>
+            <div class="hud">
+              <div class="hud-row">
+                <div class="tag">chapter 1 — 폐허가 된 항구</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="plabel">진도</div>
+            <div class="card">
+              <div class="kv">
+                <span class="k">현재</span>
+                <span class="v">스테이지 <span style="color:var(--amber)">07</span> / 12</span>
+              </div>
+              <div class="track">
+                <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i>
+                <i class="on"></i><i class="on"></i><i class="cur"></i><i></i>
+                <i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+
+            <div class="plabel">친구 진도</div>
+            <div class="rows">
+              <div class="row me">
+                <span class="rk">1</span><span class="nm">지응 (나)</span><span class="st">ST.07</span>
+              </div>
+              <div class="row">
+                <span class="rk">2</span><span class="nm">phs00</span><span class="st">ST.06</span>
+              </div>
+              <div class="row">
+                <span class="rk">3</span><span class="nm">jminkkk</span><span class="st">ST.04</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="kv">
+                <span class="k">협동 레이드</span>
+                <span class="v" style="color:var(--muted); font-size:11px">미결 — 넣을지 회의에서</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="home"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN 3 ============ -->
+    <section class="slot">
+      <div class="slot-head">
+        <div class="slot-no">성장 + 기본기</div>
+        <div class="slot-title">캐릭터 진화 · 러닝 기록</div>
+        <div class="slot-note">게임 이전에 거리·경로는 기본으로 제공한다. 픽셀 톤 안에 그대로 얹었다.</div>
+      </div>
+
+      <div class="phone">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar">
+            <span>21:08</span>
+            <span class="sig">
+              <i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+            </span>
+          </div>
+
+          <div class="stage-art">
+            <canvas id="evo" class="art" width="80" height="52" role="img"
+              aria-label="픽셀 아트: 러너 캐릭터의 3단계 진화 형태가 나란히 있다"></canvas>
+            <div class="hud">
+              <div class="hud-row"><div class="tag">내 러너 — 2단계</div></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="evo">
+              <div><b>신참</b>1단계</div>
+              <div class="on"><b>추격자</b>2단계 · 현재</div>
+              <div class="locked"><b>???</b>3단계 · 잠김</div>
+            </div>
+            <div class="formula">
+              진화 분기 기준은 <em>[미결]</em> — 거리형 / 꾸준형 / 복귀형 중 무엇으로 가를지 회의 안건.
+            </div>
+
+            <div class="plabel">오늘의 경로 (기본 기능)</div>
+            <div class="card" style="gap:10px">
+              <canvas id="route" class="art" width="80" height="34" role="img"
+                aria-label="픽셀 아트 경로 지도: 오늘 달린 5.2km 경로가 선으로 그려져 있다"
+                style="border:2px solid var(--line)"></canvas>
+              <div class="kv"><span class="k">거리</span><span class="v">5.2 km</span></div>
+              <div class="kv"><span class="k">평균 페이스</span><span class="v">6'17" /km</span></div>
+              <div class="kv"><span class="k">시간</span><span class="v">32:41</span></div>
+            </div>
+          </div>
+
+          <div class="home"></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>이 목업이 보여주는 것</h3>
+      <ul>
+        <li><strong>거리를 눈으로 느끼게 했다.</strong> 당김이 한 화면 안에서 끝나지 않고 카메라가 오른쪽으로 따라간다. 1km 표지가 지나가고, 보스가 화면 밖으로 밀려나면 왼쪽에 남은 거리가 뜬다.</li>
+        <li>발사하면 <strong>당겨온 거리를 그대로 되돌아</strong> 날아간다. 많이 뛴 날일수록 비행이 길다.</li>
+        <li>꾸준함·복귀 보너스를 <strong>산식에 노출</strong>했다. 장거리 러너 전용 게임이 되지 않게 하는 장치다.</li>
+        <li>경쟁은 순위표가 아니라 <strong>스테이지 진도</strong>다. 1인 보스전이 기본이라는 뜻.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>이 목업이 정하지 않은 것</h3>
+      <ul>
+        <li>보너스 배수 <code>×1.3</code> <code>×1.2</code>는 <strong>자리표시자</strong>다. 실제 비중은 회의 안건 1번.</li>
+        <li>협동 레이드 화면은 없다 — 넣을지가 아직 미결이라 자리만 남겼다.</li>
+        <li>진화 3단계는 잠금 상태로 뒀다. 분기 기준이 안 정해졌기 때문.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>난이도 곡선 메모</h3>
+      <p>
+        스테이지 07의 보스 체력을 24,000으로 잡으면 5km 러닝 기준 약 6회가 필요하다.
+        체력만 올리면 뒤로 갈수록 초보를 밀어낸다 — <strong>체력 대신 기믹을 올리는 안</strong>을 회의에서 같이 볼 것.
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">
+    JiEung2 · 2026-08-04 · products/running/raw/JiEung2/2026-08-04-boss-raid-slingshot-concept.md 의 시각 보조 자료
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var C = {
+    sky1: "#160E2E", sky2: "#241146", sky3: "#3A1A52",
+    star: "#F2E9FF", star2: "#9A8CC4",
+    city: "#0D0819", city2: "#1A1030", win: "#FFC247",
+    ground: "#241736", ground2: "#160E28", grass: "#2E1D47",
+    wood: "#8A5A34", wood2: "#5E3B21", band: "#C4536B",
+    skin: "#F6C9A8", head: "#FF4D6D", eye: "#2B1B3D",
+    body: "#3FE0C8", arm: "#2BB9A6", leg: "#6C5CA8", shoe: "#F2E9FF",
+    bossD: "#5E2340", bossM: "#8C3358", bossL: "#FF4D6D",
+    bossEye: "#FFC247", tooth: "#F2E9FF", outline: "#05030C",
+    amber: "#FFC247", cyan: "#3FE0C8", muted: "#9A8CC4", line: "#3B2C63"
+  };
+
+  var RUNNER = [
+    "..HHH...",
+    ".HSSSS..",
+    ".SSSSK..",
+    "..SSSS..",
+    "..BBB...",
+    ".BBBBB..",
+    "ABBBBB..",
+    "..L.L...",
+    "..L.L...",
+    ".WW.WW.."
+  ];
+  var RMAP = { H: C.head, S: C.skin, K: C.eye, B: C.body, A: C.arm, L: C.leg, W: C.shoe };
+
+  function sprite(ctx, rows, map, ox, oy, flipScale) {
+    var s = flipScale || 1;
+    for (var y = 0; y < rows.length; y++) {
+      for (var x = 0; x < rows[y].length; x++) {
+        var ch = rows[y][x];
+        if (ch === "." || !map[ch]) continue;
+        ctx.fillStyle = map[ch];
+        ctx.fillRect(ox + x * s, oy + y * s, s, s);
+      }
+    }
+  }
+  function px(ctx, x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x | 0, y | 0, w | 0, h | 0); }
+
+  /* deterministic pseudo-random so the sky never re-shuffles */
+  function rnd(seed) { var t = Math.sin(seed * 127.1) * 43758.5453; return t - Math.floor(t); }
+
+  /* ---------------- scene 1 ---------------- */
+  var cv = document.getElementById("scene");
+  var ctx = cv.getContext("2d");
+  var W = 80, H = 120, GROUND = 96;
+
+  /* --- world layout (boss on the left, you get pulled to the right) --- */
+  var KM = 13;                 /* world px per kilometre  → 15km = 195px ≈ 2.4 화면 */
+  var SLING_X = 54;            /* character rest position (world x) */
+  var BOSS_X = 4, BOSS_Y = 44;
+  var IMPACT = { x: 26, y: 52 };
+
+  var state = {
+    dist: 5.2,
+    streak: true,
+    back: false,
+    hp: 16320,
+    hpMax: 24000,
+    flying: false,
+    t: 0,
+    shake: 0,
+    camX: 0,
+    proj: null
+  };
+
+  function pullPx() { return Math.max(0.6, state.dist) * KM; }
+  function charX()  { return SLING_X + pullPx(); }
+  function charY()  { return 72 + Math.min(6, pullPx() * 0.05); }
+  function maxCam() { return 15 * KM; }
+  function camTarget() {
+    var base = state.flying && state.proj ? state.proj.x - 34 : charX() - 54;
+    return Math.max(0, Math.min(maxCam(), base));
+  }
+  function damage() {
+    var base = Math.round(state.dist * 600);
+    var m = 1;
+    if (state.streak) m *= 1.3;
+    if (state.back) m *= 1.2;
+    return Math.round(base * m);
+  }
+
+  function bezier(t, a, b, c) {
+    var u = 1 - t;
+    return { x: u * u * a.x + 2 * u * t * b.x + t * t * c.x,
+             y: u * u * a.y + 2 * u * t * b.y + t * t * c.y };
+  }
+
+  function drawBoss(ctx, hurt) {
+    var bx = BOSS_X, by = BOSS_Y;
+    var main = hurt ? C.bossL : C.bossD;
+    var mid = hurt ? "#FFAABB" : C.bossM;
+
+    /* tail */
+    px(ctx, bx + 32, by + 40, 8, 4, main);
+    px(ctx, bx + 36, by + 36, 5, 4, main);
+    /* legs */
+    px(ctx, bx + 4, by + 42, 7, 10, main);
+    px(ctx, bx + 20, by + 42, 7, 10, main);
+    px(ctx, bx + 3, by + 50, 9, 3, C.outline);
+    px(ctx, bx + 19, by + 50, 9, 3, C.outline);
+    /* body */
+    px(ctx, bx + 2, by + 20, 28, 24, main);
+    px(ctx, bx + 7, by + 26, 17, 13, mid);
+    /* arms */
+    px(ctx, bx - 2, by + 24, 5, 13, main);
+    px(ctx, bx + 29, by + 24, 5, 13, main);
+    /* neck + head */
+    px(ctx, bx + 9, by + 12, 14, 9, main);
+    px(ctx, bx + 6, by + 2, 21, 13, main);
+    /* horns */
+    px(ctx, bx + 8, by - 2, 3, 5, main);
+    px(ctx, bx + 22, by - 2, 3, 5, main);
+    /* eyes */
+    px(ctx, bx + 9, by + 5, 4, 3, C.bossEye);
+    px(ctx, bx + 20, by + 5, 4, 3, C.bossEye);
+    px(ctx, bx + 10, by + 6, 2, 2, C.outline);
+    px(ctx, bx + 21, by + 6, 2, 2, C.outline);
+    /* jaw + teeth */
+    px(ctx, bx + 8, by + 11, 17, 3, C.outline);
+    for (var i = 0; i < 5; i++) px(ctx, bx + 9 + i * 4, by + 11, 2, 2, C.tooth);
+    /* dorsal plates */
+    for (var j = 0; j < 4; j++) px(ctx, bx + 27 - j, by + 20 + j * 5, 4, 3, C.bossL);
+  }
+
+  function drawScene() {
+    var cam = state.camX;
+    var sh = state.shake > 0 ? (rnd(state.t * 3.7 + cam) * 2 - 1) * state.shake : 0;
+
+    ctx.save();
+    ctx.translate(Math.round(sh), 0);
+    ctx.clearRect(-4, 0, W + 8, H);
+
+    /* --- sky: fixed bands, no parallax --- */
+    px(ctx, -4, 0, W + 8, 34, C.sky1);
+    px(ctx, -4, 34, W + 8, 22, C.sky2);
+    px(ctx, -4, 56, W + 8, 24, C.sky3);
+    for (var d = 0; d < W; d += 2) { px(ctx, d, 33, 1, 1, C.sky2); px(ctx, d + 1, 55, 1, 1, C.sky3); }
+
+    /* --- layer 1: stars, 0.15× --- */
+    var camS = cam * 0.15;
+    for (var s = 0; s < 90; s++) {
+      var sx = Math.round(rnd(s + 1) * 300 - camS);
+      if (sx < -1 || sx > W) continue;
+      px(ctx, sx, Math.floor(rnd(s + 40) * 44), 1, 1, s % 3 === 0 ? C.star : C.star2);
+    }
+    /* moon, 0.08× */
+    var mx = Math.round(62 - cam * 0.08);
+    px(ctx, mx, 8, 8, 8, C.star); px(ctx, mx - 2, 10, 2, 4, C.star); px(ctx, mx + 2, 6, 4, 2, C.star);
+    px(ctx, mx + 4, 9, 3, 3, C.sky1);
+
+    /* --- layer 2: far city, 0.45× --- */
+    var camC = cam * 0.45;
+    for (var b = 0; b < 44; b++) {
+      var bxx = Math.round(b * 7 - 2 - camC);
+      if (bxx < -8 || bxx > W) continue;
+      var bh = 8 + Math.floor(rnd(b + 7) * 16);
+      px(ctx, bxx, 96 - bh, 6, bh, C.city2);
+      for (var wy = 96 - bh + 2; wy < 94; wy += 4)
+        if (rnd(b * 9 + wy) > 0.55) px(ctx, bxx + 2, wy, 2, 2, C.win);
+    }
+
+    /* --- layer 3: world, 1× --- */
+    ctx.save();
+    ctx.translate(-Math.round(cam), 0);
+
+    drawBoss(ctx, state.shake > 0);
+
+    /* ground spans the whole world */
+    px(ctx, cam - 4, GROUND, W + 8, H - GROUND, C.ground);
+    px(ctx, cam - 4, GROUND, W + 8, 2, C.grass);
+    var g0 = Math.floor((cam - 4) / 3) * 3;
+    for (var g = g0; g < cam + W + 4; g += 3)
+      px(ctx, g, GROUND + 4 + (g % 6 ? 0 : 3), 2, 2, C.ground2);
+
+    /* kilometre posts — this is what makes the pull read as distance */
+    for (var k = 1; k <= 15; k++) {
+      var kx = SLING_X + k * KM;
+      if (kx < cam - 4 || kx > cam + W + 4) continue;
+      var tall = k % 5 === 0;
+      var reached = k <= state.dist;
+      var col = reached ? C.amber : C.line;
+      px(ctx, kx, GROUND - (tall ? 13 : 8), 1, tall ? 13 : 8, col);
+      px(ctx, kx + 1, GROUND - (tall ? 13 : 8), tall ? 4 : 3, tall ? 4 : 3, col);
+      if (tall) for (var n = 0; n < k / 5; n++) px(ctx, kx - 2 - n * 2, GROUND - 2, 1, 2, col);
+    }
+
+    /* slingshot */
+    px(ctx, SLING_X + 2, 84, 4, 12, C.wood2);
+    px(ctx, SLING_X - 4, 66, 3, 20, C.wood);
+    px(ctx, SLING_X + 9, 66, 3, 20, C.wood);
+    px(ctx, SLING_X - 4, 84, 16, 3, C.wood2);
+
+    var cxw = charX() + 4, cyw = charY() + 5;
+    var pt = state.flying && state.proj ? state.proj : { x: cxw, y: cyw };
+
+    /* bands stretch from the prongs to wherever you are now */
+    if (!state.flying) {
+      ctx.strokeStyle = C.band; ctx.lineWidth = 1.6; ctx.lineCap = "butt";
+      ctx.beginPath(); ctx.moveTo(SLING_X - 2.5, 67); ctx.lineTo(cxw, cyw); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(SLING_X + 10.5, 67); ctx.lineTo(cxw, cyw); ctx.stroke();
+    } else {
+      ctx.strokeStyle = C.band; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(SLING_X - 2.5, 67); ctx.lineTo(SLING_X + 4, 70); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(SLING_X + 10.5, 67); ctx.lineTo(SLING_X + 4, 70); ctx.stroke();
+    }
+
+    /* trajectory arc back toward the boss */
+    var from = { x: cxw, y: cyw };
+    var ctrl = { x: (cxw + IMPACT.x) / 2, y: 4 };
+    for (var t = 0.05; t < 0.99; t += 0.02) {
+      var p = bezier(t, from, ctrl, IMPACT);
+      if (p.x < cam - 2 || p.x > cam + W + 2) continue;
+      px(ctx, Math.round(p.x), Math.round(p.y), 1, 1, C.amber);
+    }
+
+    if (!state.flying) {
+      sprite(ctx, RUNNER, RMAP, Math.round(charX()), Math.round(charY()), 1);
+    } else {
+      var tr = bezier(Math.min(1, state.t + 0.06), from, ctrl, IMPACT);
+      px(ctx, Math.round(tr.x), Math.round(tr.y), 2, 2, C.amber);
+      px(ctx, Math.round(pt.x) - 1, Math.round(pt.y) - 1, 3, 3, C.cyan);
+      px(ctx, Math.round(pt.x), Math.round(pt.y), 1, 1, C.star);
+    }
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  /* ---------------- UI wiring ---------------- */
+  var dist = document.getElementById("dist"),
+      dnum = document.getElementById("dnum"),
+      dmgEl = document.getElementById("dmg"),
+      formula = document.getElementById("formula"),
+      bStreak = document.getElementById("bStreak"),
+      bBack = document.getElementById("bBack"),
+      fire = document.getElementById("fire"),
+      pop = document.getElementById("pop"),
+      hpfill = document.getElementById("hpfill"),
+      hpnow = document.getElementById("hpnow"),
+      pullmark = document.getElementById("pullmark"),
+      offscreen = document.getElementById("offscreen");
+
+  function fmt(n) { return n.toLocaleString("en-US"); }
+
+  function syncOverlay() {
+    /* pull marker rides with the character */
+    var screenX = (state.flying && state.proj ? state.proj.x : charX() + 4) - state.camX;
+    pullmark.style.left = (screenX / W * 100) + "%";
+    pullmark.style.top = ((charY() - 12) / H * 100) + "%";
+    pullmark.style.display = state.flying ? "none" : "block";
+    pullmark.textContent = state.dist.toFixed(1) + "km 당김";
+
+    /* boss off to the left? tell the player how far back it is */
+    var bossOff = IMPACT.x - state.camX < 4;
+    offscreen.classList.toggle("on", bossOff);
+    offscreen.textContent = "◀ 고자리온 " + ((state.camX + 4 - IMPACT.x) / KM).toFixed(1) + "km";
+  }
+
+  function syncUI() {
+    dnum.textContent = state.dist.toFixed(1);
+    var base = Math.round(state.dist * 600);
+    dmgEl.textContent = fmt(damage());
+    var parts = "기본 <b>" + state.dist.toFixed(1) + "km × 600</b> = " + fmt(base);
+    if (state.streak) parts += "<br>꾸준함 6일 <em>×1.3</em>";
+    if (state.back) parts += "<br>복귀 <em>×1.2</em>";
+    parts += "<br>배수는 자리표시자 — 실제 비중 <em>[미결]</em>";
+    formula.innerHTML = parts;
+    hpfill.style.width = (state.hp / state.hpMax * 100) + "%";
+    hpnow.textContent = fmt(state.hp);
+  }
+
+  /* camera easing loop — the background scrolls as you pull */
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function tick() {
+    var target = camTarget();
+    if (reduce) state.camX = target;
+    else state.camX += (target - state.camX) * 0.16;
+    if (Math.abs(target - state.camX) < 0.05) state.camX = target;
+    drawScene();
+    syncOverlay();
+    requestAnimationFrame(tick);
+  }
+
+  dist.addEventListener("input", function () {
+    state.dist = parseInt(dist.value, 10) / 10;
+    syncUI();
+  });
+  function toggle(btn, key) {
+    btn.addEventListener("click", function () {
+      state[key] = !state[key];
+      btn.setAttribute("aria-pressed", String(state[key]));
+      syncUI();
+    });
+  }
+  toggle(bStreak, "streak");
+  toggle(bBack, "back");
+
+  function land() {
+    var dealt = Math.min(state.hp, damage());
+    state.hp -= dealt;
+    state.flying = false;
+    state.proj = null;
+    pop.textContent = "-" + fmt(dealt);
+    pop.classList.remove("go");
+    void pop.offsetWidth;
+    pop.classList.add("go");
+    state.shake = reduce ? 0 : 2.5;
+    syncUI();
+    if (!reduce) {
+      var decay = setInterval(function () {
+        state.shake -= 0.4;
+        if (state.shake <= 0) { state.shake = 0; clearInterval(decay); }
+      }, 55);
+    }
+    setTimeout(function () {
+      fire.disabled = false;
+      fire.textContent = state.hp <= 0 ? "스테이지 08 →" : "발사";
+    }, 750);
+  }
+
+  fire.addEventListener("click", function () {
+    if (state.flying) return;
+    if (state.hp <= 0) {                       /* reset so the demo can be replayed */
+      state.hp = state.hpMax; fire.textContent = "발사"; syncUI(); return;
+    }
+    fire.disabled = true;
+    if (reduce) { land(); return; }
+
+    /* fly back left across everything you just pulled through */
+    var from = { x: charX() + 4, y: charY() + 5 };
+    var ctrl = { x: (from.x + IMPACT.x) / 2, y: 4 };
+    var dur = 620 + pullPx() * 5.5;            /* longer pull = longer flight */
+    var t0 = performance.now();
+    state.flying = true;
+    state.proj = { x: from.x, y: from.y };
+
+    (function step(now) {
+      var t = Math.min(1, (now - t0) / dur);
+      state.t = t;
+      state.proj = bezier(t, from, ctrl, IMPACT);
+      if (t >= 1) { land(); return; }
+      requestAnimationFrame(step);
+    })(t0);
+  });
+
+  syncUI();
+  state.camX = camTarget();
+  requestAnimationFrame(tick);
+
+  /* ---------------- scene 2: stage map ---------------- */
+  (function () {
+    var m = document.getElementById("map").getContext("2d");
+    px(m, 0, 0, 80, 76, C.sky1);
+    for (var s = 0; s < 18; s++)
+      px(m, Math.floor(rnd(s + 3) * 80), Math.floor(rnd(s + 22) * 76), 1, 1, C.star2);
+
+    var nodes = [
+      [10, 62], [24, 58], [34, 48], [22, 38], [36, 30], [52, 34], [62, 24], [50, 14]
+    ];
+    /* path */
+    for (var i = 0; i < nodes.length - 1; i++) {
+      var a = nodes[i], b = nodes[i + 1];
+      var steps = 22;
+      for (var k = 0; k <= steps; k++) {
+        var x = Math.round(a[0] + (b[0] - a[0]) * k / steps);
+        var y = Math.round(a[1] + (b[1] - a[1]) * k / steps);
+        px(m, x, y, 1, 1, i < 6 ? C.line : "#2A2040");
+      }
+    }
+    /* nodes */
+    nodes.forEach(function (n, i) {
+      var cleared = i < 6, current = i === 6;
+      px(m, n[0] - 3, n[1] - 3, 6, 6, C.outline);
+      px(m, n[0] - 2, n[1] - 2, 4, 4, cleared ? C.cyan : current ? C.amber : "#2A2040");
+      if (current) {
+        px(m, n[0] - 4, n[1] - 4, 8, 1, C.amber);
+        px(m, n[0] - 4, n[1] + 3, 8, 1, C.amber);
+      }
+    });
+    /* boss silhouette near current node */
+    px(m, 58, 14, 10, 8, C.bossD);
+    px(m, 60, 10, 6, 5, C.bossD);
+    px(m, 61, 11, 1, 2, C.bossEye);
+    px(m, 64, 11, 1, 2, C.bossEye);
+    px(m, 57, 22, 12, 2, C.outline);
+  })();
+
+  /* ---------------- scene 3: evolution + route ---------------- */
+  (function () {
+    var e = document.getElementById("evo").getContext("2d");
+    px(e, 0, 0, 80, 52, C.sky2);
+    px(e, 0, 42, 80, 10, C.ground);
+    px(e, 0, 42, 80, 1, C.grass);
+
+    /* stage 1 — plain */
+    sprite(e, RUNNER, RMAP, 7, 30, 1);
+    /* stage 2 — current, bigger with amber cape */
+    var evo2 = JSON.parse(JSON.stringify(RUNNER));
+    var M2 = Object.assign({}, RMAP, { B: C.amber, A: "#C4903A" });
+    sprite(e, evo2, M2, 32, 22, 2);
+    px(e, 30, 30, 3, 12, C.head);
+    /* stage 3 — locked silhouette */
+    var LOCK = {}; "HSKBALW".split("").forEach(function (c) { LOCK[c] = "#2A2040"; });
+    sprite(e, RUNNER, LOCK, 63, 30, 1);
+    px(e, 65, 24, 5, 5, C.line);
+    px(e, 66, 26, 3, 3, C.sky2);
+
+    var r = document.getElementById("route").getContext("2d");
+    px(r, 0, 0, 80, 34, "#150E28");
+    for (var gx = 0; gx < 80; gx += 8) px(r, gx, 0, 1, 34, "#1D1435");
+    for (var gy = 0; gy < 34; gy += 8) px(r, 0, gy, 80, 1, "#1D1435");
+    var route = [[8,26],[14,20],[22,18],[30,22],[38,16],[46,8],[56,10],[64,18],[58,26],[46,28],[34,27],[22,29],[10,28]];
+    for (var i = 0; i < route.length - 1; i++) {
+      var a = route[i], b = route[i + 1], steps = 18;
+      for (var k = 0; k <= steps; k++)
+        px(r, Math.round(a[0] + (b[0]-a[0]) * k/steps), Math.round(a[1] + (b[1]-a[1]) * k/steps), 1, 1, C.cyan);
+    }
+    px(r, route[0][0] - 1, route[0][1] - 1, 3, 3, C.amber);
+    px(r, route[route.length-1][0] - 1, route[route.length-1][1] - 1, 3, 3, C.head);
+  })();
+
+})();
+</script>
