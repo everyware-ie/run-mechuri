@@ -1,4 +1,4 @@
-<title>경로 보정 수준 비교 — 어디까지 다듬을 것인가</title>
+<title>경로 보정 수준 비교: 어디까지 다듬을 것인가</title>
 
 <style>
   :root {
@@ -94,13 +94,13 @@
 
   <header>
     <div class="eyebrow">
-      <span>raw / running / <b>phs00</b></span><span class="sep">—</span>
-      <span>2026-08-16</span><span class="sep">—</span><span>판단 재료 · 결정 아님</span>
+      <span>raw / running / <b>phs00</b></span><span class="sep">·</span>
+      <span>2026-08-17</span><span class="sep">·</span><span>판단 재료, 결정 아님</span>
     </div>
     <h1>경로를 어디까지 다듬을 것인가</h1>
     <p class="lede">
       실제 러닝 트랙은 도로를 따라가서 각지고, 되돌아가고, 신호 대기에서 점이 뭉친다.
-      <strong>예쁘게 다듬을수록 "내가 뛴 길"에서 멀어진다</strong> — 그 교환을 눈과 숫자로 동시에 보려고 만들었다.
+      <strong>예쁘게 다듬을수록 "내가 뛴 길"에서 멀어진다</strong>. 그 교환을 눈과 숫자로 동시에 보려고 만들었다.
       세 패널은 <strong>같은 트랙, 같은 축척</strong>이고 보정 수준만 다르다.
     </p>
   </header>
@@ -127,7 +127,7 @@
     </div>
     <div class="grp">
       <span class="plabel">실제로 뛴 거리</span>
-      <div class="truth"><span id="truth">—</span><small>합성 좌표라 정답을 안다</small></div>
+      <div class="truth"><span id="truth">-</span><small>합성 좌표라 정답을 안다</small></div>
     </div>
   </div>
 
@@ -136,14 +136,14 @@
       <span class="plabel">③ 직선 다듬기</span>
       <div class="dial">
         <input type="range" id="sSmooth" min="0" max="100" value="55" aria-label="직선 구간 다듬기 강도">
-        <span class="val" id="vSmooth">—</span>
+        <span class="val" id="vSmooth">-</span>
       </div>
     </div>
     <div class="grp">
       <span class="plabel">③ 코너 반경</span>
       <div class="dial">
         <input type="range" id="sCorner" min="0" max="90" value="22" aria-label="코너 라운딩 반경(미터)">
-        <span class="val" id="vCorner">—</span>
+        <span class="val" id="vCorner">-</span>
       </div>
     </div>
     <div class="grp">
@@ -151,7 +151,7 @@
       <div class="btns"><button class="tg" id="tSep" aria-pressed="false">벌려서 두 줄로</button></div>
     </div>
     <div class="grp" style="flex:1; min-width:300px">
-      <span class="plabel">이 설정 링크 — 셋이 같은 화면을 보려면</span>
+      <span class="plabel">이 설정 링크 (셋이 같은 화면을 보려면)</span>
       <div class="dial">
         <input type="text" id="share" class="shareIn" readonly aria-label="현재 설정 링크">
         <button class="tg" id="copy" style="white-space:nowrap">복사</button>
@@ -182,14 +182,14 @@
     <div class="note">
       <h3>왕복 코스를 꼭 보라</h3>
       <p>
-        <strong>강변 왕복</strong>에서 원본은 갔던 선 위를 그대로 되돌아와 한 줄로 뭉친다 — 왕복이라는 사실 자체가 안 읽힌다.
+        <strong>강변 왕복</strong>에서 원본은 갔던 선 위를 그대로 되돌아와 한 줄로 뭉친다. 왕복이라는 사실 자체가 안 읽힌다.
         <strong>겹친 구간 벌려서 두 줄로</strong>를 켜 보라. 읽히게 되지만 <strong>그 두 줄은 사실이 아니다.</strong>
         다른 조작은 정도의 문제인데 이건 성격이 다르므로 따로 켜고 끄게 뒀다.
       </p>
     </div>
   </div>
 
-  <div class="foot">phs00 · 2026-08-16 · 1주차 기획 트랙 — "예쁘다"의 기준 잡기 재료</div>
+  <div class="foot">phs00 · 2026-08-17 · 1주차 기획 트랙: "예쁘다"의 기준 잡기 재료</div>
 </div>
 
 <script>
@@ -238,7 +238,7 @@
 
   /* ─────────── 코스 생성 (미터 단위) ─────────── */
   function courseCity(rnd) {
-    /* 200m 블록 격자를 따라 도는 4.4km — 직각 코너, 원점 부근 복귀 */
+    /* 200m 블록 격자를 따라 도는 4.4km (직각 코너, 원점 부근 복귀) */
     var moves = [[1,0,600],[0,1,400],[1,0,400],[0,1,600],[-1,0,800],[0,-1,300],[-1,0,400],[0,-1,700],[1,0,200]];
     var wp = [{ x: 0, y: 0 }], cur = { x: 0, y: 0 };
     moves.forEach(function (m) {
@@ -259,7 +259,7 @@
     return out.concat(back);
   }
   function coursePark(rnd) {
-    /* 공원 순환로 — 불규칙한 폐곡선 */
+    /* 공원 순환로: 불규칙한 폐곡선 */
     var ph = rnd() * 6, wp = [], N = 11;
     for (var i = 0; i < N; i++) {
       var a = i / N * Math.PI * 2;
@@ -282,7 +282,7 @@
     return out;
   }
   function addNoise(pts, sigma, rnd) {
-    /* 자기상관 있는 GPS 오차 — 점마다 독립이 아니라 서서히 흔들린다 */
+    /* 자기상관 있는 GPS 오차: 점마다 독립이 아니라 서서히 흔들린다 */
     var ex = 0, ey = 0;
     return pts.map(function (p) {
       ex = ex * 0.86 + gauss(rnd) * sigma * 0.52;
@@ -291,7 +291,7 @@
     });
   }
   function addDwell(pts, count, rnd) {
-    /* 신호 대기 — 같은 자리에서 점이 뭉친다 */
+    /* 신호 대기: 같은 자리에서 점이 뭉친다 */
     if (count <= 0) return pts;
     var idx = [];
     for (var i = 0; i < count; i++) idx.push(Math.floor(rnd() * (pts.length - 20)) + 10);
@@ -368,7 +368,7 @@
     return out;
   }
   function separateOverlap(pts, radius, offset) {
-    /* 왕복 구간처럼 선이 겹치는 곳을 수직으로 벌린다 — 읽히게 하되 사실과 멀어지는 조작 */
+    /* 왕복 구간처럼 선이 겹치는 곳을 수직으로 벌린다. 읽히게 하되 사실과 멀어지는 조작 */
     var gap = Math.max(8, Math.round(pts.length * 0.12)), out = pts.slice();
     for (var i = 0; i < pts.length; i++) {
       var best = Infinity, bestJ = -1;
@@ -380,7 +380,7 @@
       if (best < radius && bestJ >= 0) {
         var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
         var dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
-        /* 수직 벡터는 진행 방향을 따라 이미 뒤집힌다 — 갈 때와 올 때가 반대편으로 밀린다.
+        /* 수직 벡터는 진행 방향을 따라 이미 뒤집힌다. 갈 때와 올 때가 반대편으로 밀린다.
            여기에 부호를 한 번 더 곱하면 서로 상쇄돼 통째로 이동만 하고 벌어지지 않는다 */
         var fade = 1 - best / radius;
         out[i] = { x: pts[i].x + (-dy / L) * offset * fade, y: pts[i].y + (dx / L) * offset * fade };
@@ -402,7 +402,7 @@
       build: function (raw) { return rdp(smooth(dedupe(raw, 4), 5), 4); }
     },
     {
-      id: "heavy", name: "양식화 — 조절",
+      id: "heavy", name: "양식화 (조절)",
       how: "직선 다듬기와 코너 반경이 서로 독립이다. 직선을 아무리 길게 펴도 코너는 지정한 반경만큼만 깎인다.",
       build: function (raw, o) {
         var win = 3 + Math.round(o.smooth / 100 * 12) * 2;      /* 3 ~ 27, 홀수 */
@@ -451,11 +451,11 @@
             "&cn=" + state.corner + "&sep=" + (state.separate ? 1 : 0) +
             "&g=" + (state.ghost ? 1 : 0) + "&fx=" + (state.fx ? 1 : 0);
     try { history.replaceState(null, "", "#" + h); }
-    catch (e) { try { location.hash = h; } catch (e2) { /* data: URL 등 — 아래 표시로 대체 */ } }
+    catch (e) { try { location.hash = h; } catch (e2) { /* data: URL 등, 아래 표시로 대체 */ } }
     var el = document.getElementById("share");
     if (!el) return;
     var base = location.href.split("#")[0];
-    /* data: URL로 열린 경우 주소가 파일 전체라 링크가 무의미하다 — 해시만 보여준다 */
+    /* data: URL로 열린 경우 주소가 파일 전체라 링크가 무의미하다. 해시만 보여준다 */
     el.value = (location.protocol === "data:" || base.length > 300) ? "#" + h : base + "#" + h;
   }
 
@@ -544,7 +544,7 @@
       return;
     }
 
-    /* 연출 얹기 — 기준 목업의 "불빛 러너"와 같은 팔레트 */
+    /* 연출 얹기: 기준 목업의 "불빛 러너"와 같은 팔레트 */
     ctx.save();
     trace(ctx, item.pts, W, H);
     ctx.strokeStyle = "rgba(255,255,255,.20)"; ctx.lineWidth = 2.4; ctx.stroke();
@@ -613,7 +613,7 @@
         (dkm >= 0 ? '+' : '') + dkm.toFixed(2) + ' km</span> · 좌표 ' + item.n + '점</div>';
       if (item.level.id === "raw") {
         el.innerHTML =
-          '<div><span class="k">이탈의 기준선</span> — 아래 두 패널은 이 선에서 잰 값</div>' + lenLine;
+          '<div><span class="k">이탈의 기준선</span>, 아래 두 패널은 이 선에서 잰 값</div>' + lenLine;
       } else {
         el.innerHTML =
           '<div>원본 대비 평균 이탈 <span class="k hot">' + item.avgDev.toFixed(1) + ' m</span>' +
