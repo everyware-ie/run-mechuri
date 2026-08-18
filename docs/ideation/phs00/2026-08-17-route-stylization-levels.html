@@ -1,0 +1,692 @@
+<title>경로 보정 수준 비교: 어디까지 다듬을 것인가</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#F4F2EE; --bg2:#E8E5DF; --fg:#17202B; --fg-mute:#5D6874;
+    --rule:#D6D2CA; --card:#FBFAF8; --accent:#E0522F; --accent2:#1D6E63;
+    --warn:#8A5A1E;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#10151B; --bg2:#171E26; --fg:#E9EDF2; --fg-mute:#93A0AE;
+            --rule:#26303B; --card:#161D25; --accent:#FF7A57; --accent2:#4FBFAE; --warn:#D6A45E; }
+  }
+  body { background:var(--bg); color:var(--fg); font-family:var(--sans); line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding:clamp(26px,5vw,60px) clamp(18px,4vw,40px) 72px;
+          display:flex; flex-direction:column; gap:clamp(24px,4vw,38px); }
+
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+             color:var(--fg-mute); display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+  .eyebrow b { color:var(--accent); font-weight:700; }
+  .eyebrow .sep { opacity:.4; }
+  h1 { font-size:clamp(24px,3.6vw,36px); font-weight:800; letter-spacing:-.03em; line-height:1.18;
+       margin:8px 0 10px; text-wrap:balance; }
+  .lede { max-width:66ch; color:var(--fg-mute); font-size:clamp(14px,1.5vw,16px); margin:0; }
+
+  .caution { background:var(--card); border:1px solid var(--rule); border-left:3px solid var(--warn);
+             padding:13px 15px; font-size:13.5px; color:var(--fg-mute); }
+  .caution b { color:var(--fg); }
+
+  /* controls */
+  .bar { display:flex; flex-wrap:wrap; gap:22px; align-items:flex-end;
+         border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); padding:16px 0; }
+  .grp { display:flex; flex-direction:column; gap:8px; }
+  .plabel { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-mute); }
+  .btns { display:flex; gap:7px; flex-wrap:wrap; }
+  .tg { font-family:var(--sans); font-size:13px; border:1px solid var(--rule); background:var(--card);
+        color:var(--fg-mute); padding:8px 13px; cursor:pointer; line-height:1.3; }
+  .tg b { display:block; font-size:13px; font-weight:650; color:var(--fg); }
+  .tg small { font-size:11px; opacity:.85; }
+  .tg[aria-pressed="true"] { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--card)); }
+  .tg[aria-pressed="true"] b { color:var(--accent); }
+  .tg:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; }
+  .dial { display:flex; align-items:center; gap:10px; }
+  .dial input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; height:22px;
+                            width:150px; cursor:pointer; }
+  .dial input[type=range]::-webkit-slider-runnable-track { height:3px; background:var(--rule); }
+  .dial input[type=range]::-moz-range-track { height:3px; background:var(--rule); }
+  .dial input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:13px; height:13px;
+                            border-radius:50%; background:var(--accent); margin-top:-5px; }
+  .dial input[type=range]::-moz-range-thumb { width:13px; height:13px; border:0; border-radius:50%; background:var(--accent); }
+  .dial input[type=range]:focus-visible { outline:2px solid var(--accent2); outline-offset:3px; }
+  .dial .val { font-family:var(--mono); font-size:11.5px; color:var(--fg); font-variant-numeric:tabular-nums;
+               min-width:52px; }
+  .shareIn { flex:1; min-width:200px; font-family:var(--mono); font-size:11.5px; color:var(--fg);
+             background:var(--card); border:1px solid var(--rule); padding:8px 10px; }
+  .shareIn:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; }
+  .truth { font-family:var(--mono); font-size:19px; font-weight:600; color:var(--accent2);
+           font-variant-numeric:tabular-nums; line-height:1.25; padding:4px 0; }
+  .truth small { display:block; font-size:10px; font-weight:400; color:var(--fg-mute); letter-spacing:.02em; }
+
+  /* panels */
+  .panels { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:clamp(14px,2.2vw,26px); }
+  @media (max-width:880px) { .panels { grid-template-columns:1fr; max-width:380px; margin:0 auto; } }
+
+  .pan { display:flex; flex-direction:column; gap:11px; }
+  .frame { position:relative; width:100%; aspect-ratio:3/4; border-radius:16px; overflow:hidden;
+           background:#0A0E13; box-shadow:0 14px 32px -18px rgba(10,14,19,.6), 0 0 0 1px var(--rule); }
+  .frame canvas { display:block; width:100%; height:100%; }
+  .tag { position:absolute; top:9px; left:10px; font-family:var(--mono); font-size:9px; letter-spacing:.12em;
+         text-transform:uppercase; color:rgba(255,255,255,.62); background:rgba(0,0,0,.34);
+         padding:3px 7px; border-radius:3px; }
+
+  .pan h2 { font-size:15px; font-weight:700; letter-spacing:-.01em; margin:0; }
+  .pan .how { font-size:12.5px; color:var(--fg-mute); margin:0; }
+  .metrics { font-family:var(--mono); font-size:11.5px; color:var(--fg-mute); display:flex; flex-direction:column; gap:3px;
+             border-top:1px solid var(--rule); padding-top:9px; font-variant-numeric:tabular-nums; }
+  .metrics .k { color:var(--fg); font-weight:600; }
+  .metrics .hot { color:var(--accent); }
+
+  .notes { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:20px;
+           border-top:1px solid var(--rule); padding-top:clamp(20px,3vw,32px); }
+  .note h3 { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+             color:var(--fg-mute); margin:0 0 9px; font-weight:700; }
+  .note ul { margin:0; padding-left:17px; font-size:13.5px; color:var(--fg-mute); display:flex; flex-direction:column; gap:7px; }
+  .note p { margin:0; font-size:13.5px; color:var(--fg-mute); }
+  .note strong { color:var(--fg); font-weight:650; }
+  .foot { font-family:var(--mono); font-size:11px; color:var(--fg-mute); border-top:1px solid var(--rule);
+          padding-top:16px; letter-spacing:.03em; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span>raw / running / <b>phs00</b></span><span class="sep">·</span>
+      <span>2026-08-17</span><span class="sep">·</span><span>판단 재료, 결정 아님</span>
+    </div>
+    <h1>경로를 어디까지 다듬을 것인가</h1>
+    <p class="lede">
+      실제 러닝 트랙은 도로를 따라가서 각지고, 되돌아가고, 신호 대기에서 점이 뭉친다.
+      <strong>예쁘게 다듬을수록 "내가 뛴 길"에서 멀어진다</strong>. 그 교환을 눈과 숫자로 동시에 보려고 만들었다.
+      세 패널은 <strong>같은 트랙, 같은 축척</strong>이고 보정 수준만 다르다.
+    </p>
+  </header>
+
+  <div class="caution">
+    <b>이 트랙은 합성 좌표다.</b> 실제 GPX가 아직 없어서 도로 격자·왕복·신호 대기 뭉침을 흉내 낸 좌표를 생성했다.
+    따라서 여기서 판단할 수 있는 것은 <b>보정 수준 사이의 상대적 차이</b>뿐이고,
+    "실제로 예쁜가"는 JiEung2가 확보할 실제 GPX 샘플로 다시 봐야 한다.
+    기준 목업이 예뻐 보이는 이유의 일부도 그쪽 좌표가 사인파를 겹친 매끄러운 원이라는 데 있다.
+  </div>
+
+  <div class="bar">
+    <div class="grp">
+      <span class="plabel">코스 종류</span>
+      <div class="btns" id="courses"></div>
+    </div>
+    <div class="grp">
+      <span class="plabel">보기</span>
+      <div class="btns">
+        <button class="tg" id="tGhost" aria-pressed="true">원본 겹쳐보기</button>
+        <button class="tg" id="tFx" aria-pressed="false">연출 얹기</button>
+        <button class="tg" id="tSeed">다른 샘플 뽑기</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">실제로 뛴 거리</span>
+      <div class="truth"><span id="truth">-</span><small>합성 좌표라 정답을 안다</small></div>
+    </div>
+  </div>
+
+  <div class="bar" style="border-top:0; padding-top:0">
+    <div class="grp">
+      <span class="plabel">③ 직선 다듬기</span>
+      <div class="dial">
+        <input type="range" id="sSmooth" min="0" max="100" value="55" aria-label="직선 구간 다듬기 강도">
+        <span class="val" id="vSmooth">-</span>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">③ 코너 반경</span>
+      <div class="dial">
+        <input type="range" id="sCorner" min="0" max="90" value="22" aria-label="코너 라운딩 반경(미터)">
+        <span class="val" id="vCorner">-</span>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">③ 겹친 구간</span>
+      <div class="btns"><button class="tg" id="tSep" aria-pressed="false">벌려서 두 줄로</button></div>
+    </div>
+    <div class="grp" style="flex:1; min-width:300px">
+      <span class="plabel">이 설정 링크 (셋이 같은 화면을 보려면)</span>
+      <div class="dial">
+        <input type="text" id="share" class="shareIn" readonly aria-label="현재 설정 링크">
+        <button class="tg" id="copy" style="white-space:nowrap">복사</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panels" id="panels"></div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>이 비교가 답하는 것</h3>
+      <ul>
+        <li><strong>직선 다듬기와 코너 반경이 분리돼 있다.</strong> 직선은 시원하게 펴면서 코너는 실제 길모퉁이만큼만 깎는 지점을 손으로 찾을 수 있다. (코너 반경을 인접 직선 길이에 비례시키면 이 둘이 한 손잡이에 묶여, 직선을 펼수록 코너가 뭉개진다)</li>
+        <li>다듬을수록 <strong>원본에서 몇 m 멀어지는지</strong>가 숫자로 나온다.</li>
+        <li><strong>선 길이는 정직한 지표가 아니다.</strong> 원본은 GPS 노이즈 때문에 실제보다 길게 나오고, 가벼운 정리는 오히려 실제에 가까워진다. 과하게 다듬으면 코너를 잘라먹어 다시 짧아진다. 세 패널의 "실제 코스 대비" 값을 비교해 보라. (화면에 표시할 거리 숫자는 선 길이가 아니라 기록된 거리를 쓰면 되므로, 이건 <em>그림</em>의 문제다)</li>
+        <li><strong>연출 얹기</strong>를 켜면, 보정 없이 연출만으로 어디까지 커버되는지 따로 볼 수 있다.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>이 비교가 답하지 못하는 것</h3>
+      <ul>
+        <li>절대적인 "예쁨". 합성 좌표이므로 <strong>실제 GPX로 다시 봐야 한다.</strong></li>
+        <li>영상 위에 얹혔을 때의 인상. 여기 배경은 중립 색이다.</li>
+        <li>인스타 재압축 후에도 살아남는지. 별도 실측 항목이다.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>왕복 코스를 꼭 보라</h3>
+      <p>
+        <strong>강변 왕복</strong>에서 원본은 갔던 선 위를 그대로 되돌아와 한 줄로 뭉친다. 왕복이라는 사실 자체가 안 읽힌다.
+        <strong>겹친 구간 벌려서 두 줄로</strong>를 켜 보라. 읽히게 되지만 <strong>그 두 줄은 사실이 아니다.</strong>
+        다른 조작은 정도의 문제인데 이건 성격이 다르므로 따로 켜고 끄게 뒀다.
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">phs00 · 2026-08-17 · 1주차 기획 트랙: "예쁘다"의 기준 잡기 재료</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ─────────── 유틸 ─────────── */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function gauss(rnd) {
+    var u = 1 - rnd(), v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function pathLen(p) { var s = 0; for (var i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; }
+
+  function distToSeg(p, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    if (l2 === 0) return dist(p, a);
+    var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+  function bboxDiag(pts) {
+    var mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
+    pts.forEach(function (p) {
+      if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x;
+      if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y;
+    });
+    return Math.hypot(mxx - mnx, mxy - mny);
+  }
+  function distToPath(p, path) {
+    var m = Infinity;
+    for (var i = 1; i < path.length; i++) {
+      var d = distToSeg(p, path[i - 1], path[i]);
+      if (d < m) m = d;
+    }
+    return m;
+  }
+
+  /* ─────────── 코스 생성 (미터 단위) ─────────── */
+  function courseCity(rnd) {
+    /* 200m 블록 격자를 따라 도는 4.4km (직각 코너, 원점 부근 복귀) */
+    var moves = [[1,0,600],[0,1,400],[1,0,400],[0,1,600],[-1,0,800],[0,-1,300],[-1,0,400],[0,-1,700],[1,0,200]];
+    var wp = [{ x: 0, y: 0 }], cur = { x: 0, y: 0 };
+    moves.forEach(function (m) {
+      var len = m[2] * (0.85 + rnd() * 0.3);
+      cur = { x: cur.x + m[0] * len, y: cur.y + m[1] * len };
+      wp.push({ x: cur.x, y: cur.y });
+    });
+    return wp;
+  }
+  function courseRiver(rnd) {
+    /* 완만하게 휘는 강변길을 2.1km 나갔다가 같은 길로 복귀 */
+    var ph = rnd() * 3, out = [];
+    for (var i = 0; i <= 70; i++) {
+      var u = i / 70;
+      out.push({ x: u * 2100, y: Math.sin(u * 2.4 + ph) * 190 + Math.sin(u * 5.1) * 45 });
+    }
+    var back = out.slice(0, out.length - 1).reverse();
+    return out.concat(back);
+  }
+  function coursePark(rnd) {
+    /* 공원 순환로: 불규칙한 폐곡선 */
+    var ph = rnd() * 6, wp = [], N = 11;
+    for (var i = 0; i < N; i++) {
+      var a = i / N * Math.PI * 2;
+      var r = 400 * (1 + 0.26 * Math.sin(a * 2 + ph) + 0.13 * Math.cos(a * 3 - ph));
+      wp.push({ x: Math.cos(a) * r * 1.14, y: Math.sin(a) * r });
+    }
+    wp.push({ x: wp[0].x, y: wp[0].y });
+    return wp;
+  }
+
+  function samplePath(wp, spacing) {
+    var out = [wp[0]];
+    for (var i = 1; i < wp.length; i++) {
+      var a = wp[i - 1], b = wp[i], L = dist(a, b), n = Math.max(1, Math.round(L / spacing));
+      for (var k = 1; k <= n; k++) {
+        var t = k / n;
+        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
+    }
+    return out;
+  }
+  function addNoise(pts, sigma, rnd) {
+    /* 자기상관 있는 GPS 오차: 점마다 독립이 아니라 서서히 흔들린다 */
+    var ex = 0, ey = 0;
+    return pts.map(function (p) {
+      ex = ex * 0.86 + gauss(rnd) * sigma * 0.52;
+      ey = ey * 0.86 + gauss(rnd) * sigma * 0.52;
+      return { x: p.x + ex, y: p.y + ey };
+    });
+  }
+  function addDwell(pts, count, rnd) {
+    /* 신호 대기: 같은 자리에서 점이 뭉친다 */
+    if (count <= 0) return pts;
+    var idx = [];
+    for (var i = 0; i < count; i++) idx.push(Math.floor(rnd() * (pts.length - 20)) + 10);
+    idx.sort(function (a, b) { return b - a; });
+    var out = pts.slice();
+    idx.forEach(function (i) {
+      var base = out[i], blob = [], n = 9 + Math.floor(rnd() * 14);
+      for (var k = 0; k < n; k++) blob.push({ x: base.x + gauss(rnd) * 2.6, y: base.y + gauss(rnd) * 2.6 });
+      out.splice.apply(out, [i, 0].concat(blob));
+    });
+    return out;
+  }
+
+  /* ─────────── 보정 단계 ─────────── */
+  function dedupe(pts, minD) {
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length; i++) if (dist(out[out.length - 1], pts[i]) >= minD) out.push(pts[i]);
+    if (out.length < 2) out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function smooth(pts, w) {
+    if (pts.length < 3) return pts.slice();
+    var h = Math.floor(w / 2), out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var sx = 0, sy = 0, n = 0;
+      for (var k = i - h; k <= i + h; k++) {
+        if (k < 0 || k >= pts.length) continue;
+        sx += pts[k].x; sy += pts[k].y; n++;
+      }
+      out.push({ x: sx / n, y: sy / n });
+    }
+    out[0] = pts[0];
+    out[out.length - 1] = pts[pts.length - 1];
+    return out;
+  }
+  function rdp(pts, eps) {
+    if (pts.length < 3) return pts.slice();
+    var maxD = -1, idx = 0;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var d = distToSeg(pts[i], pts[0], pts[pts.length - 1]);
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD > eps) {
+      var l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps);
+      return l.slice(0, l.length - 1).concat(r);
+    }
+    return [pts[0], pts[pts.length - 1]];
+  }
+  function roundCorners(pts, radius) {
+    /* 코너마다 반경 radius(m)의 필렛을 넣는다.
+       Chaikin 방식은 코너가 인접 직선 길이에 비례해 깎여서, 직선을 길게 다듬을수록
+       코너가 같이 뭉개진다. 여기서는 잘라내는 길이를 미터로 묶어 둘을 분리한다. */
+    if (radius <= 0 || pts.length < 3) return pts.slice();
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length - 1; i++) {
+      var a = pts[i - 1], v = pts[i], b = pts[i + 1];
+      var d1 = dist(v, a), d2 = dist(v, b);
+      if (d1 < 1e-6 || d2 < 1e-6) continue;
+      var t = Math.min(radius, d1 * 0.45, d2 * 0.45);
+      var p1 = { x: v.x + (a.x - v.x) / d1 * t, y: v.y + (a.y - v.y) / d1 * t };
+      var p2 = { x: v.x + (b.x - v.x) / d2 * t, y: v.y + (b.y - v.y) / d2 * t };
+      var K = 10;
+      out.push(p1);
+      for (var k = 1; k < K; k++) {          /* p1 → v → p2 2차 베지에 */
+        var u = k / K, w = 1 - u;
+        out.push({
+          x: w * w * p1.x + 2 * w * u * v.x + u * u * p2.x,
+          y: w * w * p1.y + 2 * w * u * v.y + u * u * p2.y
+        });
+      }
+      out.push(p2);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function separateOverlap(pts, radius, offset) {
+    /* 왕복 구간처럼 선이 겹치는 곳을 수직으로 벌린다. 읽히게 하되 사실과 멀어지는 조작 */
+    var gap = Math.max(8, Math.round(pts.length * 0.12)), out = pts.slice();
+    for (var i = 0; i < pts.length; i++) {
+      var best = Infinity, bestJ = -1;
+      for (var j = 0; j < pts.length; j++) {
+        if (Math.abs(i - j) < gap) continue;
+        var d = dist(pts[i], pts[j]);
+        if (d < best) { best = d; bestJ = j; }
+      }
+      if (best < radius && bestJ >= 0) {
+        var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+        var dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+        /* 수직 벡터는 진행 방향을 따라 이미 뒤집힌다. 갈 때와 올 때가 반대편으로 밀린다.
+           여기에 부호를 한 번 더 곱하면 서로 상쇄돼 통째로 이동만 하고 벌어지지 않는다 */
+        var fade = 1 - best / radius;
+        out[i] = { x: pts[i].x + (-dy / L) * offset * fade, y: pts[i].y + (dx / L) * offset * fade };
+      }
+    }
+    return out;
+  }
+
+  /* ─────────── 레벨 정의 ─────────── */
+  var LEVELS = [
+    {
+      id: "raw", name: "있는 그대로",
+      how: "보정 없음. 기록된 좌표를 그대로 잇는다.",
+      build: function (raw) { return raw; }
+    },
+    {
+      id: "light", name: "가벼운 정리",
+      how: "신호 대기 뭉침 제거 → 약한 스무딩 → 미세 간소화. 모양은 건드리지 않는다. (고정 · 비교 기준)",
+      build: function (raw) { return rdp(smooth(dedupe(raw, 4), 5), 4); }
+    },
+    {
+      id: "heavy", name: "양식화 (조절)",
+      how: "직선 다듬기와 코너 반경이 서로 독립이다. 직선을 아무리 길게 펴도 코너는 지정한 반경만큼만 깎인다.",
+      build: function (raw, o) {
+        var win = 3 + Math.round(o.smooth / 100 * 12) * 2;      /* 3 ~ 27, 홀수 */
+        var s = smooth(dedupe(raw, 4), win);
+        var d = bboxDiag(s);
+        var e = rdp(s, d * (0.0008 + o.smooth / 100 * 0.011));  /* 코스 크기에 비례 */
+        if (o.separate) e = separateOverlap(e, d * 0.020, d * 0.028);
+        return roundCorners(e, o.corner);
+      }
+    }
+  ];
+
+  var COURSES = [
+    { id: "city",  name: "도심 격자", sub: "직각 코너·신호 대기",   gen: courseCity,  sigma: 5.0, dwell: 4 },
+    { id: "river", name: "강변 왕복", sub: "같은 길로 되돌아옴",     gen: courseRiver, sigma: 3.6, dwell: 1 },
+    { id: "park",  name: "공원 순환", sub: "완만한 폐곡선",          gen: coursePark,  sigma: 3.0, dwell: 0 }
+  ];
+
+  /* ─────────── 상태 ─────────── */
+  var state = { course: "city", seed: 7, ghost: true, fx: false, smooth: 55, corner: 22, separate: false };
+  var built = null, view = null;
+
+  /* ─────────── 설정 ↔ URL ─────────── */
+  function clamp(v, lo, hi) { return isNaN(v) ? null : Math.max(lo, Math.min(hi, v)); }
+
+  function readHash() {
+    var h = (location.hash || "").replace(/^#/, "");
+    if (!h) return;
+    var q = {};
+    h.split("&").forEach(function (kv) {
+      var p = kv.split("=");
+      if (p.length === 2) q[p[0]] = decodeURIComponent(p[1]);
+    });
+    if (q.c && COURSES.some(function (x) { return x.id === q.c; })) state.course = q.c;
+    var v;
+    if (q.seed !== undefined && (v = clamp(parseInt(q.seed, 10), 1, 99999)) !== null) state.seed = v;
+    if (q.sm !== undefined && (v = clamp(parseInt(q.sm, 10), 0, 100)) !== null) state.smooth = v;
+    if (q.cn !== undefined && (v = clamp(parseInt(q.cn, 10), 0, 90)) !== null) state.corner = v;
+    if (q.sep !== undefined) state.separate = q.sep === "1";
+    if (q.g !== undefined) state.ghost = q.g === "1";
+    if (q.fx !== undefined) state.fx = q.fx === "1";
+  }
+
+  function writeHash() {
+    var h = "c=" + state.course + "&seed=" + state.seed + "&sm=" + state.smooth +
+            "&cn=" + state.corner + "&sep=" + (state.separate ? 1 : 0) +
+            "&g=" + (state.ghost ? 1 : 0) + "&fx=" + (state.fx ? 1 : 0);
+    try { history.replaceState(null, "", "#" + h); }
+    catch (e) { try { location.hash = h; } catch (e2) { /* data: URL 등, 아래 표시로 대체 */ } }
+    var el = document.getElementById("share");
+    if (!el) return;
+    var base = location.href.split("#")[0];
+    /* data: URL로 열린 경우 주소가 파일 전체라 링크가 무의미하다. 해시만 보여준다 */
+    el.value = (location.protocol === "data:" || base.length > 300) ? "#" + h : base + "#" + h;
+  }
+
+  readHash();   /* UI를 만들기 전에 반영해야 버튼 상태가 맞는다 */
+
+  function rebuild() {
+    var c = COURSES.filter(function (x) { return x.id === state.course; })[0];
+    var rnd = mulberry32(state.seed * 2654435761 % 2147483647);
+    var truth = samplePath(c.gen(rnd), 5);                       /* 노이즈 얹기 전 = 실제로 뛴 길 */
+    var raw = addDwell(addNoise(truth, c.sigma, rnd), c.dwell, rnd);
+    var trueKm = pathLen(truth) / 1000;
+
+    var tracks = LEVELS.map(function (lv) { return lv.build(raw, state); });
+
+    /* 세 패널이 같은 축척을 쓰도록 전체 bbox로 한 번에 계산 */
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    tracks.forEach(function (t) {
+      t.forEach(function (p) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      });
+    });
+    view = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+
+    var rawLen = pathLen(raw);
+    built = tracks.map(function (t, i) {
+      var devs = t.map(function (p) { return distToPath(p, raw); });
+      var avg = devs.reduce(function (a, b) { return a + b; }, 0) / devs.length;
+      var max = devs.reduce(function (a, b) { return Math.max(a, b); }, 0);
+      return {
+        level: LEVELS[i], pts: t, avgDev: avg, maxDev: max,
+        km: pathLen(t) / 1000, rawKm: rawLen / 1000, trueKm: trueKm, n: t.length, rawN: raw.length
+      };
+    });
+    document.getElementById("truth").textContent = trueKm.toFixed(2) + " km";
+    writeHash();
+    render();
+  }
+
+  /* ─────────── 그리기 ─────────── */
+  function project(p, W, H) {
+    var padX = W * 0.09, padY = H * 0.09;
+    var bw = view.maxX - view.minX || 1, bh = view.maxY - view.minY || 1;
+    var s = Math.min((W - padX * 2) / bw, (H - padY * 2) / bh);   /* 종횡비 유지 */
+    return {
+      x: (W - bw * s) / 2 + (p.x - view.minX) * s,
+      y: (H - bh * s) / 2 + (bh - (p.y - view.minY)) * s          /* y 뒤집기 */
+    };
+  }
+  function trace(ctx, pts, W, H) {
+    ctx.beginPath();
+    for (var i = 0; i < pts.length; i++) {
+      var q = project(pts[i], W, H);
+      if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+    }
+  }
+
+  function drawPanel(cv, item, p) {
+    var dpr = window.devicePixelRatio || 1;
+    var W = cv.clientWidth, H = cv.clientHeight;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#141A22"); g.addColorStop(1, "#090C11");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+    if (state.ghost && item.level.id !== "raw") {
+      ctx.save();
+      trace(ctx, built[0].pts, W, H);
+      ctx.strokeStyle = "rgba(255,255,255,.17)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    }
+
+    if (!state.fx) {
+      ctx.save();
+      trace(ctx, item.pts, W, H);
+      ctx.strokeStyle = "#FFF3EC"; ctx.lineWidth = 3.4; ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    /* 연출 얹기: 기준 목업의 "불빛 러너"와 같은 팔레트 */
+    ctx.save();
+    trace(ctx, item.pts, W, H);
+    ctx.strokeStyle = "rgba(255,255,255,.20)"; ctx.lineWidth = 2.4; ctx.stroke();
+    ctx.restore();
+
+    var upto = Math.max(1, Math.round((item.pts.length - 1) * p));
+    ctx.save();
+    trace(ctx, item.pts.slice(0, upto + 1), W, H);
+    ctx.strokeStyle = "rgba(255,243,236,.6)"; ctx.lineWidth = 3.4;
+    ctx.shadowBlur = 10; ctx.shadowColor = "#FF6B4A"; ctx.stroke();
+    ctx.restore();
+
+    var tailFrom = Math.max(0, upto - Math.round(item.pts.length * 0.09));
+    ctx.save();
+    trace(ctx, item.pts.slice(tailFrom, upto + 1), W, H);
+    ctx.strokeStyle = "#FFF3EC"; ctx.lineWidth = 4.2;
+    ctx.shadowBlur = 20; ctx.shadowColor = "#FF6B4A"; ctx.stroke();
+    ctx.restore();
+
+    var h = project(item.pts[upto], W, H);
+    ctx.save();
+    ctx.shadowBlur = 28; ctx.shadowColor = "#FF6B4A"; ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath(); ctx.arc(h.x, h.y, 5.2, 0, 7); ctx.fill();
+    ctx.shadowBlur = 48; ctx.fill();
+    ctx.restore();
+  }
+
+  /* ─────────── DOM ─────────── */
+  var panelHost = document.getElementById("panels"), canvases = [];
+
+  LEVELS.forEach(function (lv, i) {
+    var d = document.createElement("div");
+    d.className = "pan";
+    d.innerHTML =
+      '<div class="frame"><canvas></canvas><span class="tag">' + (i + 1) + ' / ' + LEVELS.length + '</span></div>' +
+      '<h2>' + lv.name + '</h2>' +
+      '<p class="how">' + lv.how + '</p>' +
+      '<div class="metrics" id="m-' + lv.id + '"></div>';
+    panelHost.appendChild(d);
+    canvases.push(d.querySelector("canvas"));
+  });
+
+  var courseHost = document.getElementById("courses");
+  COURSES.forEach(function (c) {
+    var b = document.createElement("button");
+    b.className = "tg"; b.type = "button";
+    b.setAttribute("aria-pressed", String(c.id === state.course));
+    b.innerHTML = '<b>' + c.name + '</b><small>' + c.sub + '</small>';
+    b.addEventListener("click", function () {
+      state.course = c.id;
+      [].forEach.call(courseHost.children, function (el, i) {
+        el.setAttribute("aria-pressed", String(COURSES[i].id === state.course));
+      });
+      rebuild();
+    });
+    courseHost.appendChild(b);
+  });
+
+  function render() {
+    built.forEach(function (item) {
+      var el = document.getElementById("m-" + item.level.id);
+      var dkm = item.km - item.trueKm;
+      var lenLine =
+        '<div>선 길이 <span class="k">' + item.km.toFixed(2) + ' km</span>' +
+        ' · 실제 코스 대비 <span class="k' + (Math.abs(dkm) > 0.3 ? ' hot' : '') + '">' +
+        (dkm >= 0 ? '+' : '') + dkm.toFixed(2) + ' km</span> · 좌표 ' + item.n + '점</div>';
+      if (item.level.id === "raw") {
+        el.innerHTML =
+          '<div><span class="k">이탈의 기준선</span>, 아래 두 패널은 이 선에서 잰 값</div>' + lenLine;
+      } else {
+        el.innerHTML =
+          '<div>원본 대비 평균 이탈 <span class="k hot">' + item.avgDev.toFixed(1) + ' m</span>' +
+          ' · 최대 <span class="k">' + item.maxDev.toFixed(0) + ' m</span></div>' + lenLine;
+      }
+    });
+  }
+
+  function bindToggle(id, key) {
+    var el = document.getElementById(id);
+    el.setAttribute("aria-pressed", String(state[key]));
+    el.addEventListener("click", function () {
+      state[key] = el.getAttribute("aria-pressed") !== "true";
+      el.setAttribute("aria-pressed", String(state[key]));
+      writeHash();
+    });
+  }
+  bindToggle("tGhost", "ghost");
+  bindToggle("tFx", "fx");
+
+  var sepEl = document.getElementById("tSep");
+  sepEl.setAttribute("aria-pressed", String(state.separate));
+  sepEl.addEventListener("click", function () {
+    state.separate = this.getAttribute("aria-pressed") !== "true";
+    this.setAttribute("aria-pressed", String(state.separate));
+    rebuild();
+  });
+
+  var copyEl = document.getElementById("copy");
+  copyEl.addEventListener("click", function () {
+    var el = document.getElementById("share"), self = this;
+    function done(ok) {
+      self.textContent = ok ? "복사됨" : "직접 복사";
+      setTimeout(function () { self.textContent = "복사"; }, 1600);
+    }
+    el.focus(); el.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.value).then(function () { done(true); }, function () { done(false); });
+      return;
+    }
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    done(ok);
+  });
+
+  function bindDial(id, key, label, fmt) {
+    var el = document.getElementById(id), out = document.getElementById(label);
+    function apply() {
+      state[key] = parseInt(el.value, 10);
+      out.textContent = fmt(state[key]);
+      rebuild();
+    }
+    el.addEventListener("input", apply);
+    out.textContent = fmt(state[key]);
+    el.value = state[key];
+  }
+  bindDial("sSmooth", "smooth", "vSmooth", function (v) { return v === 0 ? "없음" : v + " %"; });
+  bindDial("sCorner", "corner", "vCorner", function (v) { return v === 0 ? "각지게" : v + " m"; });
+  document.getElementById("tSeed").addEventListener("click", function () {
+    state.seed = Math.floor(Math.random() * 9999) + 1;
+    rebuild();
+  });
+
+  /* ─────────── 루프 ─────────── */
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var DUR = 7000, t0 = performance.now();
+  function frame(now) {
+    var p = reduce ? 1 : ((now - t0) % DUR) / DUR;
+    if (built) built.forEach(function (item, i) { drawPanel(canvases[i], item, p); });
+    requestAnimationFrame(frame);
+  }
+
+  rebuild();
+  requestAnimationFrame(frame);
+})();
+</script>
