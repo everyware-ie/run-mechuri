@@ -26,6 +26,16 @@ tags: [running, mvp, platform, ios, healthkit, preset, schedule]
 - **이번 스프린트는 iOS 단독.** 안드로이드는 이번 범위 밖이다
 - **앱스토어 등록을 진행한다.** 계정은 팀 공용 지메일로 먼저 시도하고, 안 되면 jminkkk 개인 계정으로 등록한다
 
+#### 9/22 "출시"의 정의: TestFlight 공개 링크 (phs00 추가, 2026-08-19)
+
+**9/22 마감선은 TestFlight 공개 링크 공개다. App Store 정식 등재는 마감선 밖으로 분리한다.**
+
+- 정식 등재는 **검증 기간(~9/29) 목표**로 두되, 추석 설치 마찰을 줄이려면 **9/24(추석 시작)** 가 실질 목표다
+- 이렇게 두면 **통제할 수 없는 정식 심사 대기가 마감선에서 빠지고**, 남는 심사는 9/1 베타 하나가 된다. 정식 심사가 리젝돼도 9/22는 깨지지 않는다
+- jminkkk의 1주차 추천안과 같은 방향이다. 08-18에 정한 "앱스토어 등록 진행"은 정식 등재 트랙으로 그대로 살아 있고, **9/22의 기준에서만 빠진다**
+
+근거: [jminkkk 9/22 배포 형태 결론](../ideation/jminkkk/2026-08-17-release-mode-decision.md), [App Store 출시 가능성 §5](../ideation/jminkkk/2026-08-17-appstore-release-feasibility.md). 일정 반영은 [PRD §13](../specs/prd/running-drawing-mvp.md).
+
 ### 2. 데이터 확보: HealthKit/GPX
 
 자체 GPS 수집은 이번 범위에서 제외한다. 필요가 확인되면 나중에 다시 본다.
