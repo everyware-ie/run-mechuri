@@ -13,4 +13,16 @@ for file in $staged; do
     fi
 done
 
+# 기획 문서 정합성 검사
+if echo "$staged" | grep -q '^docs/'; then
+    if command -v python3 >/dev/null 2>&1; then
+        if ! python3 "$(git rev-parse --show-toplevel)/scripts/check-docs.py"; then
+            echo ""
+            echo "[pre-commit] 문서 정합성 검사 실패."
+            echo "  위 오류를 고치고 다시 커밋하세요."
+            exit 1
+        fi
+    fi
+fi
+
 exit 0

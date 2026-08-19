@@ -4,8 +4,9 @@ product: running
 type: frd
 status: draft
 updated: 2026-08-19
+derives_from: ../prd/running-drawing-mvp.md
+prd_sections: "P1, P3, §7 결과물의 형태, §8 렌더링 품질 기준"
 related:
-  - ../prd/running-drawing-mvp.md
   - ../../decisions/2026-08-18-native-ios-and-mvp-scope.md
 ---
 

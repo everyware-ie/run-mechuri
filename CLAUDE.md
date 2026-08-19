@@ -17,6 +17,37 @@
 
 스펙과 구현이 같은 레포에 있으므로, **불일치를 발견하면 같은 PR에서 함께 고치는 것을 기본**으로 한다.
 
+### 기획 문서 정합성
+
+문서를 고도화하면 상류 문서가 조용히 낡는다. **FRD를 쓰다 보면 PRD가 낡고, PRD를 고치면 결정문과 어긋난다.** 아래를 규칙으로 둔다.
+
+**상류 관계**
+
+```
+결정문 (무엇을 정했나)
+   ↓
+PRD (무엇을 왜 만드나)
+   ↓
+FRD (화면과 기능의 규칙·수치)
+   ↓
+구현 노트 (코드 구조)
+```
+
+1. **하류를 고치다 상류가 낡으면 같은 PR에서 함께 고친다.** 나중에 몰아서 하면 어느 쪽이 맞는지 알 수 없게 된다
+2. **스펙이 조용히 제품 정의를 바꾸지 못하게 한다.** FRD에서 새 결정이 나오면 PRD에 올린다
+3. **팀이 정한 것을 개인이 문서에서 뒤집지 않는다.** 결정문과 어긋나면 결정문에 개정을 append 한다
+4. **절 번호로 참조할 때는 제목도 함께 적는다.** "§7"이 아니라 "§7 결과물의 형태". 절이 하나 끼어들면 번호만으로는 조용히 어긋난다
+5. **새 용어를 만들거나 뜻을 바꾸면 [용어집](.claude/domain/glossary.md)부터 고친다.** 같은 말을 두 뜻으로 쓰는 것이 가장 흔한 어긋남이다
+6. 어느 FRD가 PRD의 어느 부분을 근거로 하는지는 [`docs/specs/frd/README.md`](docs/specs/frd/README.md)의 근거 지도에 있다. FRD frontmatter의 `derives_from`·`prd_sections`에도 같은 내용이 들어간다
+
+**자동 검사**
+
+```
+python3 scripts/check-docs.py
+```
+
+깨진 링크, frontmatter 필수 필드와 status 유효값, FRD의 `derives_from`을 검사하고 `[확인 필요]` 항목을 집계한다. `docs/`를 건드린 커밋에서 pre-commit 훅이 자동으로 돌린다.
+
 > **부트스트랩 배경**: kill-betting 제품에서 먼저 검증된 구조([2026-08-03 결정](https://github.com/everyware-ie/mechuri-docs/blob/main/team/decisions/2026-08-03-ideation-pipeline-location.md))를 템플릿으로 이 레포를 새로 만들었다(2026-08-04). 허브(mechuri-docs)에 쌓여 있던 `products/running/` 아이디에이션 원문을 그대로 이관했다.
 
 ### 허브에 남는 것
@@ -32,6 +63,7 @@
 
 ```
 /
+├── .claude/domain/glossary.md  # 도메인 용어집 (문서·코드 공통)
 ├── docs/
 │   ├── ideation/<닉네임>/    # 개인 아이디어 원문 (raw, 불변)
 │   ├── meetings/             # 회의 종합
@@ -50,7 +82,6 @@
 
 **아직 없는 것** (코드 착수 시점에 결정·추가):
 - `backend/`, `frontend/` — 기술 스택 미정
-- `.claude/domain/glossary.md` — 도메인 용어 미확정
 - `docs/architecture/` — 아키텍처 결정 없음
 
 ## 강제 게이트 (훅으로 자동 적용)
