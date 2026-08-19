@@ -38,7 +38,7 @@ FRD (화면과 기능의 규칙·수치)
 3. **팀이 정한 것을 개인이 문서에서 뒤집지 않는다.** 결정문과 어긋나면 결정문에 개정을 append 한다
 4. **절 번호로 참조할 때는 제목도 함께 적는다.** "§7"이 아니라 "§7 결과물의 형태". 절이 하나 끼어들면 번호만으로는 조용히 어긋난다
 5. **새 용어를 만들거나 뜻을 바꾸면 [용어집](.claude/domain/glossary.md)부터 고친다.** 같은 말을 두 뜻으로 쓰는 것이 가장 흔한 어긋남이다
-6. 어느 FRD가 PRD의 어느 부분을 근거로 하는지는 [`docs/specs/frd/README.md`](docs/specs/frd/README.md)의 근거 지도에 있다. FRD frontmatter의 `derives_from`·`prd_sections`에도 같은 내용이 들어간다
+6. 어느 FRD가 PRD의 어느 부분을 근거로 하는지는 `docs/specs/frd/README.md`의 근거 지도에 있다. FRD frontmatter의 `derives_from`·`prd_sections`에도 같은 내용이 들어간다
 
 **자동 검사**
 

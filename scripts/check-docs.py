@@ -4,7 +4,7 @@
 사용법: python3 scripts/check-docs.py [--staged]
 
 검사 항목
-  [오류] 상대 링크가 실제 파일을 가리키는가
+  [오류] 상대 링크가 실제 파일을 가리키는가 (docs/, .claude/, CLAUDE.md)
   [오류] 스펙 문서의 frontmatter 필수 필드와 status 유효값
   [오류] FRD의 derives_from이 실제 PRD를 가리키는가
   [정보] [확인 필요] 항목 집계
@@ -61,11 +61,16 @@ def parse_frontmatter(text):
 
 
 def all_docs():
-    for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, "docs")):
-        dirnames[:] = [d for d in dirnames if d != ".git"]
-        for name in filenames:
-            if name.endswith(".md"):
-                yield os.path.join(dirpath, name)
+    """검사 대상: docs/, .claude/, 그리고 루트의 CLAUDE.md."""
+    for base in ("docs", ".claude"):
+        for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, base)):
+            dirnames[:] = [d for d in dirnames if d != ".git"]
+            for name in filenames:
+                if name.endswith(".md"):
+                    yield os.path.join(dirpath, name)
+    root_md = os.path.join(ROOT, "CLAUDE.md")
+    if os.path.exists(root_md):
+        yield root_md
 
 
 def check_links(path, text):
