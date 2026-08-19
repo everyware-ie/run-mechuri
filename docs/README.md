@@ -23,7 +23,7 @@ docs/
 |------------|----------|
 | **왜 이 제품인지, 어떤 아이디어가 나왔는지** | `meetings/2026-07-14/synthesis.md`, `topics/concept-candidates.md` |
 | **지금까지의 결정** | `decisions/index.md` |
-| **기능 명세 (FRD) — 구현 근거** | `specs/frd/` (아직 없음) |
+| **기능 명세 (FRD) - 구현 근거** | [`specs/frd/README.md`](specs/frd/README.md) - 6개 분할과 작성 순서. 경로 렌더링이 `draft` |
 | **제품 요구 문서 (PRD)** | `specs/prd/running-drawing-mvp.md` (러닝 드로잉 MVP, `draft`) |
 | **아이디어 원문 쌓기** | `ideation/<본인 닉네임>/` (`idea/<닉네임>` 브랜치에서) |
 
