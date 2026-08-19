@@ -291,7 +291,8 @@ MVP에서 뺀 이유는 순수하게 일정이다. 친구·그룹 기능(계정,
 
 ## 14. 출처
 
-- [2026-08-11 통합 회의 종합](https://github.com/everyware-ie/mechuri-docs/blob/main/meetings/2026-08-11/synthesis.md) (허브, private)
+- [2026-08-11 결정: 러닝 드로잉 확정과 MVP 출시 9/22](../../decisions/2026-08-11-running-drawing-and-mvp-deadline.md) **1차 근거.** 아래 통합 회의에서 러닝에 효력을 갖는 부분을 이 레포로 내린 문서다
+- [2026-08-11 통합 회의 종합](https://github.com/everyware-ie/mechuri-docs/blob/main/meetings/2026-08-11/synthesis.md) (허브, private) - 전체 맥락
 - [JiEung2 경로 오버레이 공유 컨셉 (2026-08-04)](../../ideation/JiEung2/2026-08-04-route-overlay-share-concept.md)
 - [JiEung2 경로 오버레이 목업 (2026-08-04)](../../ideation/JiEung2/2026-08-04-route-overlay-mockup.html)
 - [jminkkk 플랫폼 기술 검토 (2026-08-11)](../../ideation/jminkkk/2026-08-11-platform-tech-review.md)
