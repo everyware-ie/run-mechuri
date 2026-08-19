@@ -73,7 +73,9 @@ tags: [running, mvp, platform, healthkit, preset, schedule]
 ### 배경 옵션
 
 - 사진과 영상 중 **일단 사진만** 쓴다
-- **기본 이미지 2~3개** + (일정에 여유가 있으면) **그 자리에서 사진 찍기** 배경
+- **기본 이미지 2~3개** + (일정에 여유가 있으면) **그 자리에서 찍기** 배경
+
+> 회의 후 phs00이 촬영 배경에 **영상**까지 넣기로 추가했다(영상 길이 제한은 FRD). → [결정문 §5](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
 
 > **파급이 크다.** 08-11에 정한 기준 결과물은 "러닝 **영상** 위에 경로가 살아 움직이는 9:16 클립"이었다. 배경이 사진으로 바뀌었으므로 [2026-08-11 결정](../../decisions/2026-08-11-running-drawing-and-mvp-deadline.md) §4와 PRD §1·§6·§7을 함께 고쳐야 한다.
 
@@ -90,6 +92,8 @@ tags: [running, mvp, platform, healthkit, preset, schedule]
 
 앱 내부에서 **인스타그램 스토리 공유까지 바로 연동**한다. **공유 API를 사용**한다.
 
+> 회의 후 phs00이 **결과물 파일 저장**을 부가 기능으로 추가했다. → [결정문 §7](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
+
 ### 개발 일정
 
 **9/1 1차 TestFlight 빌드 제출 목표.**
@@ -100,9 +104,13 @@ tags: [running, mvp, platform, healthkit, preset, schedule]
 
 다루지 못했다. **미결.** PRD §5-4에서 MVP 포함 항목으로 잡혀 있어 비워둘 수 없다.
 
+> 회의 후 phs00이 방향을 냈다: 1차 MVP에서는 별도 장치를 만들지 않고, "예쁜 드로잉 결과물을 얻으려는 니즈가 있는지"를 검증한다. → [결정문 "확정하지 않은 것" 2번](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
+
 ### E. "예쁘다"의 기준 육안 합의
 
 다루지 못했다. **미결.** 경로 보정 수준 비교 화면은 준비돼 있고, 제안값 `#c=city&sm=55&cn=22&sep=0`도 그대로 대기 상태다.
+
+> 회의 후 phs00이 방향을 냈다: 잠정 B~C 수준 + 사용자 커스텀으로 보완하되 수치를 못박지 않는다. → [결정문 "확정하지 않은 것" 3번](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
 
 ### F. PRD의 phs00 단독 결정 승인
 
