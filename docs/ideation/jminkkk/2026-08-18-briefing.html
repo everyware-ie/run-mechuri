@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기술 스택과 9/22 출시 방식 — 1주차 브리핑</title>
+
+<style>
+  :root {
+    --blue: #0066cc;
+    --ink: #1d1d1f;
+    --ink-80: #333333;
+    --ink-48: #7a7a7a;
+    --canvas: #ffffff;
+    --parchment: #f5f5f7;
+    --hairline: #e0e0e0;
+    --tint: rgba(0, 102, 204, 0.06);
+    --dead: #9a9a9e;
+    --display: "SF Pro Display", system-ui, -apple-system, sans-serif;
+    --text: "SF Pro Text", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --blue: #2997ff; --ink: #f5f5f7; --ink-80: #c8c8cc; --ink-48: #8a8a8e;
+      --canvas: #161618; --parchment: #1e1e21; --hairline: #38383c;
+      --tint: rgba(41,151,255,0.10); --dead: #6a6a6e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --blue: #2997ff; --ink: #f5f5f7; --ink-80: #c8c8cc; --ink-48: #8a8a8e;
+    --canvas: #161618; --parchment: #1e1e21; --hairline: #38383c;
+    --tint: rgba(41,151,255,0.10); --dead: #6a6a6e;
+  }
+  :root[data-theme="light"] {
+    --blue: #0066cc; --ink: #1d1d1f; --ink-80: #333333; --ink-48: #7a7a7a;
+    --canvas: #ffffff; --parchment: #f5f5f7; --hairline: #e0e0e0;
+    --tint: rgba(0,102,204,0.06); --dead: #9a9a9e;
+  }
+
+  body {
+    font-family: var(--text); font-size: 17px; line-height: 1.45;
+    letter-spacing: -0.374px; color: var(--ink); background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+  }
+  .tile { padding: 64px 24px; display: flex; justify-content: center; }
+  .tile + .tile { border-top: 1px solid var(--hairline); }
+  .tile.alt { background: var(--parchment); }
+  .inner { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: 24px; }
+
+  .eyebrow {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--blue);
+  }
+  h1 { font-family: var(--display); font-size: 44px; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; margin: 0; }
+  h2 { font-family: var(--display); font-size: 32px; font-weight: 600; line-height: 1.15; letter-spacing: -0.015em; margin: 0; }
+  h3 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  p { margin: 0; max-width: 68ch; }
+  strong { font-weight: 600; }
+  .muted { color: var(--ink-80); }
+  .fine { font-size: 14px; line-height: 1.45; color: var(--ink-48); }
+  .unknown { color: var(--ink-48); }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 16px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 11px 13px; border-bottom: 1px solid var(--hairline); vertical-align: top; line-height: 1.4; }
+  th { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--ink-48); text-transform: uppercase; }
+  tr:last-child td { border-bottom: none; }
+  td.k { white-space: nowrap; font-weight: 600; }
+  tr.hi td { background: var(--tint); }
+  tr.us td.w { color: var(--blue); font-weight: 600; white-space: nowrap; }
+  tr.ap td.w { color: var(--ink-48); white-space: nowrap; }
+  td.no { color: var(--dead); }
+
+  .box { padding: 18px 20px; border-radius: 12px; background: var(--tint); display: flex; flex-direction: column; gap: 8px; }
+  .box .label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); }
+  .box h3 { font-family: var(--display); font-size: 21px; }
+  .box.gap { background: none; border: 1px dashed var(--hairline); }
+  .box.gap .label { color: var(--ink-48); }
+
+  ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
+  li { line-height: 1.45; }
+
+  .asks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .ask { border: 1px solid var(--hairline); border-radius: 12px; padding: 16px 18px; background: var(--canvas); }
+  .ask.now { border-color: var(--blue); background: var(--tint); }
+  .ask .q { font-weight: 600; font-size: 17px; margin-bottom: 5px; }
+  .ask.now .q { color: var(--blue); }
+  .ask .d { font-size: 15px; line-height: 1.45; color: var(--ink-80); }
+
+  @media (max-width: 820px) {
+    h1 { font-size: 32px; } h2 { font-size: 26px; }
+    .tile { padding: 48px 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+
+
+<!-- 1 -->
+<section class="tile">
+  <div class="inner">
+    <div class="eyebrow">1주차 분담 · jminkkk · 2026-08-18</div>
+    <h1>기술 스택과 9/22 출시 방식</h1>
+    <p class="muted">조사한 것 · 판단한 것 · 정해주셔야 하는 것.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>할당 항목</th><th>결과</th></tr></thead>
+        <tbody>
+          <tr><td class="k">App Store 심사 기간·리젝 리스크 → 제출 마감일</td><td>완료 — 정식 등재 목표 시 <strong>9/15 제출이 마지막</strong></td></tr>
+          <tr><td class="k">Apple Developer Program 등록 절차·기간·비용</td><td>완료 — <strong>개인 계정 · $99/년 · 24시간 이내</strong></td></tr>
+          <tr><td class="k">웹 / iOS / 웹→앱 비교</td><td>완료 — <strong>네이티브 권장</strong></td></tr>
+          <tr><td class="k">"출시"의 정의</td><td>제안 — <strong>TestFlight 공개 링크</strong>. 회의 결정 필요</td></tr>
+          <tr><td class="k">배포 형태에 맞는 스택 제안</td><td><strong>미결</strong> — mp4 인코딩 경로가 정해져야 함</td></tr>
+          <tr><td class="k">크로스플랫폼 실기기 검증</td><td class="no">미완 — Swift로 확정되면 불필요</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="tile alt">
+  <div class="inner">
+    <div class="eyebrow">조사 1</div>
+    <h2>Apple Developer Program 등록</h2>
+    <p><strong>팀 3명 전원 계정이 없습니다.</strong> iOS로 가면 여기부터입니다.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>개인</th><th>조직</th></tr></thead>
+        <tbody>
+          <tr><td class="k">D-U-N-S 번호</td><td>불필요</td><td class="no">필수 — 발급 기간 미지수</td></tr>
+          <tr><td class="k">공개 웹사이트</td><td>불필요</td><td class="no">필요</td></tr>
+          <tr><td class="k">등재 이름</td><td><strong>개인 법적 본명</strong></td><td>법인명</td></tr>
+          <tr class="hi"><td class="k">6주에 맞나</td><td><strong>맞음</strong></td><td class="no">불가 — 법인 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>항목</th><th>값</th><th>근거</th></tr></thead>
+        <tbody>
+          <tr><td class="k">비용</td><td><strong>$99 / 년</strong> (원화는 결제 화면에서 확정)</td><td>Apple 공식</td></tr>
+          <tr><td class="k">소요 기간</td><td><strong>24시간 이내</strong></td><td>"구매 후 24시간 내 확인 메일 없으면 문의" — 공식</td></tr>
+          <tr><td class="k">지연 사유</td><td>이름을 별칭·닉네임으로 입력 / 본인 명의 아닌 카드 결제</td><td>공식 명시</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="fine">준비물: 2단계 인증 · 법적 본명 · 실주소(사서함 불가) · 본인 명의 카드.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="tile">
+  <div class="inner">
+    <div class="eyebrow">조사 2</div>
+    <h2>심사 — 종류와 기간</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>심사</th><th>무엇을 위해</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td class="k">베타 심사<br><span style="font-weight:400;color:var(--ink-48)">= TestFlight</span></td><td>TestFlight <strong>공개 링크</strong>로 외부 배포</td><td>링크 배포 불가. 단 <strong>내부 테스터는 심사 없이 즉시 가능</strong></td></tr>
+          <tr><td class="k">정식 심사</td><td>App Store <strong>등재</strong></td><td>스토어에 안 올라감</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>둘의 차이</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>베타 심사 (TestFlight)</th><th>정식 심사 (App Store)</th></tr></thead>
+        <tbody>
+          <tr><td class="k">무엇을 보나</td><td>기본 보안·심사 지침 <strong>위반 여부</strong></td><td><strong>훨씬 엄격.</strong> 앱 완성도 · 가이드라인 준수 · 로그인 계정 정보 · 데모 기능</td></tr>
+          <tr><td class="k">범위</td><td>버전의 <strong>첫 빌드만.</strong> 이후 수정 빌드는 빠르게 통과</td><td>제출할 때마다</td></tr>
+          <tr class="hi"><td class="k">기간</td><td>수 시간 ~ <strong>1~3일</strong></td><td>90%가 24시간 이내(전체 평균). <strong>신규 앱 최초 제출은 2~5일</strong></td></tr>
+          <tr><td class="k">리젝 시</td><td>재제출</td><td>수정 + 재제출 <strong>2~3일</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul>
+      <li><strong>정식 심사가 훨씬 엄격합니다.</strong> 베타를 통과했다고 정식이 통과되지 않습니다.</li>
+      <li>정식은 <strong>앱 완성도</strong>를 봅니다. 미완성 빌드를 정식에 내면 리젝 사유가 됩니다.</li>
+      <li>우리는 <strong>신규 계정 + 신규 앱 + 최초 제출</strong>이라 가장 느린 조건입니다. 그래서 정식 심사를 24시간이 아니라 <strong>2~5일</strong>로 잡았습니다.</li>
+      <li>신속 심사는 Apple 재량이라 계획 전제로 못 씁니다.</li>
+    </ul>
+
+    <p class="fine"><strong>미확인</strong> — "같은 버전의 이후 빌드는 심사가 없을 수도 있다(might not)"에서, 어떤 빌드가 다시 걸리는지 조건은 공개돼 있지 않습니다.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="tile alt">
+  <div class="inner">
+    <div class="eyebrow">판단 1</div>
+    <h2>웹이 아니라 네이티브</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>데이터 확보 방식</th><th>웹으로 되나</th></tr></thead>
+        <tbody>
+          <tr><td class="k">GPX 업로드</td><td>가능</td></tr>
+          <tr><td class="k">HealthKit</td><td class="no">불가 — 네이티브 전용 API</td></tr>
+          <tr><td class="k">직접 GPS 트래킹</td><td class="no">불가 — 백그라운드 위치가 웹에서 끊김</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul>
+      <li><strong>세 방식 중 둘에서 웹이 탈락합니다.</strong></li>
+      <li>남은 GPX 업로드에서도 <strong>인스타 공유 API가 네이티브 전용</strong>이라, 웹은 "파일 다운로드 → 사진앱 → 인스타 업로드"가 됩니다.</li>
+      <li><strong>네이티브로 시작하면 데이터 방식 셋이 다 열려 있습니다.</strong> 웹으로 시작하면 GPX로 고정되고 나중에 HealthKit을 쓰려면 재작성입니다.</li>
+      <li><strong>팀 3명 전원 아이폰 사용 — 확인됨.</strong> iOS 전용으로 가도 실사용(9/9~14)에 문제 없습니다.</li>
+    </ul>
+
+    <div class="box gap">
+      <span class="label">뒤집힐 조건</span>
+      <p class="muted">데이터 방식이 GPX로 확정 + Web Share API로 공유 마찰이 해소되면 웹이 다시 후보입니다. <strong>후자는 30분이면 검증되는데 아직 못 했습니다.</strong></p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="tile">
+  <div class="inner">
+    <div class="eyebrow">판단 2</div>
+    <h2>9/22 출시 = TestFlight 공개 링크</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>목표 1 — "우와" 1회</th><th>목표 2 — 추석 가족 영입</th></tr></thead>
+        <tbody>
+          <tr><td class="k">시점</td><td>9/22 (화)</td><td>9/24 (목) ~ 9/27 (일)</td></tr>
+          <tr><td class="k">누가 설치해야 하나</td><td><strong>우리 셋만</strong></td><td>가족</td></tr>
+          <tr class="hi"><td class="k">TestFlight로 되나</td><td><strong>된다</strong></td><td>된다. 설치 마찰 있음</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul>
+      <li>9/22에 필요한 건 <strong>우리 셋이 결과물을 만들어 올릴 수 있는 상태</strong>입니다. 스토리를 보는 사람은 앱을 설치하지 않습니다.</li>
+      <li>App Store 등재로 정의하면 <strong>정식 심사 리젝 2회에 9/22가 깨집니다.</strong></li>
+      <li>TestFlight로 정의하면 <strong>9/22를 지키는 데 필요한 심사가 베타 하나</strong>로 줄고, 정식 등재는 9/24 목표로 분리됩니다.</li>
+    </ul>
+
+    <div class="box">
+      <span class="label">제안</span>
+      <h3>9/22는 TestFlight, 정식 등재는 9/24 목표</h3>
+      <p class="muted">리젝의 결과가 <strong>"출시 실패"에서 "정식 등재 지연"으로</strong> 바뀝니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="tile alt">
+  <div class="inner">
+    <div class="eyebrow">일정</div>
+    <h2>9/22 역산</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>날짜</th><th>할 일</th><th>통제</th></tr></thead>
+        <tbody>
+          <tr class="us"><td class="k">8/18 (화)</td><td>Apple Developer Program 등록 착수</td><td class="w">우리</td></tr>
+          <tr class="ap"><td class="k">8/19 (수) 전후</td><td>등록 승인</td><td class="w">Apple</td></tr>
+          <tr class="us hi"><td class="k">8/25 (화)</td><td><strong>코어 루프 완성 마감</strong> — 여기가 밀리면 아래가 전부 밀림</td><td class="w">우리</td></tr>
+          <tr class="us"><td class="k">8/26 (수) 전후</td><td>TestFlight 첫 빌드 제출 (1.0 / 빌드 1)</td><td class="w">우리</td></tr>
+          <tr class="us"><td class="k">8/26 ~ 9/1</td><td>심사 도는 동안 개발 계속 + <strong>스토어 제출물 준비</strong>(아이콘·스크린샷·개인정보 처리방침·Facebook App ID)</td><td class="w">우리</td></tr>
+          <tr class="ap"><td class="k">9/1 (화)</td><td>베타 심사 통과 목표 → 공개 링크 배포 수단 확보</td><td class="w">Apple</td></tr>
+          <tr class="us"><td class="k">9/2 ~ 9/8</td><td>개발. <strong>버전은 1.0 고정, 빌드 번호만 올림</strong> → 재심사 회피</td><td class="w">우리</td></tr>
+          <tr class="us"><td class="k">9/8 (화)</td><td>기능 동결</td><td class="w">우리</td></tr>
+          <tr class="us"><td class="k">9/9 ~ 9/14</td><td>실사용 — 셋이 뛰고 올려보기</td><td class="w">우리</td></tr>
+          <tr class="us"><td class="k">9/15 (화)</td><td><strong>App Store 정식 제출</strong> (별개 심사)</td><td class="w">우리</td></tr>
+          <tr class="ap"><td class="k">9/15 ~ 9/18 (금)</td><td>정식 심사. 리젝 시 1회 대응</td><td class="w">Apple</td></tr>
+          <tr class="us hi"><td class="k">9/22 (화)</td><td><strong>출시 — TestFlight 공개 링크</strong></td><td class="w">우리</td></tr>
+          <tr class="ap"><td class="k">9/24 (목)</td><td>정식 등재 목표 (추석 시작)</td><td class="w">Apple</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box">
+      <span class="label">제안하는 변경</span>
+      <h3>첫 심사를 8월 말로 당깁니다</h3>
+      <p class="muted">기능 동결 9/8은 그대로입니다. 추가되는 건 "8/26쯤 심사용 빌드를 한 번 낸다" 하나입니다. <strong>9/1에 베타를 통과해두면 정식 심사가 실패해도 9/22에 배포할 수단이 남습니다.</strong></p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="tile">
+  <div class="inner">
+    <div class="eyebrow">미결</div>
+    <h2>스택 — Swift인가 Expo인가</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>평가</th></tr></thead>
+        <tbody>
+          <tr class="hi"><td class="k">Swift</td><td>HealthKit·위치 1급 지원. <strong>mp4 인코딩이 AVFoundation + Core Animation으로 표준 경로</strong></td></tr>
+          <tr><td class="k">Expo / RN</td><td>JS에 익숙하면 빠를 수 있음. <strong>mp4 인코딩 경로 불확실</strong> — ffmpeg-kit 지원 종료 후 대체 미확인</td></tr>
+          <tr><td class="k no">하이브리드</td><td class="no">웹뷰에 렌더링을 두면 mp4를 어디서 만들지가 걸림. 6주에는 부적합</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="box gap">
+      <span class="label">결정 불가</span>
+      <p class="muted"><strong>mp4 인코딩 경로가 정해지면 스택이 따라옵니다.</strong> JiEung2 트랙이 MediaRecorder / ffmpeg.wasm / 서버 ffmpeg 중 무엇이 되는지 판정 중이고, 그 결과가 이 질문의 답입니다.</p>
+    </div>
+
+    <h3>서버는 MVP에 거의 필요 없습니다</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>후보 역할</th><th>필요?</th></tr></thead>
+        <tbody>
+          <tr><td class="k">로그인 · 계정 / 기록 저장 / 공유 링크</td><td class="no">불필요 — MVP 제외</td></tr>
+          <tr><td class="k">mp4 렌더링 · 인코딩</td><td class="no">불필요 — 온디바이스가 표준</td></tr>
+          <tr class="hi"><td class="k">프리셋 정의 배포</td><td><strong>넣는다면 이것 하나</strong> — 아래</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:8px;">프리셋 원격화 = 파일 하나 올려두기</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th></th><th>지금 구조</th><th>원격화하면</th></tr></thead>
+        <tbody>
+          <tr><td class="k">값이 어디 있나</td><td>앱 코드 안에 박혀 있음<br><span class="fine">선 두께 = 4, 색 = #FF6B00</span></td><td>인터넷에 올려둔 <strong>파일 하나</strong><br><span class="fine">presets.json</span></td></tr>
+          <tr><td class="k">디자인 바꾸려면</td><td>코드 수정 → 새 빌드 → <strong>심사</strong></td><td>파일 내용만 교체 → <strong>심사 없음</strong></td></tr>
+          <tr class="hi"><td class="k">필요한 것</td><td>—</td><td><strong>파일 올려둘 곳만</strong> (S3·GitHub Pages). API·DB·서버 프로그램 전부 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fine">이미지를 S3에 올려두고 앱이 URL로 불러오는 것과 같은 구조입니다. 이미지 대신 설정값 파일일 뿐입니다.<br>
+    <strong>단, 심사 없이 바꿀 수 있는 건 색상·두께·크기 같은 값뿐입니다.</strong> 새 렌더링 방식이나 새 레이어는 코드 변경이라 여전히 심사입니다.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="tile alt">
+  <div class="inner">
+    <div class="eyebrow">오늘</div>
+    <h2>정해주셔야 하는 것</h2>
+
+    <div class="asks">
+      <div class="ask now">
+        <div class="q">누구 명의로 등록합니까</div>
+        <div class="d">개인 계정은 App Store 판매자명에 <strong>법적 본명이 노출</strong>됩니다. 조직 계정은 불가.</div>
+      </div>
+      <div class="ask now">
+        <div class="q">$99는 누가 냅니까</div>
+        <div class="d">등록과 동시에 결제. 본인 명의 카드가 아니면 승인이 늦어집니다.</div>
+      </div>
+      <div class="ask">
+        <div class="q">네이티브 + TestFlight로 갑니까</div>
+        <div class="d">데이터 확보 방식과 함께 봐야 확정됩니다.</div>
+      </div>
+      <div class="ask">
+        <div class="q">첫 심사를 8월 말로 당깁니까</div>
+        <div class="d">8/25 코어 루프 마감이 실질 마감이 됩니다.</div>
+      </div>
+      <div class="ask">
+        <div class="q">스토어 제출물은 누가 맡습니까</div>
+        <div class="d">코드가 아니라서 아무도 안 잡을 위험이 있습니다.</div>
+      </div>
+      <div class="ask">
+        <div class="q">프리셋 원격화를 MVP에 넣습니까</div>
+        <div class="d">반나절 규모. 안 넣으면 디자인 변경마다 심사입니다.</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:8px;">확인 못 한 것</h3>
+    <ul>
+      <li><strong>추석에 영입할 가족은 아이폰입니까?</strong> 아니면 목표 2를 TestFlight로 달성할 수 없습니다</li>
+      <li><strong>8/26~9/1에 원래 뭐가 잡혀 있었습니까?</strong> 거기에 첫 심사를 얹자는 제안입니다</li>
+      <li>개인 계정으로 내부 테스터를 넣을 수 있는지 — 되면 실사용이 심사와 무관해집니다</li>
+      <li>Web Share API 동작 여부 — 30분이면 검증 가능</li>
+    </ul>
+  </div>
+</section>
+
+</body>
+</html>
