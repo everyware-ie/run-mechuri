@@ -1,0 +1,697 @@
+<title>실제 GPX로 다시 보는 경로 보정 수준</title>
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg:#F4F2EE; --bg2:#E8E5DF; --fg:#17202B; --fg-mute:#5D6874;
+    --rule:#D6D2CA; --card:#FBFAF8; --accent:#E0522F; --accent2:#1D6E63;
+    --warn:#8A5A1E;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#10151B; --bg2:#171E26; --fg:#E9EDF2; --fg-mute:#93A0AE;
+            --rule:#26303B; --card:#161D25; --accent:#FF7A57; --accent2:#4FBFAE; --warn:#D6A45E; }
+  }
+  body { background:var(--bg); color:var(--fg); font-family:var(--sans); line-height:1.6; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1180px; margin:0 auto; padding:clamp(26px,5vw,60px) clamp(18px,4vw,40px) 72px;
+          display:flex; flex-direction:column; gap:clamp(24px,4vw,38px); }
+
+  .eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+             color:var(--fg-mute); display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+  .eyebrow b { color:var(--accent); font-weight:700; }
+  .eyebrow .sep { opacity:.4; }
+  h1 { font-size:clamp(24px,3.6vw,36px); font-weight:800; letter-spacing:-.03em; line-height:1.18;
+       margin:8px 0 10px; text-wrap:balance; }
+  .lede { max-width:66ch; color:var(--fg-mute); font-size:clamp(14px,1.5vw,16px); margin:0; }
+
+  .caution { background:var(--card); border:1px solid var(--rule); border-left:3px solid var(--warn);
+             padding:13px 15px; font-size:13.5px; color:var(--fg-mute); }
+  .caution b { color:var(--fg); }
+  .caution ol { margin:8px 0 0; padding-left:18px; }
+
+  .drop { border:1.5px dashed var(--rule); border-radius:12px; padding:22px; text-align:center;
+          background:var(--card); cursor:pointer; }
+  .drop.over { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 6%, var(--card)); }
+  .drop b { display:block; font-size:14px; margin-bottom:4px; }
+  .drop small { color:var(--fg-mute); font-size:12px; }
+  .drop input { display:none; }
+
+  .bar { display:flex; flex-wrap:wrap; gap:22px; align-items:flex-end;
+         border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); padding:16px 0; }
+  .grp { display:flex; flex-direction:column; gap:8px; }
+  .plabel { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--fg-mute); }
+  .btns { display:flex; gap:7px; flex-wrap:wrap; }
+  .tg { font-family:var(--sans); font-size:13px; border:1px solid var(--rule); background:var(--card);
+        color:var(--fg-mute); padding:8px 13px; cursor:pointer; line-height:1.3; }
+  .tg b { display:block; font-size:13px; font-weight:650; color:var(--fg); }
+  .tg small { font-size:11px; opacity:.85; }
+  .tg[aria-pressed="true"] { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 8%, var(--card)); }
+  .tg[aria-pressed="true"] b { color:var(--accent); }
+  .tg:focus-visible { outline:2px solid var(--accent2); outline-offset:2px; }
+  .tg[disabled] { opacity:.4; cursor:not-allowed; }
+  .dial { display:flex; align-items:center; gap:10px; }
+  .dial input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; height:22px;
+                            width:150px; cursor:pointer; }
+  .dial input[type=range]::-webkit-slider-runnable-track { height:3px; background:var(--rule); }
+  .dial input[type=range]::-moz-range-track { height:3px; background:var(--rule); }
+  .dial input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:13px; height:13px;
+                            border-radius:50%; background:var(--accent); margin-top:-5px; }
+  .dial input[type=range]::-moz-range-thumb { width:13px; height:13px; border:0; border-radius:50%; background:var(--accent); }
+  .dial input[type=range]:focus-visible { outline:2px solid var(--accent2); outline-offset:3px; }
+  .dial .val { font-family:var(--mono); font-size:11.5px; color:var(--fg); font-variant-numeric:tabular-nums;
+               min-width:52px; }
+  .shareIn { flex:1; min-width:200px; font-family:var(--mono); font-size:11.5px; color:var(--fg);
+             background:var(--card); border:1px solid var(--rule); padding:8px 10px; }
+
+  .panels { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:clamp(14px,2.2vw,26px); }
+  @media (max-width:880px) { .panels { grid-template-columns:1fr; max-width:380px; margin:0 auto; } }
+
+  .pan { display:flex; flex-direction:column; gap:11px; }
+  .frame { position:relative; width:100%; aspect-ratio:3/4; border-radius:16px; overflow:hidden;
+           background:#0A0E13; box-shadow:0 14px 32px -18px rgba(10,14,19,.6), 0 0 0 1px var(--rule); }
+  .frame canvas { display:block; width:100%; height:100%; }
+  .tag { position:absolute; top:9px; left:10px; font-family:var(--mono); font-size:9px; letter-spacing:.12em;
+         text-transform:uppercase; color:rgba(255,255,255,.62); background:rgba(0,0,0,.34);
+         padding:3px 7px; border-radius:3px; }
+  .empty { display:flex; align-items:center; justify-content:center; height:100%; color:rgba(255,255,255,.4);
+           font-size:12.5px; text-align:center; padding:0 20px; }
+
+  .pan h2 { font-size:15px; font-weight:700; letter-spacing:-.01em; margin:0; }
+  .pan .how { font-size:12.5px; color:var(--fg-mute); margin:0; }
+  .metrics { font-family:var(--mono); font-size:11.5px; color:var(--fg-mute); display:flex; flex-direction:column; gap:3px;
+             border-top:1px solid var(--rule); padding-top:9px; font-variant-numeric:tabular-nums; }
+  .metrics .k { color:var(--fg); font-weight:600; }
+  .metrics .hot { color:var(--accent); }
+
+  .notes { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px,1fr)); gap:20px;
+           border-top:1px solid var(--rule); padding-top:clamp(20px,3vw,32px); }
+  .note h3 { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+             color:var(--fg-mute); margin:0 0 9px; font-weight:700; }
+  .note ul { margin:0; padding-left:17px; font-size:13.5px; color:var(--fg-mute); display:flex; flex-direction:column; gap:7px; }
+  .note p { margin:0; font-size:13.5px; color:var(--fg-mute); }
+  .note strong { color:var(--fg); font-weight:650; }
+  .foot { font-family:var(--mono); font-size:11px; color:var(--fg-mute); border-top:1px solid var(--rule);
+          padding-top:16px; letter-spacing:.03em; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">
+      <span>raw / running / <b>JiEung2</b></span><span class="sep">·</span>
+      <span>2026-08-23</span><span class="sep">·</span><span>판단 재료, 결정 아님</span>
+    </div>
+    <h1>실제 GPX로 다시 보는 경로 보정 수준</h1>
+    <p class="lede">
+      <a href="../phs00/2026-08-17-route-stylization-levels.html">phs00의 보정 수준 비교 도구</a>가 합성 좌표로 만든 것과
+      <strong>같은 보정 알고리즘</strong>(직선 다듬기·코너 반경 분리·겹침 벌리기)을 그대로 재사용하되,
+      코스를 합성 대신 <strong>내가 직접 불러온 GPX 파일</strong>로 바꿨다. §8 판정 축은 같다 —
+      <strong>"이 그림을 보고 같은 길을 다시 뛸 수 있는가."</strong>
+    </p>
+  </header>
+
+  <div class="caution">
+    <b>GPX 확보 방법.</b> 애플 건강 앱은 개별 워크아웃 GPX 내보내기가 없다.
+    <a href="2026-08-16-data-acquisition-healthkit-and-gpx-research.md">08-16 조사</a>에서 실사용 검증한 서드파티 앱을 쓴다.
+    <ol>
+      <li>아이폰에 <b>GPX Export</b>(무료) 설치 → 건강 앱 권한 허용</li>
+      <li>실외 달리기 워크아웃 선택 → GPX로 내보내기 → 파일 앱에 저장</li>
+      <li>아래로 드래그하거나 눌러서 불러오기 (여러 개 한 번에 가능, 파일은 브라우저 밖으로 전송되지 않는다)</li>
+    </ol>
+    <b>다양성이 핵심이다.</b> 최소 세 유형을 챙긴다 — 닫힌 고리(공원 등), 왕복(강변 등), 직각 코너가 많은 도심.
+    phs00 도구의 코스 세 종류와 대응시켜야 같은 기준으로 비교된다.
+  </div>
+
+  <div class="drop" id="drop">
+    <input type="file" id="fileInput" accept=".gpx" multiple>
+    <b id="dropLabel">GPX 파일을 여기로 드래그하거나 눌러서 선택</b>
+    <small>여러 개 선택 가능 · .gpx만 지원 · 파싱은 이 브라우저 안에서만 일어난다</small>
+  </div>
+
+  <div class="bar" id="trackBar" style="display:none">
+    <div class="grp" style="flex:1">
+      <span class="plabel">불러온 트랙</span>
+      <div class="btns" id="tracks"></div>
+    </div>
+  </div>
+
+  <div class="bar" id="controls" style="display:none">
+    <div class="grp">
+      <span class="plabel">보기</span>
+      <div class="btns">
+        <button class="tg" id="tGhost" aria-pressed="true">원본 겹쳐보기</button>
+        <button class="tg" id="tFx" aria-pressed="false">연출 얹기</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">불빛 속도 기준 <span id="tempoNote"></span></span>
+      <div class="btns">
+        <button class="tg" id="tTempoConst" aria-pressed="true">일정 속도</button>
+        <button class="tg" id="tTempoReal" aria-pressed="false">실제 템포</button>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">건강 앱 기록 거리 (있으면, km)</span>
+      <div class="dial"><input type="text" id="officialKm" class="shareIn" style="max-width:90px" placeholder="예: 5.2"></div>
+    </div>
+  </div>
+
+  <div class="bar" id="dials" style="display:none; border-top:0; padding-top:0">
+    <div class="grp">
+      <span class="plabel">직선 다듬기 (phs00 도구 기본값과 동일 출발점)</span>
+      <div class="dial">
+        <input type="range" id="sSmooth" min="0" max="100" value="55" aria-label="직선 구간 다듬기 강도">
+        <span class="val" id="vSmooth">-</span>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">코너 반경</span>
+      <div class="dial">
+        <input type="range" id="sCorner" min="0" max="90" value="22" aria-label="코너 라운딩 반경(미터)">
+        <span class="val" id="vCorner">-</span>
+      </div>
+    </div>
+    <div class="grp">
+      <span class="plabel">겹친 구간</span>
+      <div class="btns"><button class="tg" id="tSep" aria-pressed="false">벌려서 두 줄로</button></div>
+    </div>
+  </div>
+
+  <div class="panels" id="panels"></div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>phs00 도구와 다른 점</h3>
+      <ul>
+        <li><strong>"실제로 뛴 거리(정답)" 줄이 없다.</strong> 합성 좌표는 노이즈를 얹기 전 진짜 경로를 알지만, 실제 GPX는 기록된 좌표 자체가 유일한 원본이다. 대신 <strong>건강 앱이 보고한 공식 거리</strong>를 입력하면 참고용으로 나란히 보여준다.</li>
+        <li>따라서 각 패널의 "원본 대비 이탈"은 <strong>기록된 원본(raw GPX) 대비</strong>이지 진짜 경로 대비가 아니다. 절대 왜곡량이 아니라 <strong>세 코스 유형 사이에서 상대적으로 얼마나 다듬어야 하는지</strong>를 보는 도구다.</li>
+        <li>슬라이더 기본값(직선 55 / 코너 22m)은 phs00 도구의 출발점과 같게 맞췄다. <strong>여기서 값을 바꿔보고, 실제 데이터에서도 버티는지 확인하는 게 이 도구의 목적이다.</strong></li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>무엇을 판정하나 (PRD §8과 동일 기준)</h3>
+      <ul>
+        <li><strong>실제로 지나가지 않은 길이 보이는가.</strong> 직선을 펴다가 없는 지름길이 생기면 안 된다.</li>
+        <li><strong>코너가 실제 길모퉁이만큼만 깎였는가.</strong> 직각 교차로가 둥글게 뭉개지면 "그 길"처럼 안 보인다.</li>
+        <li><strong>왕복 구간이 실제보다 심하게 겹치거나 뭉치는가.</strong> 합성 좌표보다 실제 GPS 노이즈가 더 클 수 있다 — 여기가 PRD §12 리스크("실제 GPX가 목업만큼 예쁘지 않다")의 실측 지점이다.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>이 도구가 끝나면</h3>
+      <p>
+        셋이 합의한 슬라이더 값을 <a href="../../specs/prd/running-drawing-mvp.md">PRD §8</a>의
+        "현재 제안값(팀 합의 대기)" 자리에 채운다. 좌표 수가 지나치게 적은 짧은 기록을 하나 넣어보면
+        <a href="../../specs/frd/run-record-selection.md">기록 선택 FRD §5</a>의 "그릴 수 있는 트랙의 하한"도 같이 감이 잡힌다.
+      </p>
+    </div>
+    <div class="note">
+      <h3>불빛 속도 기준 — 다음 회의 안건 (2026-08-23 추가)</h3>
+      <p>
+        처음엔 점 인덱스로 진행을 계산했는데, 다듬기 후 점 밀도가 구간마다 달라져서(직선은 성기고 코너는 빽빽)
+        <strong>직선에서 순간이동하듯 끊기고 코너에서 부자연스럽게 느려지는 문제</strong>가 있었다.
+        <strong>거리(호 길이) 기준으로 바꿔서 고쳤다.</strong> 다듬기 강도와 무관하게 항상 일정한 속도로 보인다.
+      </p>
+      <p>
+        여기에 더해 <strong>"실제로 뛴 템포 그대로 보여줄지, 완전히 무관하게 일정 속도로만 갈지"를
+        사용자가 클릭 하나로 고를 수 있게 하면 어떤가</strong>라는 아이디어가 나왔다. 위 "불빛 속도 기준" 토글로
+        시험 구현해뒀다 — GPX에 시각 정보가 있으면 <strong>실제 템포</strong>를 눌러서 신호 대기 구간에서
+        빛도 잠깐 멈칫하는지 확인할 수 있다. <a href="../../specs/frd/route-rendering.md">route-rendering FRD §5-4</a>에
+        열린 질문으로 남겨뒀다 — 팀 결정 아님.
+      </p>
+    </div>
+  </div>
+
+  <div class="foot">JiEung2 · 2026-08-23 · 2주차 담당: 드로잉 기능 테스트(합성 좌표 아닌 실제 데이터로)</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ─────────── 유틸 (phs00 도구와 동일) ─────────── */
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function pathLen(p) { var s = 0; for (var i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; }
+  function distToSeg(p, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    if (l2 === 0) return dist(p, a);
+    var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  }
+  function bboxDiag(pts) {
+    var mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity;
+    pts.forEach(function (p) {
+      if (p.x < mnx) mnx = p.x; if (p.x > mxx) mxx = p.x;
+      if (p.y < mny) mny = p.y; if (p.y > mxy) mxy = p.y;
+    });
+    return Math.hypot(mxx - mnx, mxy - mny);
+  }
+  function distToPath(p, path) {
+    var m = Infinity;
+    for (var i = 1; i < path.length; i++) {
+      var d = distToSeg(p, path[i - 1], path[i]);
+      if (d < m) m = d;
+    }
+    return m;
+  }
+
+  /* ─────────── 보정 단계 (phs00 도구와 동일 — 비교 가능성 유지) ─────────── */
+  function dedupe(pts, minD) {
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length; i++) if (dist(out[out.length - 1], pts[i]) >= minD) out.push(pts[i]);
+    if (out.length < 2) out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function smooth(pts, w) {
+    if (pts.length < 3) return pts.slice();
+    var h = Math.floor(w / 2), out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var sx = 0, sy = 0, n = 0;
+      for (var k = i - h; k <= i + h; k++) {
+        if (k < 0 || k >= pts.length) continue;
+        sx += pts[k].x; sy += pts[k].y; n++;
+      }
+      out.push({ x: sx / n, y: sy / n });
+    }
+    out[0] = pts[0];
+    out[out.length - 1] = pts[pts.length - 1];
+    return out;
+  }
+  function rdp(pts, eps) {
+    if (pts.length < 3) return pts.slice();
+    var maxD = -1, idx = 0;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var d = distToSeg(pts[i], pts[0], pts[pts.length - 1]);
+      if (d > maxD) { maxD = d; idx = i; }
+    }
+    if (maxD > eps) {
+      var l = rdp(pts.slice(0, idx + 1), eps), r = rdp(pts.slice(idx), eps);
+      return l.slice(0, l.length - 1).concat(r);
+    }
+    return [pts[0], pts[pts.length - 1]];
+  }
+  function roundCorners(pts, radius) {
+    if (radius <= 0 || pts.length < 3) return pts.slice();
+    var out = [pts[0]];
+    for (var i = 1; i < pts.length - 1; i++) {
+      var a = pts[i - 1], v = pts[i], b = pts[i + 1];
+      var d1 = dist(v, a), d2 = dist(v, b);
+      if (d1 < 1e-6 || d2 < 1e-6) continue;
+      var t = Math.min(radius, d1 * 0.45, d2 * 0.45);
+      var p1 = { x: v.x + (a.x - v.x) / d1 * t, y: v.y + (a.y - v.y) / d1 * t };
+      var p2 = { x: v.x + (b.x - v.x) / d2 * t, y: v.y + (b.y - v.y) / d2 * t };
+      var K = 10;
+      out.push(p1);
+      for (var k = 1; k < K; k++) {
+        var u = k / K, w = 1 - u;
+        out.push({
+          x: w * w * p1.x + 2 * w * u * v.x + u * u * p2.x,
+          y: w * w * p1.y + 2 * w * u * v.y + u * u * p2.y
+        });
+      }
+      out.push(p2);
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+  function separateOverlap(pts, radius, offset) {
+    var gap = Math.max(8, Math.round(pts.length * 0.12)), out = pts.slice();
+    for (var i = 0; i < pts.length; i++) {
+      var best = Infinity, bestJ = -1;
+      for (var j = 0; j < pts.length; j++) {
+        if (Math.abs(i - j) < gap) continue;
+        var d = dist(pts[i], pts[j]);
+        if (d < best) { best = d; bestJ = j; }
+      }
+      if (best < radius && bestJ >= 0) {
+        var a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+        var dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1;
+        var fade = 1 - best / radius;
+        out[i] = { x: pts[i].x + (-dy / L) * offset * fade, y: pts[i].y + (dx / L) * offset * fade };
+      }
+    }
+    return out;
+  }
+
+  var LEVELS = [
+    { id: "raw", name: "있는 그대로", how: "보정 없음. 기록된 좌표를 그대로 잇는다.",
+      build: function (raw) { return raw; } },
+    { id: "light", name: "가벼운 정리", how: "신호 대기 뭉침 제거 → 약한 스무딩 → 미세 간소화. 모양은 건드리지 않는다.",
+      build: function (raw) { return rdp(smooth(dedupe(raw, 4), 5), 4); } },
+    { id: "heavy", name: "양식화 (조절)", how: "직선 다듬기와 코너 반경이 서로 독립이다.",
+      build: function (raw, o) {
+        var win = 3 + Math.round(o.smooth / 100 * 12) * 2;
+        var s = smooth(dedupe(raw, 4), win);
+        var d = bboxDiag(s);
+        var e = rdp(s, d * (0.0008 + o.smooth / 100 * 0.011));
+        if (o.separate) e = separateOverlap(e, d * 0.020, d * 0.028);
+        return roundCorners(e, o.corner);
+      } }
+  ];
+
+  /* ─────────── 거리(호 길이) 기준 진행 ───────────
+     점 인덱스로 진행하면 다듬기 후 점 밀도가 구간마다 달라져(직선은 성기고 코너는 빽빽) 애니메이션이
+     끊기거나 부자연스럽게 느려진다. 거리 기준으로 가면 다듬기 강도와 무관하게 속도가 일정하다.
+     "실제 템포" 모드는 원본(raw) 트랙의 시각↔거리 대응표를 만들어, 그 시각 진행을 거리 비율로 바꾼 뒤
+     그 비율을 지금 보고 있는 패널의 트랙 길이에 그대로 적용한다(간소화돼도 경로상 순서는 유지되므로). */
+  function cumArc(pts) {
+    var cum = new Array(pts.length); cum[0] = 0;
+    for (var i = 1; i < pts.length; i++) cum[i] = cum[i - 1] + dist(pts[i - 1], pts[i]);
+    return cum;
+  }
+  function posAtArc(pts, cum, target) {
+    var total = cum[cum.length - 1] || 1e-9;
+    target = Math.max(0, Math.min(total, target));
+    var lo = 0, hi = cum.length - 1;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (cum[mid] < target) lo = mid + 1; else hi = mid; }
+    var i = Math.max(1, lo);
+    var segLen = cum[i] - cum[i - 1] || 1e-9;
+    var t = (target - cum[i - 1]) / segLen;
+    return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t, idx: i - 1 };
+  }
+  function slicePath(pts, cum, fromArc, toArc) {
+    if (toArc <= fromArc) { var one = posAtArc(pts, cum, fromArc); return [{ x: one.x, y: one.y }]; }
+    var from = posAtArc(pts, cum, fromArc), to = posAtArc(pts, cum, toArc);
+    var out = [{ x: from.x, y: from.y }];
+    for (var i = from.idx + 1; i <= to.idx; i++) out.push(pts[i]);
+    out.push({ x: to.x, y: to.y });
+    return out;
+  }
+  function timeFracToArcFrac(track, timeFrac) {
+    var times = track.times, cum = track.rawCum, total = track.rawTotalLen;
+    var targetT = timeFrac * track.totalDuration;
+    var lo = 0, hi = times.length - 1;
+    while (lo < hi) { var mid = (lo + hi) >> 1; if (times[mid] < targetT) lo = mid + 1; else hi = mid; }
+    var i = Math.max(1, lo);
+    var segT = times[i] - times[i - 1] || 1e-9;
+    var tt = (targetT - times[i - 1]) / segT;
+    var arc = cum[i - 1] + (cum[i] - cum[i - 1]) * tt;
+    return arc / (total || 1e-9);
+  }
+
+  /* ─────────── GPX 파싱 ─────────── */
+  function parseGPX(text, name) {
+    var doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.querySelector("parsererror")) return null;
+    var trkpts = doc.querySelectorAll("trkpt");
+    if (!trkpts.length) return null;
+    var raw = [], times = [], t0ms = null, allHaveTime = true;
+    trkpts.forEach(function (el) {
+      var lat = parseFloat(el.getAttribute("lat")), lon = parseFloat(el.getAttribute("lon"));
+      if (isNaN(lat) || isNaN(lon)) return;
+      raw.push({ lat: lat, lon: lon });
+      var timeEl = el.querySelector("time");
+      var ms = timeEl ? Date.parse(timeEl.textContent) : NaN;
+      if (isNaN(ms)) { allHaveTime = false; times.push(null); return; }
+      if (t0ms === null) t0ms = ms;
+      times.push((ms - t0ms) / 1000);
+    });
+    if (raw.length < 2) return null;
+
+    var lat0 = raw.reduce(function (s, p) { return s + p.lat; }, 0) / raw.length;
+    var R = 6371000, rad = Math.PI / 180, cosLat0 = Math.cos(lat0 * rad);
+    var pts = raw.map(function (p) {
+      return { x: (p.lon - raw[0].lon) * rad * cosLat0 * R, y: (p.lat - raw[0].lat) * rad * R };
+    });
+    var rawCum = cumArc(pts);
+    var track = { id: "t" + Date.now() + Math.random().toString(36).slice(2, 7), name: name.replace(/\.gpx$/i, ""),
+                  pts: pts, n: pts.length, rawCum: rawCum, rawTotalLen: rawCum[rawCum.length - 1],
+                  hasTime: allHaveTime, times: allHaveTime ? times : null };
+    track.totalDuration = allHaveTime ? times[times.length - 1] : null;
+    return track;
+  }
+
+  /* ─────────── 상태 ─────────── */
+  var tracks = [], activeId = null;
+  var state = { smooth: 55, corner: 22, separate: false, ghost: true, fx: false, tempo: "const" };
+  var built = null, view = null;
+
+  function addTrack(t) {
+    tracks.push(t);
+    var b = document.createElement("button");
+    b.className = "tg"; b.type = "button";
+    b.setAttribute("aria-pressed", "false");
+    b.innerHTML = "<b>" + t.name + "</b><small>좌표 " + t.n + "점</small>";
+    b.addEventListener("click", function () { selectTrack(t.id); });
+    document.getElementById("tracks").appendChild(b);
+    document.getElementById("trackBar").style.display = "";
+    document.getElementById("controls").style.display = "";
+    document.getElementById("dials").style.display = "";
+    if (!activeId) selectTrack(t.id);
+  }
+
+  function selectTrack(id) {
+    activeId = id;
+    [].forEach.call(document.getElementById("tracks").children, function (el, i) {
+      el.setAttribute("aria-pressed", String(tracks[i].id === id));
+    });
+    rebuild();
+  }
+
+  function currentTrack() {
+    for (var i = 0; i < tracks.length; i++) if (tracks[i].id === activeId) return tracks[i];
+    return null;
+  }
+
+  function rebuild() {
+    var t = currentTrack();
+    if (!t) return;
+    var raw = t.pts;
+    var levelTracks = LEVELS.map(function (lv) { return lv.build(raw, state); });
+
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    levelTracks.forEach(function (tr) {
+      tr.forEach(function (p) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      });
+    });
+    view = { minX: minX, maxX: maxX, minY: minY, maxY: maxY };
+
+    var rawLen = pathLen(raw);
+    var officialKm = parseFloat(document.getElementById("officialKm").value);
+    built = levelTracks.map(function (tr, i) {
+      var devs = tr.map(function (p) { return distToPath(p, raw); });
+      var avg = devs.reduce(function (a, b) { return a + b; }, 0) / devs.length;
+      var max = devs.reduce(function (a, b) { return Math.max(a, b); }, 0);
+      var cum = cumArc(tr);
+      return {
+        level: LEVELS[i], pts: tr, avgDev: avg, maxDev: max, cum: cum, totalLen: cum[cum.length - 1],
+        km: pathLen(tr) / 1000, rawKm: rawLen / 1000, officialKm: isNaN(officialKm) ? null : officialKm,
+        n: tr.length, rawN: raw.length
+      };
+    });
+    updateTempoUI(t);
+    render();
+  }
+
+  function project(p, W, H) {
+    var padX = W * 0.09, padY = H * 0.09;
+    var bw = view.maxX - view.minX || 1, bh = view.maxY - view.minY || 1;
+    var s = Math.min((W - padX * 2) / bw, (H - padY * 2) / bh);
+    return {
+      x: (W - bw * s) / 2 + (p.x - view.minX) * s,
+      y: (H - bh * s) / 2 + (bh - (p.y - view.minY)) * s
+    };
+  }
+  function trace(ctx, pts, W, H) {
+    ctx.beginPath();
+    for (var i = 0; i < pts.length; i++) {
+      var q = project(pts[i], W, H);
+      if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+    }
+  }
+
+  function drawPanel(cv, item, frac) {
+    var dpr = window.devicePixelRatio || 1;
+    var W = cv.clientWidth, H = cv.clientHeight;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    }
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#141A22"); g.addColorStop(1, "#090C11");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+    if (state.ghost && item.level.id !== "raw") {
+      ctx.save();
+      trace(ctx, built[0].pts, W, H);
+      ctx.strokeStyle = "rgba(255,255,255,.17)"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    }
+
+    if (!state.fx) {
+      ctx.save();
+      trace(ctx, item.pts, W, H);
+      ctx.strokeStyle = "#FFF3EC"; ctx.lineWidth = 3.4; ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    trace(ctx, item.pts, W, H);
+    ctx.strokeStyle = "rgba(255,255,255,.20)"; ctx.lineWidth = 2.4; ctx.stroke();
+    ctx.restore();
+
+    /* 점 인덱스가 아니라 거리(호 길이) 기준으로 머리 위치를 잡는다 — 다듬기 강도와 무관하게 속도가 일정하다 */
+    var headArc = frac * item.totalLen;
+    var head = posAtArc(item.pts, item.cum, headArc);
+
+    ctx.save();
+    trace(ctx, slicePath(item.pts, item.cum, 0, headArc), W, H);
+    ctx.strokeStyle = "rgba(255,243,236,.6)"; ctx.lineWidth = 3.4;
+    ctx.shadowBlur = 10; ctx.shadowColor = "#FF6B4A"; ctx.stroke();
+    ctx.restore();
+
+    var tailFromArc = Math.max(0, headArc - item.totalLen * 0.09);
+    ctx.save();
+    trace(ctx, slicePath(item.pts, item.cum, tailFromArc, headArc), W, H);
+    ctx.strokeStyle = "#FFF3EC"; ctx.lineWidth = 4.2;
+    ctx.shadowBlur = 20; ctx.shadowColor = "#FF6B4A"; ctx.stroke();
+    ctx.restore();
+
+    var h = project(head, W, H);
+    ctx.save();
+    ctx.shadowBlur = 28; ctx.shadowColor = "#FF6B4A"; ctx.fillStyle = "#FFFFFF";
+    ctx.beginPath(); ctx.arc(h.x, h.y, 5.2, 0, 7); ctx.fill();
+    ctx.shadowBlur = 48; ctx.fill();
+    ctx.restore();
+  }
+
+  var panelHost = document.getElementById("panels"), canvases = [];
+  LEVELS.forEach(function (lv, i) {
+    var d = document.createElement("div");
+    d.className = "pan";
+    d.innerHTML =
+      '<div class="frame"><canvas></canvas><span class="tag">' + (i + 1) + ' / ' + LEVELS.length + '</span>' +
+      '<div class="empty" id="empty-' + lv.id + '">GPX를 불러오면 여기 그려진다</div></div>' +
+      '<h2>' + lv.name + '</h2>' +
+      '<p class="how">' + lv.how + '</p>' +
+      '<div class="metrics" id="m-' + lv.id + '"></div>';
+    panelHost.appendChild(d);
+    canvases.push(d.querySelector("canvas"));
+  });
+
+  function render() {
+    built.forEach(function (item) {
+      document.getElementById("empty-" + item.level.id).style.display = "none";
+      var el = document.getElementById("m-" + item.level.id);
+      var offLine = item.officialKm !== null
+        ? ' · 건강 앱 <span class="k">' + item.officialKm.toFixed(2) + ' km</span>'
+        + ' (선 길이차 ' + (item.km - item.officialKm >= 0 ? '+' : '') + (item.km - item.officialKm).toFixed(2) + ' km)'
+        : '';
+      var lenLine = '<div>선 길이 <span class="k">' + item.km.toFixed(2) + ' km</span>' + offLine
+        + ' · 좌표 ' + item.n + '점</div>';
+      if (item.level.id === "raw") {
+        el.innerHTML = '<div><span class="k">이탈의 기준선</span>, 아래 두 패널은 이 선에서 잰 값</div>' + lenLine;
+      } else {
+        el.innerHTML =
+          '<div>원본(raw GPX) 대비 평균 이탈 <span class="k hot">' + item.avgDev.toFixed(1) + ' m</span>'
+          + ' · 최대 <span class="k">' + item.maxDev.toFixed(0) + ' m</span></div>' + lenLine;
+      }
+    });
+  }
+
+  function bindToggle(id, key) {
+    var el = document.getElementById(id);
+    el.setAttribute("aria-pressed", String(state[key]));
+    el.addEventListener("click", function () {
+      state[key] = el.getAttribute("aria-pressed") !== "true";
+      el.setAttribute("aria-pressed", String(state[key]));
+      render();
+    });
+  }
+  bindToggle("tGhost", "ghost");
+  bindToggle("tFx", "fx");
+
+  var tConstEl = document.getElementById("tTempoConst"), tRealEl = document.getElementById("tTempoReal");
+  function setTempo(v) {
+    state.tempo = v;
+    tConstEl.setAttribute("aria-pressed", String(v === "const"));
+    tRealEl.setAttribute("aria-pressed", String(v === "time"));
+  }
+  tConstEl.addEventListener("click", function () { setTempo("const"); });
+  tRealEl.addEventListener("click", function () { if (!tRealEl.disabled) setTempo("time"); });
+  function updateTempoUI(t) {
+    var has = !!(t && t.hasTime);
+    tRealEl.disabled = !has;
+    document.getElementById("tempoNote").textContent = has ? "" : "(이 GPX엔 시각 정보가 없다)";
+    if (!has && state.tempo === "time") setTempo("const");
+  }
+
+  var sepEl = document.getElementById("tSep");
+  sepEl.addEventListener("click", function () {
+    state.separate = sepEl.getAttribute("aria-pressed") !== "true";
+    sepEl.setAttribute("aria-pressed", String(state.separate));
+    rebuild();
+  });
+
+  function bindDial(id, key, labelId, fmt) {
+    var el = document.getElementById(id), out = document.getElementById(labelId);
+    el.value = state[key]; out.textContent = fmt(state[key]);
+    el.addEventListener("input", function () {
+      state[key] = parseInt(el.value, 10);
+      out.textContent = fmt(state[key]);
+      rebuild();
+    });
+  }
+  bindDial("sSmooth", "smooth", "vSmooth", function (v) { return v === 0 ? "없음" : v + " %"; });
+  bindDial("sCorner", "corner", "vCorner", function (v) { return v === 0 ? "각지게" : v + " m"; });
+  document.getElementById("officialKm").addEventListener("input", rebuild);
+
+  /* ─────────── 파일 입력 ─────────── */
+  function handleFiles(fileList) {
+    var files = Array.prototype.slice.call(fileList).filter(function (f) {
+      return /\.gpx$/i.test(f.name);
+    });
+    if (!files.length) return;
+    document.getElementById("dropLabel").textContent = "불러오는 중...";
+    var pending = files.length;
+    files.forEach(function (f) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var t = parseGPX(reader.result, f.name);
+        if (t) addTrack(t);
+        pending--;
+        if (pending === 0) document.getElementById("dropLabel").textContent = "GPX 파일을 여기로 드래그하거나 눌러서 선택";
+      };
+      reader.onerror = function () {
+        pending--;
+        if (pending === 0) document.getElementById("dropLabel").textContent = "GPX 파일을 여기로 드래그하거나 눌러서 선택";
+      };
+      reader.readAsText(f);
+    });
+  }
+
+  var dropEl = document.getElementById("drop");
+  var fileInput = document.getElementById("fileInput");
+  dropEl.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () { handleFiles(fileInput.files); });
+  ["dragenter", "dragover"].forEach(function (ev) {
+    dropEl.addEventListener(ev, function (e) { e.preventDefault(); dropEl.classList.add("over"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    dropEl.addEventListener(ev, function (e) { e.preventDefault(); dropEl.classList.remove("over"); });
+  });
+  dropEl.addEventListener("drop", function (e) {
+    if (e.dataTransfer && e.dataTransfer.files) handleFiles(e.dataTransfer.files);
+  });
+
+  /* ─────────── 애니메이션 루프 ─────────── */
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var DUR = 7000, t0 = performance.now();
+  function frame(now) {
+    var p = reduce ? 1 : ((now - t0) % DUR) / DUR;
+    var t = currentTrack();
+    var frac = p;
+    if (state.tempo === "time" && t && t.hasTime) frac = timeFracToArcFrac(t, p);
+    if (built) built.forEach(function (item, i) { drawPanel(canvases[i], item, frac); });
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
