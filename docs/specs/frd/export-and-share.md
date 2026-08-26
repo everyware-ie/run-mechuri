@@ -2,8 +2,8 @@
 title: 내보내기·공유·저장 기능정의서 (FRD)
 product: running
 type: frd
-status: draft
-updated: 2026-08-23
+status: approved
+updated: 2026-08-26
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 4번, §6 내보낸 다음, §12 인코딩 대기"
 related:
@@ -14,7 +14,7 @@ related:
 
 # 내보내기·공유·저장 FRD
 
-> **status: `draft`.** approved가 아니면 구현 근거가 아니다.
+> **status: `approved`.** 2026-08-25 회의에서 확정됐다. 구현 근거로 쓸 수 있다.
 > 근거: [PRD](../prd/running-drawing-mvp.md) · [2026-08-18 결정](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
 
 ## 0. 범위
@@ -88,7 +88,7 @@ related:
 
 ### 3-1. 원클릭이 목표다
 
-공식 공유 API로 스토리 배경에 결과물이 자동 삽입된 편집 화면까지 띄운다. 사용자가 파일을 찾아 올리는 것이 아니다. **이것이 네이티브를 고른 근거 중 하나였다**(PRD §6).
+공식 공유 API로 스토리 배경에 결과물이 자동 삽입된 편집 화면까지 띄운다. 사용자가 파일을 찾아 올리는 것이 아니다. **이것이 앱으로 가기로 한 근거 중 하나였다**(PRD §6). 웹이었다면 이 문이 닫힌다. RN에서는 Swift 브릿지로 부른다([2026-08-25 결정](../../decisions/2026-08-25-react-native-expo-stack.md)).
 
 `[확인 필요]` 인스타 공유에는 Facebook App ID가 필요하다(JiEung2 2026-08-16). 스토어 제출물 트랙에 걸려 있는 항목이므로 그쪽과 함께 챙긴다.
 

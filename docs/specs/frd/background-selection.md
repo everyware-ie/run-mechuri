@@ -2,8 +2,8 @@
 title: 배경 선택 기능정의서 (FRD)
 product: running
 type: frd
-status: draft
-updated: 2026-08-23
+status: approved
+updated: 2026-08-26
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§1 한 줄 정의(배경 표), §6 배경 선택"
 related:
@@ -13,7 +13,7 @@ related:
 
 # 배경 선택 FRD
 
-> **status: `draft`.** approved가 아니면 구현 근거가 아니다.
+> **status: `approved`.** 2026-08-25 회의에서 확정됐다. 구현 근거로 쓸 수 있다.
 > 근거: [PRD](../prd/running-drawing-mvp.md) · [2026-08-18 결정](../../decisions/2026-08-18-native-ios-and-mvp-scope.md)
 
 ## 0. 범위

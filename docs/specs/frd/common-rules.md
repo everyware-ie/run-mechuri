@@ -2,8 +2,8 @@
 title: 공통 규칙 기능정의서 (FRD)
 product: running
 type: frd
-status: draft
-updated: 2026-08-23
+status: approved
+updated: 2026-08-26
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§6 사용자 플로우, §9 기록 열람 정책, §12 리스크와 폴백"
 related:
@@ -14,7 +14,7 @@ related:
 
 # 공통 규칙 FRD
 
-> **status: `draft`.** approved가 아니면 구현 근거가 아니다.
+> **status: `approved`.** 2026-08-25 회의에서 확정됐다. 구현 근거로 쓸 수 있다.
 > 근거: [PRD](../prd/running-drawing-mvp.md)
 
 ## 0. 범위
@@ -69,7 +69,7 @@ iOS 14부터 `PHPickerViewController`가 사진 선택 화면을 앱 바깥에�
 
 카메라를 거부한 사람은 기본 이미지와 갤러리로 배경을 고른다. 사진 쓰기를 거부한 사람은 저장 대신 인스타로 공유한다. 두 경우 모두 결과물은 나온다.
 
-건강 데이터만 예외다. 거부하면 그릴 재료가 없고, MVP에는 대안이 될 GPX 임포트가 없다(PRD §6). 다만 건강 데이터를 앱에 주기 싫은 사람은 초기 타겟이 아니다(PRD §3).
+건강 데이터만 예외다. 거부하면 그릴 재료가 없고, **MVP에는 대안이 되는 출처가 아예 없다.** GPX 임포트는 제외 확정이다(PRD §6). 다만 건강 데이터를 앱에 주기 싫은 사람은 초기 타겟이 아니다(PRD §3).
 
 ## 2. 빈 상태
 
@@ -87,7 +87,7 @@ iOS 14부터 `PHPickerViewController`가 사진 선택 화면을 앱 바깥에�
 
 권한 안내만 크게 띄우면 기록이 정말 없는 사람에게 엉뚱한 말이 된다. "기록이 없습니다"만 띄우면 거부한 사람은 이유를 모른 채 나간다.
 
-GPX 임포트가 붙으면 세 번째 길이 하나 늘어난다(PRD §6).
+두 번째 출처가 붙으면 세 번째 길이 하나 늘어난다(PRD §6).
 
 ### 2-2. 보관함이 비어 있을 때
 
