@@ -41,12 +41,35 @@ struct RouteTransformInput: Record {
   @Field var rotationDeg: Double = 0
 }
 
+/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 넷 중 어느 게 켜져 있나.
+struct StampItemsInput: Record {
+  @Field var distance: Bool = true
+  @Field var time: Bool = true
+  @Field var pace: Bool = true
+  @Field var heartRate: Bool = true
+}
+
 struct RenderClipOptionsInput: Record {
   @Field var points: [RoutePointInput] = []
   @Field var backgroundImagePath: String = ""
   @Field var outputFileName: String = ""
   @Field var preset: String = "default-drawing"
   @Field var transform: RouteTransformInput = RouteTransformInput()
+  /// result-editing FRD §5. 0~100, 기본 0(무보정).
+  @Field var smooth: Double = 0
+  /// result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정).
+  @Field var corner: Double = 0
+  /// result-editing FRD §7. "always" | "after" | "hidden".
+  @Field var stampMode: String = "hidden"
+  @Field var stampItems: StampItemsInput = StampItemsInput()
+  @Field var stampX: Double = 0
+  @Field var stampY: Double = 0
+  /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
+  @Field var distanceMeters: Double = 0
+  @Field var durationSeconds: Double = 0
+  @Field var averagePaceSecPerKm: Double = 0
+  /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
+  @Field var averageHeartRate: Double? = nil
 }
 
 struct RenderClipResultPayload: Record {
@@ -58,6 +81,9 @@ enum RouteRendererError: Error, LocalizedError {
   case backgroundImageNotFound
   case writerSetupFailed
   case pixelBufferPoolMissing
+  /// export-and-share FRD §2-4·F2: 취소는 실패가 아니다. JS 쪽은 이 케이스를 문자열로
+  /// 구분하지 않고, 취소 버튼을 누른 시점을 자체적으로 기억해뒀다가 구분한다(share.tsx).
+  case cancelled
 
   var errorDescription: String? {
     switch self {
@@ -69,6 +95,8 @@ enum RouteRendererError: Error, LocalizedError {
       return "비디오 인코더 초기화에 실패했습니다"
     case .pixelBufferPoolMissing:
       return "프레임 버퍼 풀을 만들지 못했습니다"
+    case .cancelled:
+      return "취소했습니다"
     }
   }
 }
@@ -80,10 +108,22 @@ private enum RoutePreset: String {
 }
 
 public class RouteRendererModule: Module {
+  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제라
+  // 인스턴스 플래그 하나로 충분하다 — 작업별 취소 토큰까지는 필요 없다.
+  private var isCancelled = false
+
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
 
+    // export-and-share FRD §2-3: 인코딩 진행률.
+    Events("onRenderProgress")
+
+    Function("cancelRender") {
+      self.isCancelled = true
+    }
+
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
+      self.isCancelled = false
       guard options.points.count >= 2 else {
         throw RouteRendererError.notEnoughPoints
       }
@@ -93,8 +133,14 @@ public class RouteRendererModule: Module {
       let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
 
       let baseProjected = self.projectPoints(options.points)
-      let projected = self.applyTransform(baseProjected, transform: options.transform)
-      let cumulativeDistances = self.cumulativeDistances(options.points)
+      // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 편집
+      // 화면 미리보기(route-preview.tsx)의 순서(projectPoints → applySmoothing → transform)와 맞춘다.
+      let smoothed = self.applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
+      let projected = self.applyTransform(smoothed, transform: options.transform)
+      // 다듬기가 점 개수·위치를 바꾸므로 원본 위경도 기반 누적 거리와 대응이 깨진다.
+      // §5-4 진행률은 항상 비율(targetDistance = total * fraction)로만 쓰이므로
+      // 캔버스 유클리드 거리로 다시 계산해도 결과가 같다(route-projection.ts와 동일).
+      let cumulativeDistances = self.cumulativeCanvasDistances(projected)
       let totalDistance = cumulativeDistances.last ?? 0
 
       let outputURL = self.outputURL(named: options.outputFileName)
@@ -104,8 +150,11 @@ public class RouteRendererModule: Module {
         cumulativeDistances: cumulativeDistances,
         totalDistance: totalDistance,
         background: background,
+        stamp: options,
         to: outputURL
       )
+
+      self.sendEvent("onRenderProgress", ["progress": 1.0])
 
       var result = RenderClipResultPayload()
       result.outputPath = outputURL.absoluteString
@@ -198,6 +247,125 @@ public class RouteRendererModule: Module {
     return earthRadius * c
   }
 
+  /// 캔버스(픽셀) 좌표계 누적 거리. route-projection.ts의 cumulativeCanvasDistances와 동일.
+  private func cumulativeCanvasDistances(_ points: [CGPoint]) -> [Double] {
+    guard points.count > 1 else { return [0] }
+    var result: [Double] = [0]
+    for i in 1..<points.count {
+      result.append(result[i - 1] + Double(hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)))
+    }
+    return result
+  }
+
+  // MARK: - 다듬기 (result-editing FRD §5)
+  //
+  // route-smoothing.ts와 동일한 파이프라인: 중복 제거 → 이동평균 → RDP 단순화 → 모서리
+  // 라운딩. 미리보기와 최종 결과물 모양이 어긋나지 않도록 두 언어에 각각 이식했다.
+
+  private func applySmoothing(_ points: [CGPoint], smooth: Double, corner: Double) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    let window = 3 + Int((smooth / 100 * 12).rounded()) * 2
+    let smoothed = movingAverage(dedupe(points, minDist: 4), window: window)
+    let dg = max(diagonal(smoothed), 1)
+    let simplified = rdpSimplify(smoothed, epsilon: dg * (0.0008 + smooth / 100 * 0.011))
+    return roundCorners(simplified, radius: corner * (dg / 620))
+  }
+
+  private func dedupe(_ points: [CGPoint], minDist: CGFloat) -> [CGPoint] {
+    guard var last = points.first else { return points }
+    var out = [last]
+    for p in points.dropFirst() where hypot(p.x - last.x, p.y - last.y) >= minDist {
+      out.append(p)
+      last = p
+    }
+    if out.count < 2, let lastPoint = points.last { out.append(lastPoint) }
+    return out
+  }
+
+  private func movingAverage(_ points: [CGPoint], window: Int) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    let half = window / 2
+    var out: [CGPoint] = []
+    for i in 0..<points.count {
+      var sx: CGFloat = 0
+      var sy: CGFloat = 0
+      var k: CGFloat = 0
+      for j in (i - half)...(i + half) where j >= 0 && j < points.count {
+        sx += points[j].x
+        sy += points[j].y
+        k += 1
+      }
+      out.append(CGPoint(x: sx / k, y: sy / k))
+    }
+    out[0] = points[0]
+    out[out.count - 1] = points[points.count - 1]
+    return out
+  }
+
+  private func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let lenSq = dx * dx + dy * dy
+    guard lenSq > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+    var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq
+    t = max(0, min(1, t))
+    return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+  }
+
+  private func rdpSimplify(_ points: [CGPoint], epsilon: CGFloat) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    var maxDist: CGFloat = -1
+    var idx = 0
+    for i in 1..<(points.count - 1) {
+      let d = segmentDistance(points[i], points[0], points[points.count - 1])
+      if d > maxDist {
+        maxDist = d
+        idx = i
+      }
+    }
+    if maxDist > epsilon {
+      let left = rdpSimplify(Array(points[0...idx]), epsilon: epsilon)
+      let right = rdpSimplify(Array(points[idx...]), epsilon: epsilon)
+      return Array(left.dropLast()) + right
+    }
+    return [points[0], points[points.count - 1]]
+  }
+
+  private func roundCorners(_ points: [CGPoint], radius: CGFloat) -> [CGPoint] {
+    guard radius > 0, points.count >= 3 else { return points }
+    var out: [CGPoint] = [points[0]]
+    for i in 1..<(points.count - 1) {
+      let a = points[i - 1]
+      let v = points[i]
+      let b = points[i + 1]
+      let d1 = hypot(v.x - a.x, v.y - a.y)
+      let d2 = hypot(v.x - b.x, v.y - b.y)
+      guard d1 > 1e-6, d2 > 1e-6 else { continue }
+      let t = min(radius, d1 * 0.45, d2 * 0.45)
+      let p1 = CGPoint(x: v.x + (a.x - v.x) / d1 * t, y: v.y + (a.y - v.y) / d1 * t)
+      let p2 = CGPoint(x: v.x + (b.x - v.x) / d2 * t, y: v.y + (b.y - v.y) / d2 * t)
+      out.append(p1)
+      for k in 1..<10 {
+        let u = CGFloat(k) / 10
+        let w = 1 - u
+        out.append(CGPoint(
+          x: w * w * p1.x + 2 * w * u * v.x + u * u * p2.x,
+          y: w * w * p1.y + 2 * w * u * v.y + u * u * p2.y
+        ))
+      }
+      out.append(p2)
+    }
+    out.append(points[points.count - 1])
+    return out
+  }
+
+  private func diagonal(_ points: [CGPoint]) -> CGFloat {
+    guard !points.isEmpty else { return 0 }
+    let xs = points.map { $0.x }
+    let ys = points.map { $0.y }
+    return hypot(xs.max()! - xs.min()!, ys.max()! - ys.min()!)
+  }
+
   /// §5-4: 진행률은 점 인덱스가 아니라 거리(호 길이) 기준.
   private func pointsUpTo(distance targetDistance: Double, projected: [CGPoint], cumulative: [Double]) -> [CGPoint] {
     if targetDistance <= 0 { return [projected[0]] }
@@ -282,14 +450,15 @@ public class RouteRendererModule: Module {
     ctx.restoreGState()
   }
 
-  /// §8 합성 순서(배경 → 경로) + 프리셋별 진행 표현(§6).
+  /// §8 합성 순서(배경 → 경로 → 각인) + 프리셋별 진행 표현(§6).
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
     projectedPoints: [CGPoint],
     cumulativeDistances: [Double],
     totalDistance: Double,
-    progressFraction: Double
+    progressFraction: Double,
+    stamp: RenderClipOptionsInput
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
     let renderer = UIGraphicsImageRenderer(size: size)
@@ -310,15 +479,18 @@ public class RouteRendererModule: Module {
         self.strokePath(visible, color: self.lineWarm, width: 10, glowRadius: 6, glowColor: .white)
 
       case .lightRunner:
-        // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기) + 최근 10%(핫 트레일) + 머리 발광 점.
-        // 끝점에 닿는 순간 경로 전체가 밝아진다.
+        // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
+        // 머리 발광 점. 끝점에 닿는 순간 경로 전체가 밝아진다.
         self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5)
         let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
-        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8)
+        // 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분.
+        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8, glowRadius: 10, glowColor: .white)
 
         let isComplete = progressFraction >= 1
         if !isComplete {
-          let hotStartDistance = max(0, targetDistance - totalDistance * 0.1)
+          // 목업(2026-08-04)의 "최근 46점" 잔광을 거리 기준으로 옮긴 값(v0 근사,
+          // route-preview.tsx와 동일한 6% 값 — TS 쪽 주석 참고).
+          let hotStartDistance = max(0, targetDistance - totalDistance * 0.06)
           let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
           self.strokePath(hotTrail, color: self.lineWarm, width: 10, glowRadius: 14, glowColor: self.glowColor)
@@ -371,6 +543,77 @@ public class RouteRendererModule: Module {
           }
         }
       }
+
+      self.drawStamps(stamp, progressFraction: progressFraction, canvasSize: size)
+    }
+  }
+
+  // MARK: - 각인 (result-editing FRD §7 · route-rendering FRD §7)
+  //
+  // route-preview.tsx의 StampLayer와 같은 규칙: 넷을 다 새기되 심박은 데이터 있을 때만,
+  // 거리는 그려진 선 길이가 아니라 기록된 총 거리를 쓴다. 폰트는 미리보기(SVG, 로드된
+  // JetBrains Mono)와 다르게 시스템 모노스페이스를 쓴다 — 번들에 폰트 파일을 넣는
+  // 네이티브 자산 파이프라인이 아직 없어서, 미리보기와 최종 결과물의 폰트가 다를 수
+  // 있다(v0 근사, 프리셋 글로우 반경 근사와 같은 종류의 타협).
+
+  private func formatDistanceKm(_ meters: Double) -> String {
+    String(format: "%.2fkm", meters / 1000)
+  }
+
+  private func formatDuration(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    let s = total % 60
+    return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+  }
+
+  private func formatPace(_ secPerKm: Double) -> String {
+    let total = max(0, Int(secPerKm.rounded()))
+    return String(format: "%d'%02d\"/km", total / 60, total % 60)
+  }
+
+  private func formatHeartRate(_ bpm: Double) -> String {
+    String(format: "%.0fbpm", bpm)
+  }
+
+  private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    let isComplete = progressFraction >= 1
+    if stamp.stampMode == "hidden" { return }
+    if stamp.stampMode == "after" && !isComplete { return }
+
+    var items: [String] = []
+    if stamp.stampItems.distance { items.append(formatDistanceKm(stamp.distanceMeters * progressFraction)) }
+    if stamp.stampItems.time { items.append(formatDuration(stamp.durationSeconds * progressFraction)) }
+    if stamp.stampItems.pace { items.append(formatPace(stamp.averagePaceSecPerKm)) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { items.append(formatHeartRate(hr)) }
+    guard !items.isEmpty else { return }
+
+    let fontSize: CGFloat = 28
+    let gap: CGFloat = 22
+    // route-preview.tsx StampLayer와 동일한 기본 자리·간이 너비 추정(모노스페이스 가정).
+    let safeAreaBottomRatio: CGFloat = 0.2
+    let defaultY = canvasSize.height * (1 - safeAreaBottomRatio) - 90
+    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+    let y = defaultY + CGFloat(stamp.stampY)
+    let charWidth = fontSize * 0.62
+
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
+      .foregroundColor: lineWarm,
+    ]
+
+    let widths = items.map { CGFloat($0.count) * charWidth }
+    let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
+    var cursorX = centerX - totalWidth / 2
+
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    for (i, text) in items.enumerated() {
+      ctx.saveGState()
+      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      (text as NSString).draw(at: CGPoint(x: cursorX, y: y), withAttributes: attributes)
+      ctx.restoreGState()
+      cursorX += widths[i] + gap
     }
   }
 
@@ -387,6 +630,7 @@ public class RouteRendererModule: Module {
     cumulativeDistances: [Double],
     totalDistance: Double,
     background: UIImage,
+    stamp: RenderClipOptionsInput,
     to outputURL: URL
   ) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
@@ -424,6 +668,17 @@ public class RouteRendererModule: Module {
     writer.startSession(atSourceTime: .zero)
 
     for frameIndex in 0..<ClipSpec.totalFrames {
+      // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
+      if self.isCancelled {
+        writer.cancelWriting()
+        try? FileManager.default.removeItem(at: outputURL)
+        throw RouteRendererError.cancelled
+      }
+      // 매 프레임마다 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다 보낸다.
+      if frameIndex % 6 == 0 {
+        self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
+      }
+
       let progressFraction: Double
       if frameIndex < ClipSpec.drawFrames {
         progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
@@ -436,7 +691,8 @@ public class RouteRendererModule: Module {
         projectedPoints: projectedPoints,
         cumulativeDistances: cumulativeDistances,
         totalDistance: totalDistance,
-        progressFraction: progressFraction
+        progressFraction: progressFraction,
+        stamp: stamp
       )
 
       guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {

@@ -88,6 +88,16 @@ export default function HomeScreen() {
         outputFileName: `test-clip-${Date.now()}`,
         preset: 'default-drawing',
         transform: { x: 0, y: 0, scale: 1, rotationDeg: 0 },
+        smooth: 0,
+        corner: 0,
+        stampMode: 'hidden',
+        stampItems: { distance: false, time: false, pace: false, heartRate: false },
+        stampX: 0,
+        stampY: 0,
+        distanceMeters: 0,
+        durationSeconds: 0,
+        averagePaceSecPerKm: 0,
+        averageHeartRate: null,
       });
       setOutputPath(result.outputPath);
       setRenderStatus('완료 — mp4 생성됨');

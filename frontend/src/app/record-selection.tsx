@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Card } from '@/components/ui';
+import { Colors, Spacing } from '@/constants/theme';
 import { useCreationFlow } from '@/state/creation-flow';
 
 import HealthKitBridge from '../../modules/health-kit-bridge/src/HealthKitBridgeModule';
@@ -12,6 +14,7 @@ import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBri
 // §3: 목록을 열려 할 때 권한을 묻는다 (화면 진입 시점).
 // §2-2: 좌표 없는 기록도 보여주되 고를 수 없다고 알린다 (숨기지 않음).
 // §4: 기록이 하나도 없을 때 빈 상태.
+// 디자인: "1a 야간 네온"
 
 type LoadState = 'loading' | 'denied' | 'error' | 'ready';
 
@@ -63,7 +66,7 @@ export default function RecordSelectionScreen() {
   if (state === 'loading') {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator color={Colors.accent} />
       </SafeAreaView>
     );
   }
@@ -106,15 +109,19 @@ export default function RecordSelectionScreen() {
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (
           <Pressable
-            style={[styles.row, !item.hasRoute && styles.rowDisabled]}
             disabled={!item.hasRoute || loadingRouteFor !== null}
             onPress={() => handleSelect(item)}>
-            <Text style={styles.rowDate}>{item.date.slice(0, 10)}</Text>
-            <Text>{(item.distanceMeters / 1000).toFixed(2)}km</Text>
-            <Text>{Math.round(item.durationSeconds / 60)}분</Text>
-            {item.averageHeartRate && <Text>{Math.round(item.averageHeartRate)}bpm</Text>}
-            {!item.hasRoute && <Text style={styles.noRoute}>좌표가 저장되어 있지 않습니다</Text>}
-            {loadingRouteFor === item.id && <ActivityIndicator size="small" />}
+            <Card style={[styles.row, !item.hasRoute && styles.rowDisabled]}>
+              <View style={styles.rowMain}>
+                <Text style={styles.rowDistance}>{(item.distanceMeters / 1000).toFixed(2)}km</Text>
+                <Text style={styles.rowMeta}>
+                  {item.date.slice(0, 10)} · {Math.round(item.durationSeconds / 60)}분
+                  {item.averageHeartRate ? ` · ${Math.round(item.averageHeartRate)}bpm` : ''}
+                </Text>
+              </View>
+              {!item.hasRoute && <Text style={styles.noRoute}>좌표 없음</Text>}
+              {loadingRouteFor === item.id && <ActivityIndicator size="small" color={Colors.accent} />}
+            </Card>
           </Pressable>
         )}
       />
@@ -123,21 +130,22 @@ export default function RecordSelectionScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
-  emptyTitle: { fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  emptyBody: { color: '#666', textAlign: 'center' },
-  list: { padding: 16, gap: 8 },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  safeArea: { flex: 1, backgroundColor: Colors.bg },
+  center: {
+    flex: 1,
+    backgroundColor: Colors.bg,
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+    gap: Spacing.xs,
   },
+  emptyTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: Colors.text, textAlign: 'center' },
+  emptyBody: { fontFamily: 'SpaceGrotesk_500Medium', color: Colors.textMuted, textAlign: 'center', fontSize: 13 },
+  list: { padding: Spacing.md, gap: Spacing.sm },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   rowDisabled: { opacity: 0.5 },
-  rowDate: { fontWeight: '600' },
-  noRoute: { color: '#b33', fontSize: 12 },
+  rowMain: { gap: 4 },
+  rowDistance: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: Colors.text },
+  rowMeta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 11, color: Colors.textMuted },
+  noRoute: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.accent, fontSize: 10 },
 });

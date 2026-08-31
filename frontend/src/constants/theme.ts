@@ -1,65 +1,36 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-import '@/global.css';
-
-import { Platform } from 'react-native';
+// 디자인: "1a 야간 네온" (2026-08-25 결정, 회의에서 확정) — 3안(전체 12화면 시안)의
+// 색상·타이포 토큰을 그대로 옮김. 화면 컴포넌트는 이 값만 참조한다.
 
 export const Colors = {
-  light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-  },
-  dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-  },
+  bg: '#0B0D10',
+  bgCard: '#14181D',
+  text: '#EDF1F5',
+  textMuted: '#7C8894',
+  accent: '#FF5A2B',
+  accentText: '#0B0D10', // accent 배경 위에 올라가는 텍스트
+  border: 'rgba(237,241,245,0.09)',
+  borderStrong: 'rgba(237,241,245,0.22)',
+  danger: '#FF5A2B',
+  // 경로 렌더링과 공유하는 색(route-preview.tsx, RouteRendererModule.swift와 동일)
+  lineWarm: '#FFF3EC',
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+export const Fonts = {
+  sans: 'SpaceGrotesk_500Medium',
+  sansBold: 'SpaceGrotesk_700Bold',
+  mono: 'JetBrainsMono_500Medium',
+} as const;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export const Radius = {
+  pill: 26,
+  card: 22,
+  chip: 19,
+} as const;
 
 export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  xs: 6,
+  sm: 10,
+  md: 16,
+  lg: 24,
+  xl: 34,
 } as const;
-
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;

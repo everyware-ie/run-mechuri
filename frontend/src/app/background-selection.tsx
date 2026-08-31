@@ -1,15 +1,18 @@
 import { Asset } from 'expo-asset';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Button, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ThemedButton } from '@/components/ui';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // FRD: docs/specs/frd/background-selection.md
 // v0: §1 MVP 기본 범위(기본 이미지 3장)만 구현. 갤러리·촬영은 여유 시라 이후.
 // 실제 이미지 3장은 아직 없음(§2-2) — frontend/src/constants/default-backgrounds.ts에서 교체.
+// 디자인: "1a 야간 네온"
 
 export default function BackgroundSelectionScreen() {
   const [selectedId, setSelectedId] = useState(DEFAULT_BACKGROUNDS[0].id);
@@ -53,19 +56,24 @@ export default function BackgroundSelectionScreen() {
           ))}
         </ScrollView>
 
-        <Button title="이걸로 진행" onPress={handleConfirm} disabled={!localUri} />
+        <ThemedButton title="이걸로 진행" onPress={handleConfirm} disabled={!localUri} />
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  container: { flex: 1, padding: 24, gap: 16, alignItems: 'center' },
-  notice: { color: '#888', fontSize: 12, textAlign: 'center' },
-  preview: { width: 270, height: 480, borderRadius: 12, backgroundColor: '#111' },
-  thumbRow: { gap: 12 },
-  thumbWrap: { borderRadius: 8, borderWidth: 2, borderColor: 'transparent' },
-  thumbWrapSelected: { borderColor: '#208AEF' },
-  thumb: { width: 64, height: 114, borderRadius: 6, backgroundColor: '#111' },
+  safeArea: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, padding: Spacing.lg, gap: Spacing.md, alignItems: 'center' },
+  notice: {
+    fontFamily: 'JetBrainsMono_500Medium',
+    color: Colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  preview: { width: 270, height: 480, borderRadius: Radius.card, backgroundColor: Colors.bgCard },
+  thumbRow: { gap: Spacing.sm },
+  thumbWrap: { borderRadius: 14, borderWidth: 2, borderColor: 'transparent' },
+  thumbWrapSelected: { borderColor: Colors.accent },
+  thumb: { width: 64, height: 114, borderRadius: 10, backgroundColor: Colors.bgCard },
 });
