@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenHeader } from '@/components/screen-header';
 import { Card } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -63,27 +64,38 @@ export default function RecordSelectionScreen() {
     }
   };
 
+  const header = <ScreenHeader title="기록 선택" />;
+
   if (state === 'loading') {
     return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator color={Colors.accent} />
+      <SafeAreaView style={styles.safeArea}>
+        {header}
+        <View style={styles.center}>
+          <ActivityIndicator color={Colors.accent} />
+        </View>
       </SafeAreaView>
     );
   }
 
   if (state === 'denied') {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView style={styles.safeArea}>
+        {header}
+        <View style={styles.center}>
         <Text style={styles.emptyTitle}>건강 데이터 접근이 필요해요</Text>
         <Text style={styles.emptyBody}>설정에서 권한을 허용한 뒤 다시 열어주세요.</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   if (state === 'error') {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
+      <SafeAreaView style={styles.safeArea}>
+        {header}
+        <View style={styles.center}>
+          <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
+        </View>
       </SafeAreaView>
     );
   }
@@ -91,18 +103,22 @@ export default function RecordSelectionScreen() {
   // §4: 기록이 하나도 없을 때 (권한 거부와 실제 없음을 앱은 구분 못 함, 공통 규칙 §1-3)
   if (runs.length === 0) {
     return (
-      <SafeAreaView style={styles.center}>
+      <SafeAreaView style={styles.safeArea}>
+        {header}
+        <View style={styles.center}>
         <Text style={styles.emptyTitle}>실외 러닝 기록이 없어요</Text>
         <Text style={styles.emptyBody}>
           아직 기록이 없거나, 건강 데이터 접근이 허용되지 않았을 수 있어요. 한 번 뛰고 오시거나
           설정에서 권한을 확인해주세요.
         </Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {header}
       <FlatList
         data={runs}
         keyExtractor={(item) => item.id}

@@ -1,5 +1,7 @@
+import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Circle, Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Rect, Svg, Text as SvgText } from 'react-native-svg';
+import { View } from 'react-native';
+import { Rect, Svg, Text as SvgText, Defs, Filter, FeGaussianBlur, FeMerge, FeMergeNode } from 'react-native-svg';
 
 import {
   CANVAS_HEIGHT,
@@ -9,6 +11,7 @@ import {
   pointsUpToDistance,
   segmentUnitMeters,
   toSvgPath,
+  type CanvasPoint,
   type Point,
 } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
@@ -25,8 +28,7 @@ export type StampMode = 'always' | 'after' | 'hidden';
 export type StampConfig = {
   mode: StampMode;
   enabled: Record<StampItem, boolean>;
-  /** §4-1: 각인 넷은 하나의 묶음 — 위치 하나만 갖는다. 기본 자리(§7-5, 하단 안전
-   * 영역 위)에서의 오프셋(캔버스 px). */
+  /** §4-1: 각인 넷은 하나의 묶음 — 위치 하나만 갖는다. 기본 자리(§7-5) 오프셋(캔버스 px). */
   position: { x: number; y: number };
 };
 
@@ -36,21 +38,21 @@ export const IDENTITY_STAMP: StampConfig = {
   position: { x: 0, y: 0 },
 };
 
-// route-rendering FRD §7-5: 상단 14%·하단 20% 제안값. "[확인 필요]"라 실기기 확인
-// 전까지는 이 제안값을 그대로 쓴다.
+// route-rendering FRD §7-5: 상단 14%·하단 20% 제안값 ("[확인 필요]" — 실기기 전까지 제안값).
 const SAFE_AREA_TOP_RATIO = 0.14;
 const SAFE_AREA_BOTTOM_RATIO = 0.2;
 const STAMP_DEFAULT_Y = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 90;
 
-// FRD: docs/specs/frd/route-rendering.md §5, §6 · docs/specs/frd/result-editing.md §2-1
+// FRD: docs/specs/frd/route-rendering.md §5·§6 · docs/specs/frd/result-editing.md §2-1
 //
-// 색상·레이어 구성은 2026-08-04 JiEung2 목업
-// (docs/ideation/JiEung2/2026-08-04-route-overlay-mockup.html)의 캔버스 드로잉 로직을
-// 그대로 옮긴 것이다 — Swift 렌더러(modules/route-renderer)도 같은 값을 쓴다.
+// 렌더링은 "3안" 시안의 canvas 로직(neon 테마: 어두운 캔버스에 #FFF3EC 선 + #FF5A2B 글로우,
+// 지나온 길 · 최근 잔광 · 머리 점, 구간 점등의 반짝임)을 그대로 옮긴 것이다. 시안은
+// <canvas> 2D를 쓰고, 여기서는 같은 엔진 계열인 react-native-skia로 그린다 —
+// react-native-svg 필터로는 canvas shadowBlur 글로우를 못 맞췄고, 프레임마다 SVG를
+// 다시 그리는 비용도 컸다. Swift 렌더러(modules/route-renderer)도 같은 값을 맞춰야 한다.
 //
-// 최종 mp4를 굽는 AVFoundation 렌더러와는 별개의, RN 쪽에서 직접 그리는 실시간 미리보기.
-// §2-2 "모든 조작은 즉시 미리보기에 반영된다"를 만족하려면 매번 네이티브로 mp4를
-// 다시 인코딩할 수 없어서 이 경로가 따로 필요하다.
+// 최종 mp4를 굽는 AVFoundation 렌더러와는 별개의, 편집 중 실시간 미리보기.
+// §2-2 "모든 조작은 즉시 미리보기에 반영된다"를 매번 재인코딩 없이 만족하기 위한 경로.
 
 export type RoutePreset = 'default-drawing' | 'light-runner' | 'segment-lighting';
 
@@ -58,37 +60,35 @@ const DRAW_SECONDS = 9;
 const HOLD_SECONDS = 3;
 const CYCLE_SECONDS = DRAW_SECONDS + HOLD_SECONDS;
 
-// 목업 팔레트 그대로.
-const LINE_DIM = 'rgba(255,255,255,0.2)';
+// 시안 neon 테마 팔레트.
 const LINE_WARM = '#FFF3EC';
-// 글로우 색(#FF6B4A)은 SVG 필터(glowSoft/glowHot)의 blur가 원본 색 위에 겹쳐지는
-// 방식이라 별도 상수로 안 쓰고, 각 레이어의 stroke 색 자체가 글로우 색을 겸한다.
+const GLOW = '#FF5A2B';
+const GHOST = 'rgba(237,241,245,0.13)';
+const BASE = 'rgba(237,241,245,0.20)';
+const TRAVELED = 'rgba(255,243,236,0.60)';
 
-export type RouteTransform = {
-  x: number;
-  y: number;
-  scale: number;
-  rotationDeg: number;
-};
-
+export type RouteTransform = { x: number; y: number; scale: number; rotationDeg: number };
 export const IDENTITY_TRANSFORM: RouteTransform = { x: 0, y: 0, scale: 1, rotationDeg: 0 };
 
 type Props = {
   points: Point[];
   preset: RoutePreset;
   transform: RouteTransform;
-  /** §5: 다듬기 세기(기본 축)·모서리 라운딩(고급 축). 기본값은 IDENTITY_SMOOTH(무보정). */
   smoothOptions: SmoothOptions;
-  /** §7 각인 값 계산에 쓰는 원본 기록. */
   run: RunRecord;
   stampConfig: StampConfig;
-  /** §7-1: 편집 중에만 인스타 UI 안전 영역 가이드를 보여준다. 결과물엔 안 나온다. */
+  /** §7-1: 편집 중에만 인스타 안전 영역 가이드. 결과물엔 안 나온다. */
   showSafeAreaGuide?: boolean;
   /** §2-1: 조작 중(제스처)이면 그 시점에서 멈춘다. */
   isInteracting: boolean;
   viewWidth: number;
   viewHeight: number;
 };
+
+function skPath(points: CanvasPoint[]) {
+  const p = Skia.Path.MakeFromSVGString(toSvgPath(points));
+  return p ?? Skia.Path.Make();
+}
 
 export function RoutePreview({
   points,
@@ -102,8 +102,7 @@ export function RoutePreview({
   viewWidth,
   viewHeight,
 }: Props) {
-  // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 사용자가
-  // 확대해도 슬라이더가 의미하는 "다듬기 세기"가 화면상에서 갑자기 달라지지 않도록.
+  // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(
     () => applySmoothing(rawProjected, smoothOptions),
@@ -112,15 +111,20 @@ export function RoutePreview({
   const cumulative = useMemo(() => cumulativeCanvasDistances(projected), [projected]);
   const totalDistance = cumulative[cumulative.length - 1] ?? 0;
 
+  const rawFullPath = useMemo(() => skPath(rawProjected), [rawProjected]);
+  const fullPath = useMemo(() => skPath(projected), [projected]);
+
   const [elapsed, setElapsed] = useState(0);
   const frameRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
 
-  // §3: 프리셋을 바꾸면 처음부터 재생.
-  useEffect(() => {
+  // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
+  // ref는 안 건드린다). 프레임 delta는 아래 tick에서 어차피 0.1초로 클램프한다.
+  const [seenPreset, setSeenPreset] = useState(preset);
+  if (seenPreset !== preset) {
+    setSeenPreset(preset);
     setElapsed(0);
-    lastTsRef.current = null;
-  }, [preset]);
+  }
 
   useEffect(() => {
     if (isInteracting) {
@@ -128,11 +132,10 @@ export function RoutePreview({
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       return;
     }
-
     const tick = (ts: number) => {
       if (lastTsRef.current !== null) {
-        const deltaSeconds = (ts - lastTsRef.current) / 1000;
-        setElapsed((prev) => (prev + deltaSeconds) % CYCLE_SECONDS);
+        const delta = Math.min(0.1, (ts - lastTsRef.current) / 1000);
+        setElapsed((prev) => (prev + delta) % CYCLE_SECONDS);
       }
       lastTsRef.current = ts;
       frameRef.current = requestAnimationFrame(tick);
@@ -143,79 +146,244 @@ export function RoutePreview({
     };
   }, [isInteracting]);
 
-  if (projected.length < 2) return null;
+  if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   const progressFraction = Math.min(elapsed / DRAW_SECONDS, 1);
   const targetDistance = totalDistance * progressFraction;
-  const fullPath = toSvgPath(projected);
-  const scaleToView = Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
-  const w = (px: number) => px / scaleToView; // 캔버스 기준 두께를 뷰 스케일에 맞게 보정
+
+  // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
+  const fitScale = Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
+  const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
+  const offsetY = (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
+
+  // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy)
+  const groupTransform = [
+    { translateX: offsetX },
+    { translateY: offsetY },
+    { scale: fitScale },
+    { translateX: CANVAS_WIDTH / 2 + transform.x },
+    { translateY: CANVAS_HEIGHT / 2 + transform.y },
+    { rotate: (transform.rotationDeg * Math.PI) / 180 },
+    { scale: transform.scale },
+    { translateX: -CANVAS_WIDTH / 2 },
+    { translateY: -CANVAS_HEIGHT / 2 },
+  ];
 
   return (
-    <Svg width={viewWidth} height={viewHeight} viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}>
-      <Defs>
-        <Filter id="glowSoft" x="-100%" y="-100%" width="300%" height="300%">
-          <FeGaussianBlur stdDeviation="6" result="blur" />
-          <FeMerge>
-            <FeMergeNode in="blur" />
-            <FeMergeNode in="SourceGraphic" />
-          </FeMerge>
-        </Filter>
-        <Filter id="glowHot" x="-200%" y="-200%" width="500%" height="500%">
-          <FeGaussianBlur stdDeviation="14" result="blur" />
-          <FeMerge>
-            <FeMergeNode in="blur" />
-            <FeMergeNode in="SourceGraphic" />
-          </FeMerge>
-        </Filter>
-      </Defs>
-
-      <G
-        transform={`translate(${CANVAS_WIDTH / 2 + transform.x} ${
-          CANVAS_HEIGHT / 2 + transform.y
-        }) rotate(${transform.rotationDeg}) scale(${transform.scale}) translate(${-CANVAS_WIDTH / 2} ${-CANVAS_HEIGHT / 2})`}>
-        {preset === 'default-drawing' && (
-          <DefaultDrawingLayer
-            projected={projected}
-            cumulative={cumulative}
-            targetDistance={targetDistance}
-            strokeWidth={w(10)}
-          />
-        )}
-
-        {preset === 'segment-lighting' && (
-          <SegmentLightingLayer
-            projected={projected}
-            cumulative={cumulative}
-            totalDistance={totalDistance}
-            progressFraction={progressFraction}
-            fullPath={fullPath}
-            strokeWidth={w(10)}
-          />
-        )}
-
-        {preset === 'light-runner' && (
-          <LightRunnerLayer
+    <View style={{ width: viewWidth, height: viewHeight }}>
+      <Canvas style={{ flex: 1 }}>
+        <Group transform={groupTransform}>
+          <RouteLayer
+            preset={preset}
             projected={projected}
             cumulative={cumulative}
             totalDistance={totalDistance}
             targetDistance={targetDistance}
             progressFraction={progressFraction}
             fullPath={fullPath}
-            strokeWidth={w(8)}
+            rawFullPath={rawFullPath}
           />
-        )}
-      </G>
+        </Group>
+      </Canvas>
 
-      {showSafeAreaGuide && <SafeAreaGuide />}
-
-      <StampLayer run={run} config={stampConfig} progressFraction={progressFraction} />
-    </Svg>
+      {/* 각인 텍스트와 안전 영역 가이드는 SVG 오버레이 — 로드된 폰트로 또렷하게. */}
+      <Svg
+        style={{ position: 'absolute', top: 0, left: 0 }}
+        width={viewWidth}
+        height={viewHeight}
+        viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
+        preserveAspectRatio="xMidYMid meet">
+        <Defs>
+          <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
+            <FeGaussianBlur stdDeviation="6" result="b" />
+            <FeMerge>
+              <FeMergeNode in="b" />
+              <FeMergeNode in="SourceGraphic" />
+            </FeMerge>
+          </Filter>
+        </Defs>
+        {showSafeAreaGuide && <SafeAreaGuide />}
+        <StampLayerSvg run={run} config={stampConfig} progressFraction={progressFraction} />
+      </Svg>
+    </View>
   );
 }
 
-// §7-1: 인스타 스토리 UI가 가리는 상하단을 편집 중에만 보여준다. 결과물에는 안 나온다.
-// 드로잉에도 같은 가이드가 쓰인다(같은 Svg 안이라 자연히 함께 보임).
+// ── 경로 레이어 (시안 canvas paint() 이식) ────────────────────────────────
+function RouteLayer({
+  preset,
+  projected,
+  cumulative,
+  totalDistance,
+  targetDistance,
+  progressFraction,
+  fullPath,
+  rawFullPath,
+}: {
+  preset: RoutePreset;
+  projected: CanvasPoint[];
+  cumulative: number[];
+  totalDistance: number;
+  targetDistance: number;
+  progressFraction: number;
+  fullPath: ReturnType<typeof skPath>;
+  rawFullPath: ReturnType<typeof skPath>;
+}) {
+  const isComplete = progressFraction >= 1;
+  const traveled = pointsUpToDistance(targetDistance, projected, cumulative);
+  const head = traveled[traveled.length - 1];
+
+  if (preset === 'segment-lighting') {
+    return (
+      <SegmentLayer
+        projected={projected}
+        cumulative={cumulative}
+        totalDistance={totalDistance}
+        progressFraction={progressFraction}
+        fullPath={fullPath}
+      />
+    );
+  }
+
+  if (preset === 'light-runner') {
+    // 시안 "glow": 옅은 원본 + 지나온 길(+글로우) + 최근 6% 잔광(강한 글로우) + 머리 점.
+    const hotStart = Math.max(0, targetDistance - totalDistance * 0.06);
+    const before = pointsUpToDistance(hotStart, projected, cumulative);
+    const hotTrail = traveled.slice(Math.max(0, before.length - 1));
+    return (
+      <Group>
+        <Path path={rawFullPath} style="stroke" strokeWidth={3} color={GHOST} />
+        <Path
+          path={fullPath}
+          style="stroke"
+          strokeWidth={7}
+          strokeCap="round"
+          strokeJoin="round"
+          color={BASE}
+        />
+        <Path
+          path={skPath(traveled)}
+          style="stroke"
+          strokeWidth={9}
+          strokeCap="round"
+          strokeJoin="round"
+          color={TRAVELED}>
+          <Shadow dx={0} dy={0} blur={6} color={GLOW} />
+        </Path>
+        {!isComplete && (
+          <Path
+            path={skPath(hotTrail)}
+            style="stroke"
+            strokeWidth={12}
+            strokeCap="round"
+            strokeJoin="round"
+            color={LINE_WARM}>
+            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+          </Path>
+        )}
+        {isComplete && (
+          <Path
+            path={fullPath}
+            style="stroke"
+            strokeWidth={13}
+            strokeCap="round"
+            strokeJoin="round"
+            color={LINE_WARM}>
+            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+          </Path>
+        )}
+        {!isComplete && head && (
+          <Circle cx={head.x} cy={head.y} r={9} color={LINE_WARM}>
+            <Shadow dx={0} dy={0} blur={16} color={GLOW} />
+          </Circle>
+        )}
+      </Group>
+    );
+  }
+
+  // default-drawing — 시안 "plain"의 그리기 애니메이션 버전: 따뜻한 흰색 선 + 옅은 글로우.
+  return (
+    <Path
+      path={skPath(traveled)}
+      style="stroke"
+      strokeWidth={10}
+      strokeCap="round"
+      strokeJoin="round"
+      color={LINE_WARM}>
+      <Shadow dx={0} dy={0} blur={5} color={GLOW} />
+    </Path>
+  );
+}
+
+// 시안 "seg": 옅은 전체 경로 위에 구간마다(완료=밝게, 그리는 중=중간) 쌓고,
+// 방금 완료된 구간일수록 반짝인다.
+function SegmentLayer({
+  projected,
+  cumulative,
+  totalDistance,
+  progressFraction,
+  fullPath,
+}: {
+  projected: CanvasPoint[];
+  cumulative: number[];
+  totalDistance: number;
+  progressFraction: number;
+  fullPath: ReturnType<typeof skPath>;
+}) {
+  if (totalDistance <= 0) return null;
+  const unit = segmentUnitMeters(totalDistance);
+  const segmentCount = Math.ceil(totalDistance / unit);
+
+  const segments = [];
+  for (let s = 0; s < segmentCount; s++) {
+    const segStartDist = s * unit;
+    const segEndDist = Math.min(totalDistance, (s + 1) * unit);
+    const segStartFraction = segStartDist / totalDistance;
+    const segEndFraction = segEndDist / totalDistance;
+    if (progressFraction <= segStartFraction) break;
+
+    const done = progressFraction >= segEndFraction;
+    const endDistance = done ? segEndDist : progressFraction * totalDistance;
+    const segPoints = pointsUpToDistance(endDistance, projected, cumulative);
+    const before = pointsUpToDistance(segStartDist, projected, cumulative);
+    const slice = segPoints.slice(Math.max(0, before.length - 1));
+    const justLit = done ? Math.max(0, 1 - (progressFraction - segEndFraction) * 14) : 0;
+
+    segments.push(
+      <Path
+        key={s}
+        path={skPath(slice)}
+        style="stroke"
+        strokeWidth={10 + justLit * 4}
+        strokeCap="round"
+        strokeJoin="round"
+        opacity={done ? 0.95 : 0.5}
+        color={LINE_WARM}>
+        {done && <Shadow dx={0} dy={0} blur={9 + justLit * 13} color={GLOW} />}
+      </Path>
+    );
+
+    if (done) {
+      const boundary = pointsUpToDistance(segEndDist, projected, cumulative).at(-1);
+      if (boundary) {
+        segments.push(
+          <Circle key={`dot-${s}`} cx={boundary.x} cy={boundary.y} r={4 + justLit * 3} color={LINE_WARM}>
+            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+          </Circle>
+        );
+      }
+    }
+  }
+
+  return (
+    <Group>
+      <Path path={fullPath} style="stroke" strokeWidth={10} color={GHOST} />
+      {segments}
+    </Group>
+  );
+}
+
+// §7-1: 인스타 스토리 UI가 가리는 상하단(편집 중에만).
 function SafeAreaGuide() {
   const topHeight = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
   const bottomHeight = CANVAS_HEIGHT * SAFE_AREA_BOTTOM_RATIO;
@@ -234,9 +402,8 @@ function SafeAreaGuide() {
 }
 
 // route-rendering FRD §7: 넷을 다 새긴다, 심박은 데이터 있을 때만, 항목별로 끈다.
-// §7-3: "항상" 모드는 진행률을 따라 카운트업, "완성 후만"은 정지 구간(완주)에만.
-// 거리는 선 길이가 아니라 기록된 총 거리를 쓴다 — 다듬기 세기를 바꿔도 안 흔들리도록.
-export function StampLayer({
+// §7-3: "항상"은 진행률 카운트업, "완성 후만"은 정지 구간에만. 거리는 기록된 총 거리 기준.
+export function StampLayerSvg({
   run,
   config,
   progressFraction,
@@ -252,8 +419,6 @@ export function StampLayer({
   const items: string[] = [];
   if (config.enabled.distance) items.push(formatDistanceKm(run.distanceMeters * progressFraction));
   if (config.enabled.time) items.push(formatDuration(run.durationSeconds * progressFraction));
-  // §7-3: 페이스·심박은 "완성 후만"일 때 평균값. "항상"에서도 구간별 실측이 없어
-  // 평균 페이스를 쓴다(그 시점 값이 없다 — 아래 "남은 근사" 참고).
   if (config.enabled.pace) items.push(formatPace(run.averagePaceSecPerKm));
   if (config.enabled.heartRate && run.averageHeartRate !== undefined) {
     items.push(formatHeartRate(run.averageHeartRate));
@@ -264,8 +429,6 @@ export function StampLayer({
   const gap = 22;
   const centerX = CANVAS_WIDTH / 2 + config.position.x;
   const y = STAMP_DEFAULT_Y + config.position.y;
-
-  // 대략적인 고정폭 문자 너비로 전체 너비를 추정해 가운데 정렬한다(모노스페이스 폰트).
   const charWidth = fontSize * 0.62;
   const widths = items.map((s) => s.length * charWidth);
   const totalWidth = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
@@ -284,7 +447,7 @@ export function StampLayer({
             fontSize={fontSize}
             fontFamily="JetBrainsMono_700Bold"
             fill={LINE_WARM}
-            filter="url(#glowSoft)">
+            filter="url(#stampGlow)">
             {text}
           </SvgText>
         );
@@ -293,179 +456,5 @@ export function StampLayer({
   );
 }
 
-// §6-1 기본 드로잉: 목업 "draw" 그대로 — 따뜻한 흰색 + 옅은 글로우.
-function DefaultDrawingLayer({
-  projected,
-  cumulative,
-  targetDistance,
-  strokeWidth,
-}: {
-  projected: { x: number; y: number }[];
-  cumulative: number[];
-  targetDistance: number;
-  strokeWidth: number;
-}) {
-  const visible = pointsUpToDistance(targetDistance, projected, cumulative);
-  return (
-    <Path
-      d={toSvgPath(visible)}
-      stroke={LINE_WARM}
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill="none"
-      filter="url(#glowSoft)"
-    />
-  );
-}
-
-// §6-2 불빛 러너: 목업 "beacon" 그대로 — 옅은 전체 경로 + 지나온 길(중간 밝기) +
-// 최근 10% 구간(핫 트레일) + 머리 위 발광 점. 완주 시 전체가 밝아진다.
-function LightRunnerLayer({
-  projected,
-  cumulative,
-  totalDistance,
-  targetDistance,
-  progressFraction,
-  fullPath,
-  strokeWidth,
-}: {
-  projected: { x: number; y: number }[];
-  cumulative: number[];
-  totalDistance: number;
-  targetDistance: number;
-  progressFraction: number;
-  fullPath: string;
-  strokeWidth: number;
-}) {
-  const traveled = pointsUpToDistance(targetDistance, projected, cumulative);
-  // 목업(2026-08-04)의 "최근 46점" 잔광을 거리 기준으로 옮긴 값 — GPS 샘플 밀도가
-  // 들쭉날쭉한 실제 기록에서는 점 개수보다 거리 비율이 안정적이다. 6%(거리 기준)로
-  // 잡아 목업의 짧고 스치는 느낌에 맞췄다(v0 근사, 3주차 실측 후 조정 가능).
-  const hotStartDistance = Math.max(0, targetDistance - totalDistance * 0.06);
-  const before = pointsUpToDistance(hotStartDistance, projected, cumulative);
-  const hotTrail = traveled.slice(Math.max(0, before.length - 1));
-  const head = traveled[traveled.length - 1];
-  const isComplete = progressFraction >= 1;
-
-  return (
-    <>
-      <Path d={fullPath} stroke={LINE_DIM} strokeWidth={3} fill="none" />
-      {/* 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분. */}
-      <Path
-        d={toSvgPath(traveled)}
-        stroke="rgba(255,243,236,0.55)"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        filter="url(#glowSoft)"
-      />
-      {!isComplete && (
-        <Path
-          d={toSvgPath(hotTrail)}
-          stroke={LINE_WARM}
-          strokeWidth={strokeWidth + 2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-          filter="url(#glowHot)"
-        />
-      )}
-      {!isComplete && head && (
-        <Circle cx={head.x} cy={head.y} r={8} fill="#FFFFFF" filter="url(#glowHot)" />
-      )}
-      {/* §6-2 마무리: 끝점에 닿는 순간 경로 전체가 밝아진다 */}
-      {isComplete && (
-        <Path
-          d={fullPath}
-          stroke={LINE_WARM}
-          strokeWidth={strokeWidth + 4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-          filter="url(#glowHot)"
-        />
-      )}
-    </>
-  );
-}
-
-// §6-3 구간 점등: 목업 "segments" 그대로 — 옅은 전체 경로 위에, 구간마다
-// (완료된 구간은 밝게, 그리는 중인 구간은 중간 밝기로) 쌓아 그린다.
-// 구간 수는 FRD 제안 표(segmentUnitMeters)를 따른다(목업의 "ceil(km)"보다 정밀함).
-function SegmentLightingLayer({
-  projected,
-  cumulative,
-  totalDistance,
-  progressFraction,
-  fullPath,
-  strokeWidth,
-}: {
-  projected: { x: number; y: number }[];
-  cumulative: number[];
-  totalDistance: number;
-  progressFraction: number;
-  fullPath: string;
-  strokeWidth: number;
-}) {
-  if (totalDistance <= 0) return null;
-  const unit = segmentUnitMeters(totalDistance);
-  const segmentCount = Math.ceil(totalDistance / unit);
-
-  const segments = [];
-  for (let s = 0; s < segmentCount; s++) {
-    const segStartDist = s * unit;
-    const segEndDist = Math.min(totalDistance, (s + 1) * unit);
-    const segStartFraction = segStartDist / totalDistance;
-    const segEndFraction = segEndDist / totalDistance;
-
-    if (progressFraction <= segStartFraction) break; // 아직 도달 안 함 — 이후 구간도 마찬가지
-
-    const done = progressFraction >= segEndFraction;
-    const endDistance = done ? segEndDist : progressFraction * totalDistance;
-    const segPoints = pointsUpToDistance(endDistance, projected, cumulative);
-    // segStartDist 이전 구간은 잘라낸다. 시작점 하나는 이어 그리기 위해 남긴다.
-    const before = pointsUpToDistance(segStartDist, projected, cumulative);
-    const slice = segPoints.slice(Math.max(0, before.length - 1));
-
-    // 방금 완료된 구간일수록 반짝임이 강하다(목업의 justLit, 감쇠 계수는 근사치).
-    const justLit = done ? Math.max(0, 1 - (progressFraction - segEndFraction) * 14) : 0;
-
-    segments.push(
-      <Path
-        key={s}
-        d={toSvgPath(slice)}
-        stroke={`rgba(255,243,236,${done ? 0.95 : 0.5})`}
-        strokeWidth={strokeWidth + justLit * 4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-        filter={done ? 'url(#glowHot)' : undefined}
-      />
-    );
-
-    if (done) {
-      const boundaryPoint = pointsUpToDistance(segEndDist, projected, cumulative).at(-1);
-      if (boundaryPoint) {
-        segments.push(
-          <Circle
-            key={`dot-${s}`}
-            cx={boundaryPoint.x}
-            cy={boundaryPoint.y}
-            r={4 + justLit * 3}
-            fill={LINE_WARM}
-            filter="url(#glowHot)"
-          />
-        );
-      }
-    }
-  }
-
-  return (
-    <>
-      <Path d={fullPath} stroke={LINE_DIM} strokeWidth={strokeWidth} fill="none" />
-      {segments}
-    </>
-  );
-}
+// route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.
+export { StampLayerSvg as StampLayer };

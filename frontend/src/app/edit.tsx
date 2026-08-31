@@ -1,9 +1,11 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Dimensions,
   Image,
   PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -20,6 +22,7 @@ import {
   type StampConfig,
   type StampItem,
 } from '@/components/route-preview';
+import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
@@ -68,9 +71,9 @@ export default function EditScreen() {
     resetTransform,
   } = useCreationFlow();
 
-  // §4-1: 편집 대상 고르기. 기본은 드로잉. 여기 붙기 전까진 이 층이 없어도 됐지만,
-  // 각인 편집이 붙는 지금부터는 필요하다.
-  const [editTarget, setEditTarget] = useState<'drawing' | 'stamp'>('drawing');
+  // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
+  // "3안" 시안 S7에는 드로잉/각인 토글이 없다 — [각인] 버튼이 시트(S6)를 연다.
+  const [stampSheetOpen, setStampSheetOpen] = useState(false);
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
   const transformRef = useRef(transform);
@@ -86,8 +89,6 @@ export default function EditScreen() {
     smoothOptionsRef.current = opts;
     setSmoothOptionsState(opts);
   };
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const handleBasicSmoothChange = (value: number) => updateSmoothOptions({ smooth: value, corner: value });
   const handleSmoothAxisChange = (axis: 'smooth' | 'corner', value: number) =>
     updateSmoothOptions({ ...smoothOptionsRef.current, [axis]: value });
   const handleSmoothCommit = () => commitSmoothOptions(smoothOptionsRef.current);
@@ -114,10 +115,12 @@ export default function EditScreen() {
   const baseTransform = useRef<RouteTransform>(transform);
   const baseStampPosition = useRef(stampConfig.position);
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
-  const editTargetRef = useRef(editTarget);
+  // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
+  // 렌더 중에 읽지 않고 제스처 핸들러에서만 읽으므로 ref로 둔다.
+  const editTargetRef = useRef<'drawing' | 'stamp'>('drawing');
   useEffect(() => {
-    editTargetRef.current = editTarget;
-  }, [editTarget]);
+    editTargetRef.current = stampSheetOpen ? 'stamp' : 'drawing';
+  }, [stampSheetOpen]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -228,27 +231,44 @@ export default function EditScreen() {
     router.push('/share');
   };
 
-  const previewWidth = 270;
-  const previewHeight = 480; // 9:16
+  // "3안" 시안 S7: 카드는 화면 폭에 가깝고(margin 24) 높이는 352 안팎 — 9:16 캔버스를
+  // 그 안에 레터박스로 넣으면 시안처럼 경로 글로우가 어두운 여백 가운데 놓인다.
+  const previewWidth = Dimensions.get('window').width - 48;
+  const previewHeight = 352;
+
+  const smoothLabel = (v: number) => (v === 0 ? '없음' : `${v} %`);
+  const cornerLabel = (v: number) => (v === 0 ? '각지게' : `${v} %`);
 
   if (!draft.track || !draft.backgroundImagePath || !draft.selectedRun) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.hint}>기록이나 배경이 아직 안 골라졌어요.</Text>
-        <ThemedButton title="처음으로" onPress={() => router.replace('/')} />
+      <SafeAreaView style={styles.safeArea}>
+        <ScreenHeader title="편집" />
+        <View style={styles.center}>
+          <Text style={styles.hint}>기록이나 배경이 아직 안 골라졌어요.</Text>
+          <ThemedButton title="처음으로" onPress={() => router.replace('/')} />
+        </View>
       </SafeAreaView>
     );
   }
 
+  const stampItems = STAMP_ITEMS.filter(
+    (item) => item.id !== 'heartRate' || draft.selectedRun?.averageHeartRate !== undefined
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={[styles.previewBox, { width: previewWidth, height: previewHeight }]}>
-          <Image
-            source={{ uri: draft.backgroundImagePath }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
+      <ScreenHeader
+        title="편집"
+        right={
+          <Text onPress={handleNext} style={styles.headerAction}>
+            완료
+          </Text>
+        }
+      />
+
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={[styles.card, { width: previewWidth, height: previewHeight }]}>
+          <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill}>
             <RoutePreview
               points={draft.track.coordinates}
@@ -263,115 +283,116 @@ export default function EditScreen() {
               viewHeight={previewHeight}
             />
           </View>
+          <Text style={styles.cardHint}>
+            {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
+          </Text>
         </View>
 
-        {/* §4-1: 지금 무엇을 만지고 있는지 고르는 층. 기본은 드로잉. */}
-        <View style={styles.targetRow}>
-          {(['drawing', 'stamp'] as const).map((t) => (
-            <Pressable
-              key={t}
-              onPress={() => setEditTarget(t)}
-              style={[styles.targetButton, editTarget === t && styles.targetButtonSelected]}>
-              <Text style={editTarget === t ? styles.targetLabelSelected : styles.targetLabel}>
-                {t === 'drawing' ? '드로잉' : '각인'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
+        {/* §3 프리셋 */}
+        <Text style={styles.sectionLabel}>프리셋 · PRESET</Text>
         <View style={styles.presetRow}>
-          {PRESETS.map((p) => (
-            <Pressable
-              key={p.id}
-              onPress={() => handlePresetSelect(p.id)}
-              style={[styles.presetButton, draft.preset === p.id && styles.presetButtonSelected]}>
-              <Text style={draft.preset === p.id ? styles.presetLabelSelected : styles.presetLabel}>
-                {p.label}
-              </Text>
-            </Pressable>
-          ))}
+          {PRESETS.map((p) => {
+            const on = draft.preset === p.id;
+            return (
+              <Pressable
+                key={p.id}
+                onPress={() => handlePresetSelect(p.id)}
+                style={[styles.presetChip, on && styles.presetChipOn]}>
+                <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        <Text style={styles.hint}>
-          {editTarget === 'drawing' ? '끌기: 이동 · 두 손가락: 확대·회전' : '끌기: 각인 묶음 위치 이동'}
-        </Text>
+        {/* §5: 결과를 보면서 조절한다. 시안 S7대로 직선·코너 두 축을 바로 노출한다
+            (FRD §5의 "기본은 한 축"과 다름 — 확인 노트에 기록). 슬라이더 범위 자체가
+            안전 구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
+        <View style={styles.sliderHead}>
+          <Text style={styles.sectionLabel}>직접 다듬기 · SMOOTH</Text>
+          <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
+        </View>
+        <Slider
+          value={smoothOptions.smooth}
+          onChange={(v) => handleSmoothAxisChange('smooth', v)}
+          onSlidingComplete={handleSmoothCommit}
+        />
 
-        {/* §7: 각인 넷은 하나의 묶음. 표시 모드 셋 + 항목별 켜고 끄기. 심박은 데이터
-            없으면 항목 자체가 없다(§2-3 빈 자리를 남기지 않는다). */}
-        <View style={styles.stampSection}>
-          <View style={styles.stampModeRow}>
-            {STAMP_MODES.map((m) => (
-              <Pressable
-                key={m.id}
-                onPress={() => handleStampModeSelect(m.id)}
-                style={[styles.modeChip, stampConfig.mode === m.id && styles.modeChipSelected]}>
-                <Text style={stampConfig.mode === m.id ? styles.modeLabelSelected : styles.modeLabel}>
-                  {m.label}
-                </Text>
-              </Pressable>
-            ))}
+        <View style={styles.sliderHead}>
+          <Text style={styles.sectionLabel}>코너 반경 · CORNER</Text>
+          <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
+        </View>
+        <Slider
+          value={smoothOptions.corner}
+          onChange={(v) => handleSmoothAxisChange('corner', v)}
+          onSlidingComplete={handleSmoothCommit}
+        />
+
+        <View style={styles.outlineRow}>
+          <Pressable style={styles.outlineBtn} onPress={() => setStampSheetOpen(true)}>
+            <Text style={styles.outlineBtnText}>각인</Text>
+          </Pressable>
+          <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')}>
+            <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
+          </Pressable>
+          <Pressable style={styles.outlineBtn} onPress={handleReset}>
+            <Text style={styles.outlineBtnMuted}>초기화</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.note}>
+          적용 버튼이 없습니다. 초기화는 드로잉 조작만 되돌리고 프리셋·각인은 남습니다.
+        </Text>
+      </ScrollView>
+
+      {/* §7 각인 시트(S6) — 미리보기를 가리지 않도록 하단 패널로 둔다. 열려 있는 동안만
+          미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). */}
+      {stampSheetOpen && (
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.sheetTitle}>각인</Text>
+            <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
+              완료
+            </Text>
           </View>
-          <View style={styles.stampItemRow}>
-            {STAMP_ITEMS.filter((item) => item.id !== 'heartRate' || draft.selectedRun?.averageHeartRate !== undefined).map(
-              (item) => (
+
+          <Text style={styles.sectionLabel}>표시</Text>
+          <View style={styles.chipRow}>
+            {STAMP_MODES.map((m) => {
+              const on = stampConfig.mode === m.id;
+              return (
+                <Pressable
+                  key={m.id}
+                  onPress={() => handleStampModeSelect(m.id)}
+                  style={[styles.presetChip, on && styles.presetChipOn]}>
+                  <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{m.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.sectionLabel}>넣을 것</Text>
+          <View style={styles.chipRowWrap}>
+            {stampItems.map((item) => {
+              const on = stampConfig.enabled[item.id];
+              return (
                 <Pressable
                   key={item.id}
                   onPress={() => handleStampItemToggle(item.id)}
-                  style={[styles.itemChip, stampConfig.enabled[item.id] && styles.itemChipSelected]}>
-                  <Text style={stampConfig.enabled[item.id] ? styles.itemLabelSelected : styles.itemLabel}>
-                    {item.label}
-                  </Text>
+                  style={[styles.itemChip, on && styles.itemChipOn]}>
+                  <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{item.label}</Text>
                 </Pressable>
-              )
-            )}
+              );
+            })}
           </View>
+
+          <Text style={styles.note}>미리보기에서 각인을 끌어 위치를 옮길 수 있어요.</Text>
         </View>
-
-        {/* §5: 결과를 보면서 조절해야 하므로 같은 화면에 둔다. 기본은 한 축, 고급을
-            열면 직선(smooth)·코너(corner)를 따로 만진다. 슬라이더 범위 자체가 안전
-            구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
-        <View style={styles.smoothSection}>
-          <Pressable onPress={() => setAdvancedOpen((v) => !v)}>
-            <Text style={styles.smoothToggle}>{advancedOpen ? '고급 설정 닫기' : '다듬기 · 고급 설정 열기'}</Text>
-          </Pressable>
-
-          {!advancedOpen && (
-            <View style={styles.smoothRow}>
-              <Text style={styles.smoothLabel}>다듬기 세기</Text>
-              <Slider value={smoothOptions.smooth} onChange={handleBasicSmoothChange} onSlidingComplete={handleSmoothCommit} />
-            </View>
-          )}
-
-          {advancedOpen && (
-            <>
-              <View style={styles.smoothRow}>
-                <Text style={styles.smoothLabel}>직선</Text>
-                <Slider
-                  value={smoothOptions.smooth}
-                  onChange={(v) => handleSmoothAxisChange('smooth', v)}
-                  onSlidingComplete={handleSmoothCommit}
-                />
-              </View>
-              <View style={styles.smoothRow}>
-                <Text style={styles.smoothLabel}>모서리</Text>
-                <Slider
-                  value={smoothOptions.corner}
-                  onChange={(v) => handleSmoothAxisChange('corner', v)}
-                  onSlidingComplete={handleSmoothCommit}
-                />
-              </View>
-            </>
-          )}
-        </View>
-
-        <View style={styles.actionRow}>
-          <ThemedButton title="초기화" variant="outline" onPress={handleReset} style={styles.actionButton} />
-          <ThemedButton title="다음" onPress={handleNext} style={styles.actionButton} />
-        </View>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
+
+const CHIP_ON_BG = 'rgba(255,90,43,0.12)';
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
@@ -382,57 +403,101 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.sm,
   },
-  container: { flex: 1, alignItems: 'center', padding: Spacing.md, gap: Spacing.md },
-  previewBox: { borderRadius: Radius.card, overflow: 'hidden', backgroundColor: Colors.bgCard },
-  presetRow: { flexDirection: 'row', gap: Spacing.xs },
-  presetButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: Radius.chip,
+  headerAction: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
+  scroll: { paddingHorizontal: 24, paddingBottom: 60, gap: 12, alignItems: 'stretch' },
+  card: {
+    alignSelf: 'center',
+    borderRadius: Radius.card,
+    overflow: 'hidden',
     backgroundColor: Colors.bgCard,
-  },
-  presetButtonSelected: { backgroundColor: Colors.accent },
-  presetLabel: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  presetLabelSelected: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
-  hint: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11 },
-  targetRow: { flexDirection: 'row', gap: Spacing.xs },
-  targetButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: Radius.chip,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  targetButtonSelected: { borderColor: Colors.accent, backgroundColor: 'rgba(255,90,43,0.12)' },
-  targetLabel: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  targetLabelSelected: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accent },
-  stampSection: { alignSelf: 'stretch', gap: Spacing.xs },
-  stampModeRow: { flexDirection: 'row', gap: 6, justifyContent: 'center' },
-  modeChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.chip, backgroundColor: Colors.bgCard },
-  modeChipSelected: { backgroundColor: Colors.accent },
-  modeLabel: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
-  modeLabelSelected: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accentText },
-  stampItemRow: { flexDirection: 'row', gap: 6, justifyContent: 'center', flexWrap: 'wrap' },
-  itemChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: Radius.chip,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  itemChipSelected: { borderColor: Colors.accent, backgroundColor: 'rgba(255,90,43,0.12)' },
-  itemLabel: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 11, color: Colors.textMuted },
-  itemLabelSelected: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 11, color: Colors.accent },
-  smoothSection: { alignSelf: 'stretch', gap: 4 },
-  smoothToggle: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 11,
-    color: Colors.accent,
-    textAlign: 'center',
     marginBottom: 4,
   },
-  smoothRow: { gap: 2 },
-  smoothLabel: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  actionRow: { flexDirection: 'row', gap: Spacing.sm, alignSelf: 'stretch' },
-  actionButton: { flex: 1 },
+  cardHint: {
+    position: 'absolute',
+    left: 14,
+    bottom: 12,
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 9.5,
+    letterSpacing: 1,
+    color: Colors.textMuted,
+  },
+  sectionLabel: {
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 10,
+    letterSpacing: 1.4,
+    color: Colors.textMuted,
+  },
+  presetRow: { flexDirection: 'row', gap: 8 },
+  chipRow: { flexDirection: 'row', gap: 8 },
+  chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  presetChip: {
+    flex: 1,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.border,
+  },
+  presetChipOn: { backgroundColor: Colors.accent },
+  presetChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  presetChipTextOn: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.accentText },
+  sliderHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginTop: 8,
+  },
+  sliderValue: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
+  itemChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+  },
+  itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
+  itemChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  itemChipTextOn: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accent },
+  outlineRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
+  outlineBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outlineBtnText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.text },
+  outlineBtnMuted: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  note: {
+    fontFamily: 'SpaceGrotesk_500Medium',
+    fontSize: 11,
+    lineHeight: 17,
+    color: Colors.textMuted,
+    marginTop: 6,
+  },
+  hint: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11 },
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.bgCard,
+    borderTopLeftRadius: Radius.pill,
+    borderTopRightRadius: Radius.pill,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 34,
+    gap: 12,
+  },
+  sheetHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sheetTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: Colors.text },
 });

@@ -7,6 +7,7 @@
     "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/ui": "~57.0.14",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/react-native-skia": "2.6.2",
     "expo": "~57.0.17",
     "expo-asset": "~57.0.15",
     "expo-constants": "~57.0.15",
