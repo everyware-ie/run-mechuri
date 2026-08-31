@@ -47,6 +47,7 @@ export default function RootLayout() {
           <Stack.Screen name="background-selection" options={{ title: '배경 선택' }} />
           <Stack.Screen name="edit" options={{ title: '편집' }} />
           <Stack.Screen name="share" options={{ title: '공유' }} />
+          <Stack.Screen name="result/[id]" options={{ title: '결과물' }} />
           <Stack.Screen name="dev-test" options={{ title: '개발용 확인' }} />
         </Stack>
       </CreationFlowProvider>

@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Image,
   PanResponder,
@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IDENTITY_TRANSFORM, RoutePreview, type RoutePreset, type RouteTransform } from '@/components/route-preview';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { saveDraft } from '@/lib/draft-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // FRD: docs/specs/frd/result-editing.md
@@ -101,6 +102,20 @@ export default function EditScreen() {
       },
     })
   ).current;
+
+  // 홈과 보관함 FRD §3-1: "이어서 만들기"에 올라오는 건 마지막으로 편집한 것.
+  // 이 화면에 들어와 있는 것 자체가 "지금 이걸 만지고 있다"는 뜻이라, 진입 시점과
+  // 프리셋·변형값이 바뀔 때마다 초안을 저장해둔다. 완성되면 share.tsx에서 지운다.
+  useEffect(() => {
+    if (!draft.selectedRun || !draft.track || !draft.backgroundImagePath) return;
+    saveDraft({
+      run: draft.selectedRun,
+      track: draft.track,
+      backgroundImagePath: draft.backgroundImagePath,
+      preset: draft.preset,
+      transform: draft.transform,
+    });
+  }, [draft.selectedRun, draft.track, draft.backgroundImagePath, draft.preset, draft.transform]);
 
   const handleReset = () => {
     // §4-3: 되돌리는 단위는 드로잉 조작뿐. 프리셋·각인은 그대로 둔다.

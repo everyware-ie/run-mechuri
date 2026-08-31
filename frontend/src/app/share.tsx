@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedButton } from '@/components/ui';
 import { Colors, Spacing } from '@/constants/theme';
+import { clearDraft } from '@/lib/draft-store';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -36,22 +37,32 @@ export default function ShareScreen() {
       return;
     }
 
+    const resultId = `${selectedRun.id}-${Date.now()}`;
+
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
-      outputFileName: `mechuri-${selectedRun.id}-${Date.now()}`,
+      outputFileName: `mechuri-${resultId}`,
       preset: draft.preset,
       transform: draft.transform,
     })
       .then(async (result) => {
-        // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가한다.
+        // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
+        // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
+        // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
         await addResult({
-          id: selectedRun.id,
+          id: resultId,
+          run: selectedRun,
           runDate: selectedRun.date,
           distanceMeters: selectedRun.distanceMeters,
+          track,
+          preset: draft.preset,
+          transform: draft.transform,
+          backgroundImagePath,
           outputPath: result.outputPath,
           createdAt: new Date().toISOString(),
         });
+        await clearDraft();
         setOutputPath(result.outputPath);
         setState('done');
       })

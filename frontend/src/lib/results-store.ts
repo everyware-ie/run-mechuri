@@ -1,18 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import type { RoutePreset, RouteTransform } from '@/components/route-preview';
+
+import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
+
 // FRD: docs/specs/frd/home-and-library.md §2
-// v0: 편집을 건너뛰므로 "미완성"(§3) 개념이 없다 — 렌더링이 끝나면 곧 완성된 결과물이다.
+//
+// §2-3: 트랙 좌표·배경 참조·편집값을 전부 앱이 들고 있는다 — 원본 HealthKit 기록이
+// 지워져도 "다시 편집"·"같은 기록으로 새로 만들기"가 되게 하려면 이게 다 있어야 한다.
 
 export type SavedResult = {
   id: string;
-  /** 러닝을 한 날 (§2-1: 만든 날이 아니다) */
+  /** §2-2 "같은 기록으로 새로 만들기"용. HealthKit 워크아웃 id. */
+  run: RunRecord;
+  /** 러닝을 한 날 (§2-1: 만든 날이 아니다) — run.date와 같지만 정렬용으로 따로 둔다 */
   runDate: string;
   distanceMeters: number;
+  track: Track;
+  preset: RoutePreset;
+  transform: RouteTransform;
+  /** 배경은 참조가 약하다(§2-3) — 파일이 사라지면 화면에서 기본 이미지로 되돌린다 */
+  backgroundImagePath: string;
   outputPath: string;
   createdAt: string;
 };
 
-const STORAGE_KEY = 'mechuri.results.v1';
+const STORAGE_KEY = 'mechuri.results.v2';
 
 export async function listResults(): Promise<SavedResult[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -26,4 +39,15 @@ export async function addResult(result: SavedResult): Promise<void> {
   const existing = await listResults();
   const updated = [result, ...existing];
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+export async function deleteResult(id: string): Promise<void> {
+  const existing = await listResults();
+  const updated = existing.filter((r) => r.id !== id);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+}
+
+export async function getResult(id: string): Promise<SavedResult | null> {
+  const existing = await listResults();
+  return existing.find((r) => r.id === id) ?? null;
 }

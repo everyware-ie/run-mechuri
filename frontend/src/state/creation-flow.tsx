@@ -23,6 +23,8 @@ type CreationFlowContextValue = {
   setTransform: (transform: RouteTransform) => void;
   /** result-editing FRD §4-3: 프리셋·각인은 그대로 두고 드로잉 조작값만 되돌린다. */
   resetTransform: () => void;
+  /** 초안 이어서 만들기·결과물 다시 편집 등, 여러 값을 한 번에 채워 넣을 때. */
+  loadDraft: (partial: Partial<CreationDraft>) => void;
   reset: () => void;
 };
 
@@ -47,6 +49,7 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
       setTransform: (transform) => setDraft((prev) => ({ ...prev, transform })),
       resetTransform: () => setDraft((prev) => ({ ...prev, transform: IDENTITY_TRANSFORM })),
+      loadDraft: (partial) => setDraft((prev) => ({ ...prev, ...partial })),
       reset: () => setDraft(emptyDraft),
     }),
     [draft]
