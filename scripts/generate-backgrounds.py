@@ -126,6 +126,47 @@ def sky(stops, sun=None):
     return shader
 
 
+def rosette(stops, ink, count=3, cx=0.50, cy=0.42, orbit=0.115, size=0.30,
+            width=0.016, feather=0.042, strength=0.115):
+    """하늘 위에 알 윤곽을 겹쳐 얹는다.
+
+    화면의 한 점을 축으로 알을 고르게 돌려 배치한다. 겹치는 선을 끊지 않고
+    그대로 그려서 교차점이 무늬가 된다.
+    """
+    sky = make_ramp(stops)
+    ink_lin = [to_linear(v) for v in hex_to_rgb(ink)]
+    eggs = []
+    for k in range(count):
+        angle = -math.pi / 2 + k * (2 * math.pi / count)
+        r = orbit * min(W, H)
+        eggs.append((W * cx + r * math.cos(angle),
+                     H * cy + r * math.sin(angle),
+                     size * W, size * W * 1.42,
+                     angle + math.pi / 2))
+
+    def distance(x, y, egg):
+        ex, ey, a, b, rot = egg
+        dx, dy = x - ex, y - ey
+        c, s = math.cos(rot), math.sin(rot)
+        u, v = (dx * c + dy * s) / a, (-dx * s + dy * c) / b
+        return math.hypot(u / max(0.25, 1.0 + 0.26 * v), v)
+
+    def shader(x, y):
+        px = list(sky(y / (H - 1)))
+        acc = 0.0
+        for egg in eggs:
+            edge = abs(distance(x, y, egg) - 1.0)
+            if edge < feather:
+                a = 1 - edge / feather
+                a = a * a * (3 - 2 * a)
+                acc += a * (1.0 if edge < width else 0.62)
+        if acc > 0:
+            px = [px[i] + ink_lin[i] * min(1.9, acc) * strength for i in range(3)]
+        return px
+
+    return shader
+
+
 # 색값의 근거는 docs/product/features/background-images.md 를 볼 것
 SPECS = [
     # 아침 — 짙은 남색이 어둠으로 내려간다. 셋 다 같은 바탕에 빛의 방향만 다르다
@@ -149,6 +190,9 @@ SPECS = [
                                     (0.80, '#F0553E'), (1.00, '#FF8347')])),
     ('저녁-3-맑은노을', lambda: sky([(0.00, '#123B72'), (0.30, '#3E79B4'), (0.58, '#CFC7A6'),
                                     (0.82, '#F3A23C'), (1.00, '#E8721F')])),
+    # 팀 — 밤하늘에 메추리알 셋을 겹쳐 얹는다
+    ('팀-1-알셋',       lambda: rosette([(0.00, '#141C2C'), (0.50, '#0B111C'), (1.00, '#05070C')],
+                                        ink='#F0C49A')),
 ]
 
 
