@@ -460,15 +460,18 @@ public class RouteRendererModule: Module {
         self.strokePath(visible, color: self.lineWarm, width: 10, glowRadius: 6, glowColor: .white)
 
       case .lightRunner:
-        // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기) + 최근 10%(핫 트레일) + 머리 발광 점.
-        // 끝점에 닿는 순간 경로 전체가 밝아진다.
+        // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
+        // 머리 발광 점. 끝점에 닿는 순간 경로 전체가 밝아진다.
         self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5)
         let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
-        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8)
+        // 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분.
+        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8, glowRadius: 10, glowColor: .white)
 
         let isComplete = progressFraction >= 1
         if !isComplete {
-          let hotStartDistance = max(0, targetDistance - totalDistance * 0.1)
+          // 목업(2026-08-04)의 "최근 46점" 잔광을 거리 기준으로 옮긴 값(v0 근사,
+          // route-preview.tsx와 동일한 6% 값 — TS 쪽 주석 참고).
+          let hotStartDistance = max(0, targetDistance - totalDistance * 0.06)
           let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
           self.strokePath(hotTrail, color: self.lineWarm, width: 10, glowRadius: 14, glowColor: self.glowColor)

@@ -339,8 +339,10 @@ function LightRunnerLayer({
   strokeWidth: number;
 }) {
   const traveled = pointsUpToDistance(targetDistance, projected, cumulative);
-  // 최근 10%(거리 기준) 구간만 남긴 "핫 트레일". before로 시작점 인덱스를 찾아 자른다.
-  const hotStartDistance = Math.max(0, targetDistance - totalDistance * 0.1);
+  // 목업(2026-08-04)의 "최근 46점" 잔광을 거리 기준으로 옮긴 값 — GPS 샘플 밀도가
+  // 들쭉날쭉한 실제 기록에서는 점 개수보다 거리 비율이 안정적이다. 6%(거리 기준)로
+  // 잡아 목업의 짧고 스치는 느낌에 맞췄다(v0 근사, 3주차 실측 후 조정 가능).
+  const hotStartDistance = Math.max(0, targetDistance - totalDistance * 0.06);
   const before = pointsUpToDistance(hotStartDistance, projected, cumulative);
   const hotTrail = traveled.slice(Math.max(0, before.length - 1));
   const head = traveled[traveled.length - 1];
@@ -349,6 +351,7 @@ function LightRunnerLayer({
   return (
     <>
       <Path d={fullPath} stroke={LINE_DIM} strokeWidth={3} fill="none" />
+      {/* 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분. */}
       <Path
         d={toSvgPath(traveled)}
         stroke="rgba(255,243,236,0.55)"
@@ -356,6 +359,7 @@ function LightRunnerLayer({
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
+        filter="url(#glowSoft)"
       />
       {!isComplete && (
         <Path
