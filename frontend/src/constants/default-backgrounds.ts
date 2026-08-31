@@ -11,20 +11,22 @@ export type DefaultBackground = {
   source: number; // require() 결과 (React Native 이미지 소스)
 };
 
+// 단색 1080x1920 이미지. 로고·아이콘 파일을 배경으로 억지로 늘리면(cover)
+// 형태가 이상하게 깨져서(2026-08-31 확인) 순수 단색 자리표시자로 바꿨다.
 export const DEFAULT_BACKGROUNDS: DefaultBackground[] = [
   {
     id: 'placeholder-1',
     label: '기본 1 (자리표시자)',
-    source: require('../../assets/images/splash-icon.png'),
+    source: require('../../assets/images/placeholder-bg-1.png'),
   },
   {
     id: 'placeholder-2',
     label: '기본 2 (자리표시자)',
-    source: require('../../assets/images/logo-glow.png'),
+    source: require('../../assets/images/placeholder-bg-2.png'),
   },
   {
     id: 'placeholder-3',
     label: '기본 3 (자리표시자)',
-    source: require('../../assets/images/react-logo.png'),
+    source: require('../../assets/images/placeholder-bg-3.png'),
   },
 ];

@@ -1,7 +1,10 @@
 import { Asset } from 'expo-asset';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { Button, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { useCreationFlow } from '@/state/creation-flow';
 
 import HealthKitBridge from '../../modules/health-kit-bridge/src/HealthKitBridgeModule';
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
@@ -25,6 +28,28 @@ export default function HomeScreen() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [renderStatus, setRenderStatus] = useState('아직 시도 안 함');
   const [outputPath, setOutputPath] = useState<string | null>(null);
+  const { setSelectedRun, setBackground } = useCreationFlow();
+
+  // record-selection은 HealthKit이 필수라 웹/시뮬레이터에서 못 넘어간다.
+  // 편집 화면(제스처·SVG 미리보기) 자체는 네이티브 모듈이 필요 없으니,
+  // 가짜 데이터로 그 앞 단계를 건너뛰고 바로 확인할 수 있게 해둔다.
+  const handleOpenEditWithFakeData = async () => {
+    const fakeRun: RunRecord = {
+      id: 'fake-run',
+      date: new Date().toISOString(),
+      distanceMeters: 400,
+      durationSeconds: 200,
+      averagePaceSecPerKm: 500,
+      hasRoute: true,
+    };
+    setSelectedRun(fakeRun, { coordinates: TEST_ROUTE.map((p) => ({ ...p, timestamp: '' })) });
+
+    const asset = Asset.fromModule(require('../../assets/images/placeholder-bg-1.png'));
+    await asset.downloadAsync();
+    if (asset.localUri) setBackground(asset.localUri);
+
+    router.push('/edit');
+  };
 
   const handleCheckHealth = async () => {
     try {
@@ -47,9 +72,9 @@ export default function HomeScreen() {
   const handleTestRender = async () => {
     try {
       setRenderStatus('배경 이미지 준비 중...');
-      // 실제 기본 이미지가 아직 없어서, 앱에 이미 들어 있는 스플래시 아이콘을
-      // 임시 배경으로 쓴다. 파이프라인이 도는지만 본다.
-      const asset = Asset.fromModule(require('../../assets/images/splash-icon.png'));
+      // 실제 기본 이미지가 아직 없어서, 단색 자리표시자를 배경으로 쓴다.
+      // 파이프라인이 도는지만 본다.
+      const asset = Asset.fromModule(require('../../assets/images/placeholder-bg-1.png'));
       await asset.downloadAsync();
       if (!asset.localUri) {
         setRenderStatus('배경 이미지 로컬 경로를 못 찾음');
@@ -94,6 +119,10 @@ export default function HomeScreen() {
             <Text style={styles.runLine}>{outputPath}</Text>
           </>
         )}
+
+        <Text style={styles.title}>편집 화면 확인 (HealthKit 없이, 웹에서도 됨)</Text>
+        <Button title="가짜 기록으로 편집 화면 열기" onPress={handleOpenEditWithFakeData} />
+        <Text style={styles.status}>제스처·미리보기는 순수 JS/SVG라 웹에서도 실제로 동작합니다</Text>
       </ScrollView>
     </SafeAreaView>
   );

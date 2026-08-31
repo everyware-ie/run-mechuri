@@ -222,13 +222,29 @@ public class RouteRendererModule: Module {
   }
 
   // MARK: - 프레임 렌더링
+  //
+  // 색상·레이어 구성은 2026-08-04 JiEung2 목업
+  // (docs/ideation/JiEung2/2026-08-04-route-overlay-mockup.html)의 캔버스 드로잉 로직을
+  // 그대로 옮긴 것이다 — 미리보기(route-preview.tsx)도 같은 값을 쓴다.
+
+  private let lineWarm = UIColor(red: 255 / 255, green: 243 / 255, blue: 236 / 255, alpha: 1)
+  private let glowColor = UIColor(red: 255 / 255, green: 107 / 255, blue: 74 / 255, alpha: 1)
 
   private func loadImage(path: String) -> UIImage? {
     let cleanedPath = path.replacingOccurrences(of: "file://", with: "")
     return UIImage(contentsOfFile: cleanedPath)
   }
 
-  private func strokePath(_ points: [CGPoint], color: UIColor, width: CGFloat) {
+  /// §6-3 구간 점등: 점등 횟수 5~8회 목표로 구간 단위를 자동 선택 (route-projection.ts와 동일).
+  private func segmentUnitMeters(_ totalDistanceMeters: Double) -> Double {
+    let km = totalDistanceMeters / 1000
+    if km <= 3 { return 500 }
+    if km <= 8 { return 1000 }
+    if km <= 16 { return 2000 }
+    return 5000
+  }
+
+  private func strokePath(_ points: [CGPoint], color: UIColor, width: CGFloat, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
     guard points.count >= 2 else { return }
     let path = UIBezierPath()
     path.move(to: points[0])
@@ -238,20 +254,47 @@ public class RouteRendererModule: Module {
     path.lineWidth = width
     path.lineCapStyle = .round
     path.lineJoinStyle = .round
+
+    guard let ctx = UIGraphicsGetCurrentContext(), glowRadius > 0 else {
+      color.setStroke()
+      path.stroke()
+      return
+    }
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: glowRadius, color: (glowColor ?? color).cgColor)
     color.setStroke()
     path.stroke()
+    ctx.restoreGState()
+  }
+
+  private func fillDot(at point: CGPoint, radius: CGFloat, color: UIColor, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
+    let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+    let dotPath = UIBezierPath(ovalIn: rect)
+    guard let ctx = UIGraphicsGetCurrentContext(), glowRadius > 0 else {
+      color.setFill()
+      dotPath.fill()
+      return
+    }
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: glowRadius, color: (glowColor ?? color).cgColor)
+    color.setFill()
+    dotPath.fill()
+    ctx.restoreGState()
   }
 
   /// §8 합성 순서(배경 → 경로) + 프리셋별 진행 표현(§6).
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
-    fullPath: [CGPoint],
-    visiblePath: [CGPoint],
+    projectedPoints: [CGPoint],
+    cumulativeDistances: [Double],
+    totalDistance: Double,
     progressFraction: Double
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
     let renderer = UIGraphicsImageRenderer(size: size)
+    let targetDistance = totalDistance * progressFraction
+
     return renderer.image { _ in
       // 배경: 화면을 가득 채우도록 짧은 축 기준 확대 후 중앙 크롭
       let bgSize = background.size
@@ -262,27 +305,71 @@ public class RouteRendererModule: Module {
 
       switch preset {
       case .defaultDrawing:
-        // §6-1: 빈 화면에서 시작해 선으로 그려져 나간다.
-        self.strokePath(visiblePath, color: .white, width: 10)
+        // §6-1: 빈 화면에서 시작해 선으로 그려져 나간다. 따뜻한 흰색 + 옅은 글로우.
+        let visible = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
+        self.strokePath(visible, color: self.lineWarm, width: 10, glowRadius: 6, glowColor: .white)
 
       case .lightRunner:
-        // §6-2: 지나온 길에 잔광, 끝점에 닿는 순간 전체가 밝아진다.
-        let trailAlpha: CGFloat = progressFraction >= 1 ? 1.0 : 0.5
-        self.strokePath(visiblePath, color: UIColor.white.withAlphaComponent(trailAlpha), width: 8)
-        if progressFraction < 1, let head = visiblePath.last {
-          let dotRadius: CGFloat = 16
-          let dotPath = UIBezierPath(
-            ovalIn: CGRect(x: head.x - dotRadius, y: head.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)
-          )
-          UIColor.white.setFill()
-          dotPath.fill()
+        // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기) + 최근 10%(핫 트레일) + 머리 발광 점.
+        // 끝점에 닿는 순간 경로 전체가 밝아진다.
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5)
+        let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
+        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8)
+
+        let isComplete = progressFraction >= 1
+        if !isComplete {
+          let hotStartDistance = max(0, targetDistance - totalDistance * 0.1)
+          let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
+          let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
+          self.strokePath(hotTrail, color: self.lineWarm, width: 10, glowRadius: 14, glowColor: self.glowColor)
+          if let head = traveled.last {
+            self.fillDot(at: head, radius: 8, color: .white, glowRadius: 14, glowColor: self.glowColor)
+          }
+        } else {
+          self.strokePath(projectedPoints, color: self.lineWarm, width: 14, glowRadius: 14, glowColor: self.glowColor)
         }
 
       case .segmentLighting:
         // §6-3: 경로 전체가 희미하게 깔린 채 시작, 구간이 하나씩 켜진다.
-        // v0 단순화: 스냅 대신 밝은 부분이 연속으로 자라나는 방식으로 근사(3주차에 정밀화).
-        self.strokePath(fullPath, color: UIColor.white.withAlphaComponent(0.2), width: 10)
-        self.strokePath(visiblePath, color: .white, width: 10)
+        // 완료된 구간은 밝게(+짧은 반짝임), 그리는 중인 구간은 중간 밝기.
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10)
+        guard totalDistance > 0 else { return }
+
+        let unit = self.segmentUnitMeters(totalDistance)
+        let segmentCount = Int(ceil(totalDistance / unit))
+        for s in 0..<segmentCount {
+          let segStartDist = Double(s) * unit
+          let segEndDist = min(totalDistance, Double(s + 1) * unit)
+          let segStartFraction = segStartDist / totalDistance
+          let segEndFraction = segEndDist / totalDistance
+          if progressFraction <= segStartFraction { break } // 아직 도달 안 함 — 이후 구간도 마찬가지
+
+          let done = progressFraction >= segEndFraction
+          let endDistance = done ? segEndDist : progressFraction * totalDistance
+          let segPoints = self.pointsUpTo(distance: endDistance, projected: projectedPoints, cumulative: cumulativeDistances)
+          let before = self.pointsUpTo(distance: segStartDist, projected: projectedPoints, cumulative: cumulativeDistances)
+          let slice = Array(segPoints.dropFirst(max(0, before.count - 1)))
+
+          // 방금 완료된 구간일수록 반짝임이 강하다(감쇠 계수는 목업 근사치).
+          let justLit = done ? max(0, 1 - (progressFraction - segEndFraction) * 14) : 0
+          let alpha: CGFloat = done ? 0.95 : 0.5
+          self.strokePath(
+            slice,
+            color: self.lineWarm.withAlphaComponent(alpha),
+            width: 10 + CGFloat(justLit) * 4,
+            glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0,
+            glowColor: self.glowColor
+          )
+          if done, let boundary = self.pointsUpTo(distance: segEndDist, projected: projectedPoints, cumulative: cumulativeDistances).last {
+            self.fillDot(
+              at: boundary,
+              radius: 4 + CGFloat(justLit) * 3,
+              color: self.lineWarm,
+              glowRadius: 16 + CGFloat(justLit) * 24,
+              glowColor: self.glowColor
+            )
+          }
+        }
       }
     }
   }
@@ -336,8 +423,6 @@ public class RouteRendererModule: Module {
     writer.startWriting()
     writer.startSession(atSourceTime: .zero)
 
-    let fullPath = projectedPoints
-
     for frameIndex in 0..<ClipSpec.totalFrames {
       let progressFraction: Double
       if frameIndex < ClipSpec.drawFrames {
@@ -345,13 +430,12 @@ public class RouteRendererModule: Module {
       } else {
         progressFraction = 1.0 // 정지 구간: 완성된 경로 유지 (§5-3)
       }
-      let targetDistance = totalDistance * progressFraction
-      let visiblePath = pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
       let frameImage = drawFrame(
         preset: preset,
         background: background,
-        fullPath: fullPath,
-        visiblePath: visiblePath,
+        projectedPoints: projectedPoints,
+        cumulativeDistances: cumulativeDistances,
+        totalDistance: totalDistance,
         progressFraction: progressFraction
       )
 
