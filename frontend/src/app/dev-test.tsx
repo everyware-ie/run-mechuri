@@ -88,6 +88,8 @@ export default function HomeScreen() {
         outputFileName: `test-clip-${Date.now()}`,
         preset: 'default-drawing',
         transform: { x: 0, y: 0, scale: 1, rotationDeg: 0 },
+        smooth: 0,
+        corner: 0,
       });
       setOutputPath(result.outputPath);
       setRenderStatus('완료 — mp4 생성됨');

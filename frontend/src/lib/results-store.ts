@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { RoutePreset, RouteTransform } from '@/components/route-preview';
+import { IDENTITY_SMOOTH, type RoutePreset, type RouteTransform } from '@/components/route-preview';
+import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
@@ -19,6 +20,8 @@ export type SavedResult = {
   track: Track;
   preset: RoutePreset;
   transform: RouteTransform;
+  /** result-editing FRD §5. v2 저장분엔 없을 수 있어 listResults에서 기본값을 채운다. */
+  smoothOptions: SmoothOptions;
   /** 배경은 참조가 약하다(§2-3) — 파일이 사라지면 화면에서 기본 이미지로 되돌린다 */
   backgroundImagePath: string;
   outputPath: string;
@@ -31,8 +34,9 @@ export async function listResults(): Promise<SavedResult[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
   const results: SavedResult[] = JSON.parse(raw);
+  const withDefaults = results.map((r) => ({ ...r, smoothOptions: r.smoothOptions ?? IDENTITY_SMOOTH }));
   // §2-1: 정렬은 최신순, 러닝한 날 기준
-  return results.sort((a, b) => (a.runDate < b.runDate ? 1 : -1));
+  return withDefaults.sort((a, b) => (a.runDate < b.runDate ? 1 : -1));
 }
 
 export async function addResult(result: SavedResult): Promise<void> {

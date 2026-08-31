@@ -4,13 +4,16 @@ import { Circle, Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Sv
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
-  cumulativeDistances,
+  cumulativeCanvasDistances,
   projectPoints,
   pointsUpToDistance,
   segmentUnitMeters,
   toSvgPath,
   type Point,
 } from '@/lib/route-projection';
+import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
+
+export const IDENTITY_SMOOTH: SmoothOptions = { smooth: 0, corner: 0 };
 
 // FRD: docs/specs/frd/route-rendering.md §5, §6 · docs/specs/frd/result-editing.md §2-1
 //
@@ -47,15 +50,31 @@ type Props = {
   points: Point[];
   preset: RoutePreset;
   transform: RouteTransform;
+  /** §5: 다듬기 세기(기본 축)·모서리 라운딩(고급 축). 기본값은 IDENTITY_SMOOTH(무보정). */
+  smoothOptions: SmoothOptions;
   /** §2-1: 조작 중(제스처)이면 그 시점에서 멈춘다. */
   isInteracting: boolean;
   viewWidth: number;
   viewHeight: number;
 };
 
-export function RoutePreview({ points, preset, transform, isInteracting, viewWidth, viewHeight }: Props) {
-  const projected = useMemo(() => projectPoints(points), [points]);
-  const cumulative = useMemo(() => cumulativeDistances(points), [points]);
+export function RoutePreview({
+  points,
+  preset,
+  transform,
+  smoothOptions,
+  isInteracting,
+  viewWidth,
+  viewHeight,
+}: Props) {
+  // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 사용자가
+  // 확대해도 슬라이더가 의미하는 "다듬기 세기"가 화면상에서 갑자기 달라지지 않도록.
+  const rawProjected = useMemo(() => projectPoints(points), [points]);
+  const projected = useMemo(
+    () => applySmoothing(rawProjected, smoothOptions),
+    [rawProjected, smoothOptions]
+  );
+  const cumulative = useMemo(() => cumulativeCanvasDistances(projected), [projected]);
   const totalDistance = cumulative[cumulative.length - 1] ?? 0;
 
   const [elapsed, setElapsed] = useState(0);

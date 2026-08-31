@@ -45,6 +45,8 @@ export default function ShareScreen() {
       outputFileName: `mechuri-${resultId}`,
       preset: draft.preset,
       transform: draft.transform,
+      smooth: draft.smoothOptions.smooth,
+      corner: draft.smoothOptions.corner,
     })
       .then(async (result) => {
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
@@ -58,6 +60,7 @@ export default function ShareScreen() {
           track,
           preset: draft.preset,
           transform: draft.transform,
+          smoothOptions: draft.smoothOptions,
           backgroundImagePath,
           outputPath: result.outputPath,
           createdAt: new Date().toISOString(),

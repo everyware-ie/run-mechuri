@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Svg } from 'react-native-svg';
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
+import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
 
-import type { RouteTransform } from './route-preview';
+import { IDENTITY_SMOOTH, type RouteTransform } from './route-preview';
 
 // FRD: docs/specs/frd/home-and-library.md §2-1 "썸네일: 결과물의 한 장면"
 //
@@ -15,10 +16,12 @@ type Props = {
   points: Point[];
   transform: RouteTransform;
   size: number; // 정사각형 한 변
+  smoothOptions?: SmoothOptions;
 };
 
-export function RouteThumbnail({ points, transform, size }: Props) {
-  const projected = useMemo(() => projectPoints(points), [points]);
+export function RouteThumbnail({ points, transform, size, smoothOptions = IDENTITY_SMOOTH }: Props) {
+  const rawProjected = useMemo(() => projectPoints(points), [points]);
+  const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
   if (projected.length < 2) return null;
   const path = toSvgPath(projected);
   const scaleToView = Math.min(size / CANVAS_WIDTH, size / CANVAS_HEIGHT);

@@ -35,6 +35,7 @@ export default function HomeScreen() {
       backgroundImagePath: draft.backgroundImagePath,
       preset: draft.preset,
       transform: draft.transform,
+      smoothOptions: draft.smoothOptions,
     });
     router.push('/edit');
   };
@@ -72,7 +73,12 @@ export default function HomeScreen() {
                 <Pressable style={styles.cell} onPress={() => router.push(`/result/${item.id}`)}>
                   <Card style={styles.resultCard}>
                     <View style={styles.thumbBox}>
-                      <RouteThumbnail points={item.track.coordinates} transform={item.transform} size={150} />
+                      <RouteThumbnail
+                        points={item.track.coordinates}
+                        transform={item.transform}
+                        smoothOptions={item.smoothOptions}
+                        size={150}
+                      />
                     </View>
                     <Text style={styles.resultDistance}>{(item.distanceMeters / 1000).toFixed(2)}km</Text>
                     <Text style={styles.resultDate}>{item.runDate.slice(0, 10)}</Text>

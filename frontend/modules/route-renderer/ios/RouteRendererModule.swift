@@ -47,6 +47,10 @@ struct RenderClipOptionsInput: Record {
   @Field var outputFileName: String = ""
   @Field var preset: String = "default-drawing"
   @Field var transform: RouteTransformInput = RouteTransformInput()
+  /// result-editing FRD §5. 0~100, 기본 0(무보정).
+  @Field var smooth: Double = 0
+  /// result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정).
+  @Field var corner: Double = 0
 }
 
 struct RenderClipResultPayload: Record {
@@ -93,8 +97,14 @@ public class RouteRendererModule: Module {
       let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
 
       let baseProjected = self.projectPoints(options.points)
-      let projected = self.applyTransform(baseProjected, transform: options.transform)
-      let cumulativeDistances = self.cumulativeDistances(options.points)
+      // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 편집
+      // 화면 미리보기(route-preview.tsx)의 순서(projectPoints → applySmoothing → transform)와 맞춘다.
+      let smoothed = self.applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
+      let projected = self.applyTransform(smoothed, transform: options.transform)
+      // 다듬기가 점 개수·위치를 바꾸므로 원본 위경도 기반 누적 거리와 대응이 깨진다.
+      // §5-4 진행률은 항상 비율(targetDistance = total * fraction)로만 쓰이므로
+      // 캔버스 유클리드 거리로 다시 계산해도 결과가 같다(route-projection.ts와 동일).
+      let cumulativeDistances = self.cumulativeCanvasDistances(projected)
       let totalDistance = cumulativeDistances.last ?? 0
 
       let outputURL = self.outputURL(named: options.outputFileName)
@@ -196,6 +206,125 @@ public class RouteRendererModule: Module {
       + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180) * sin(dLon / 2) * sin(dLon / 2)
     let c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return earthRadius * c
+  }
+
+  /// 캔버스(픽셀) 좌표계 누적 거리. route-projection.ts의 cumulativeCanvasDistances와 동일.
+  private func cumulativeCanvasDistances(_ points: [CGPoint]) -> [Double] {
+    guard points.count > 1 else { return [0] }
+    var result: [Double] = [0]
+    for i in 1..<points.count {
+      result.append(result[i - 1] + Double(hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)))
+    }
+    return result
+  }
+
+  // MARK: - 다듬기 (result-editing FRD §5)
+  //
+  // route-smoothing.ts와 동일한 파이프라인: 중복 제거 → 이동평균 → RDP 단순화 → 모서리
+  // 라운딩. 미리보기와 최종 결과물 모양이 어긋나지 않도록 두 언어에 각각 이식했다.
+
+  private func applySmoothing(_ points: [CGPoint], smooth: Double, corner: Double) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    let window = 3 + Int((smooth / 100 * 12).rounded()) * 2
+    let smoothed = movingAverage(dedupe(points, minDist: 4), window: window)
+    let dg = max(diagonal(smoothed), 1)
+    let simplified = rdpSimplify(smoothed, epsilon: dg * (0.0008 + smooth / 100 * 0.011))
+    return roundCorners(simplified, radius: corner * (dg / 620))
+  }
+
+  private func dedupe(_ points: [CGPoint], minDist: CGFloat) -> [CGPoint] {
+    guard var last = points.first else { return points }
+    var out = [last]
+    for p in points.dropFirst() where hypot(p.x - last.x, p.y - last.y) >= minDist {
+      out.append(p)
+      last = p
+    }
+    if out.count < 2, let lastPoint = points.last { out.append(lastPoint) }
+    return out
+  }
+
+  private func movingAverage(_ points: [CGPoint], window: Int) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    let half = window / 2
+    var out: [CGPoint] = []
+    for i in 0..<points.count {
+      var sx: CGFloat = 0
+      var sy: CGFloat = 0
+      var k: CGFloat = 0
+      for j in (i - half)...(i + half) where j >= 0 && j < points.count {
+        sx += points[j].x
+        sy += points[j].y
+        k += 1
+      }
+      out.append(CGPoint(x: sx / k, y: sy / k))
+    }
+    out[0] = points[0]
+    out[out.count - 1] = points[points.count - 1]
+    return out
+  }
+
+  private func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let lenSq = dx * dx + dy * dy
+    guard lenSq > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+    var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq
+    t = max(0, min(1, t))
+    return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+  }
+
+  private func rdpSimplify(_ points: [CGPoint], epsilon: CGFloat) -> [CGPoint] {
+    guard points.count >= 3 else { return points }
+    var maxDist: CGFloat = -1
+    var idx = 0
+    for i in 1..<(points.count - 1) {
+      let d = segmentDistance(points[i], points[0], points[points.count - 1])
+      if d > maxDist {
+        maxDist = d
+        idx = i
+      }
+    }
+    if maxDist > epsilon {
+      let left = rdpSimplify(Array(points[0...idx]), epsilon: epsilon)
+      let right = rdpSimplify(Array(points[idx...]), epsilon: epsilon)
+      return Array(left.dropLast()) + right
+    }
+    return [points[0], points[points.count - 1]]
+  }
+
+  private func roundCorners(_ points: [CGPoint], radius: CGFloat) -> [CGPoint] {
+    guard radius > 0, points.count >= 3 else { return points }
+    var out: [CGPoint] = [points[0]]
+    for i in 1..<(points.count - 1) {
+      let a = points[i - 1]
+      let v = points[i]
+      let b = points[i + 1]
+      let d1 = hypot(v.x - a.x, v.y - a.y)
+      let d2 = hypot(v.x - b.x, v.y - b.y)
+      guard d1 > 1e-6, d2 > 1e-6 else { continue }
+      let t = min(radius, d1 * 0.45, d2 * 0.45)
+      let p1 = CGPoint(x: v.x + (a.x - v.x) / d1 * t, y: v.y + (a.y - v.y) / d1 * t)
+      let p2 = CGPoint(x: v.x + (b.x - v.x) / d2 * t, y: v.y + (b.y - v.y) / d2 * t)
+      out.append(p1)
+      for k in 1..<10 {
+        let u = CGFloat(k) / 10
+        let w = 1 - u
+        out.append(CGPoint(
+          x: w * w * p1.x + 2 * w * u * v.x + u * u * p2.x,
+          y: w * w * p1.y + 2 * w * u * v.y + u * u * p2.y
+        ))
+      }
+      out.append(p2)
+    }
+    out.append(points[points.count - 1])
+    return out
+  }
+
+  private func diagonal(_ points: [CGPoint]) -> CGFloat {
+    guard !points.isEmpty else { return 0 }
+    let xs = points.map { $0.x }
+    let ys = points.map { $0.y }
+    return hypot(xs.max()! - xs.min()!, ys.max()! - ys.min()!)
   }
 
   /// §5-4: 진행률은 점 인덱스가 아니라 거리(호 길이) 기준.

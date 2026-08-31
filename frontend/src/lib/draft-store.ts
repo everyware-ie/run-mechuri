@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { RoutePreset, RouteTransform } from '@/components/route-preview';
+import { IDENTITY_SMOOTH, type RoutePreset, type RouteTransform } from '@/components/route-preview';
+import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
@@ -17,6 +18,8 @@ export type Draft = {
   backgroundImagePath: string;
   preset: RoutePreset;
   transform: RouteTransform;
+  /** result-editing FRD §5. v1 저장분엔 없을 수 있어 getDraft에서 기본값을 채운다. */
+  smoothOptions: SmoothOptions;
   /** §3-1: "마지막으로 편집한 것"이 올라온다. 러닝한 날이 아니라 이 값 기준. */
   lastEditedAt: string;
 };
@@ -26,7 +29,8 @@ const STORAGE_KEY = 'mechuri.draft.v1';
 export async function getDraft(): Promise<Draft | null> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  return { smoothOptions: IDENTITY_SMOOTH, ...parsed };
 }
 
 export async function saveDraft(draft: Omit<Draft, 'lastEditedAt'>): Promise<void> {

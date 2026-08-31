@@ -23,6 +23,10 @@ export type RenderClipOptions = {
   outputFileName: string;
   preset: RoutePreset;
   transform: RouteTransform;
+  /** result-editing FRD §5 다듬기 세기. 0~100, 기본 0(무보정). */
+  smooth: number;
+  /** result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정). */
+  corner: number;
 };
 
 export type RenderClipResult = {

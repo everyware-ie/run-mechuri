@@ -99,6 +99,18 @@ export function pointsUpToDistance(
   return result;
 }
 
+/** 다듬기(route-smoothing.applySmoothing) 적용 후처럼 원본 위경도와 점 대응이 깨진
+ * 캔버스 점들의 누적 거리. 실제 미터 단위는 아니지만(캔버스 픽셀 기준), §5-4 진행률은
+ * 항상 targetDistance = totalDistance * progressFraction 형태의 "비율"로만 쓰이므로
+ * 균일 변형(스케일 포함)에도 비율은 그대로 보존된다. */
+export function cumulativeCanvasDistances(points: CanvasPoint[]): number[] {
+  const result = [0];
+  for (let i = 1; i < points.length; i++) {
+    result.push(result[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  }
+  return result;
+}
+
 export function toSvgPath(points: CanvasPoint[]): string {
   if (points.length < 2) return '';
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');

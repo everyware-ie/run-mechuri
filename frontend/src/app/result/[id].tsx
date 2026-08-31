@@ -32,6 +32,7 @@ export default function ResultDetailScreen() {
       backgroundImagePath: result.backgroundImagePath,
       preset: result.preset,
       transform: result.transform,
+      smoothOptions: result.smoothOptions,
     });
     router.push('/edit');
   };
@@ -72,7 +73,12 @@ export default function ResultDetailScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.previewBox}>
-          <RouteThumbnail points={result.track.coordinates} transform={result.transform} size={270} />
+          <RouteThumbnail
+            points={result.track.coordinates}
+            transform={result.transform}
+            smoothOptions={result.smoothOptions}
+            size={270}
+          />
         </View>
         <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
         <Text style={styles.meta}>{result.runDate.slice(0, 10)}</Text>
