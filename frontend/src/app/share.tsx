@@ -1,7 +1,6 @@
-import * as MediaLibrary from 'expo-media-library';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Button, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { addResult } from '@/lib/results-store';
@@ -13,6 +12,9 @@ import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule'
 // v0 스코프: 인스타 공유(§3)는 4단계(인스타 브릿지) 이후. 지금은 §4 기기 저장까지만.
 // §2-2: 공유 화면에 들어온 시점이 아니라, 인코딩이 실제로 끝난 시점에만 완성으로 친다
 // (S8 리뷰에서 나온 그 모호함을 여기서는 처음부터 이렇게 설계함).
+//
+// 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
+// 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
 
 type RenderState = 'rendering' | 'done' | 'error';
 
@@ -23,6 +25,8 @@ export default function ShareScreen() {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    if (Platform.OS === 'web') return; // 렌더러가 네이티브 전용이라 웹에서는 시도 자체를 안 함
+
     const { selectedRun, track, backgroundImagePath } = draft;
     if (!selectedRun || !track || !backgroundImagePath) {
       setState('error');
@@ -33,6 +37,8 @@ export default function ShareScreen() {
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
       outputFileName: `mechuri-${selectedRun.id}-${Date.now()}`,
+      preset: draft.preset,
+      transform: draft.transform,
     })
       .then(async (result) => {
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가한다.
@@ -52,6 +58,9 @@ export default function ShareScreen() {
 
   const handleSaveToPhotos = async () => {
     if (!outputPath) return;
+    // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
+    // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
+    const MediaLibrary = await import('expo-media-library');
     const { status } = await MediaLibrary.requestPermissionsAsync();
     if (status !== 'granted') {
       setSaveStatus('사진 저장 권한이 거부됐어요. 인스타 공유는 4단계에서 붙습니다.');
@@ -69,6 +78,16 @@ export default function ShareScreen() {
     reset();
     router.replace('/');
   };
+
+  if (Platform.OS === 'web') {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.title}>이 화면은 iOS 전용이에요</Text>
+        <Text style={styles.notice}>렌더링·저장 둘 다 네이티브 모듈이라 웹에서는 확인 안 돼요.</Text>
+        <Button title="홈으로" onPress={handleDone} />
+      </SafeAreaView>
+    );
+  }
 
   if (state === 'rendering') {
     return (
