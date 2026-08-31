@@ -40,7 +40,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "결과물 클립을 사진 앱에 저장하는 데 사용합니다."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
