@@ -150,15 +150,20 @@ export default function ShareScreen() {
     // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
     // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
     const MediaLibrary = await import('expo-media-library');
-    const { status } = await MediaLibrary.requestPermissionsAsync();
+    // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
+    // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
+    // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
+    // writeOnly로 요청해 plist와 맞춘다.
+    const { status } = await MediaLibrary.requestPermissionsAsync(true);
     if (status !== 'granted') {
-      setSaveStatus('사진 저장 권한이 거부됐어요. 인스타 공유는 4단계에서 붙습니다.');
+      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
       return;
     }
     try {
       await MediaLibrary.saveToLibraryAsync(outputPath);
       setSaveStatus('기기에 저장했어요');
-    } catch {
+    } catch (error) {
+      console.warn('saveToLibraryAsync failed', error);
       setSaveStatus('저장에 실패했어요');
     }
   };
