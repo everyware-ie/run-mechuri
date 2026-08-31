@@ -1,3 +1,4 @@
+import CoreLocation
 import ExpoModulesCore
 import HealthKit
 
@@ -199,6 +200,14 @@ public class HealthKitBridgeModule: Module {
         quantitySamplePredicate: predicate,
         options: .discreteAverage
       ) { _, statistics, error in
+        // §2-3: 심박은 있을 수도 없을 수도 있다. HKStatisticsQuery는 해당 워크아웃에
+        // 심박 샘플이 하나도 없으면 "정상적으로 nil을 준다"가 아니라 errorNoData를
+        // 던진다 — 이건 에러가 아니라 "심박 없음"의 정상 케이스이므로 nil로 흡수한다.
+        let nsError = error as NSError?
+        if nsError?.domain == HKErrorDomain, nsError?.code == HKError.errorNoData.rawValue {
+          continuation.resume(returning: nil)
+          return
+        }
         if let error = error {
           continuation.resume(throwing: error)
           return

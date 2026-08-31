@@ -1,8 +1,10 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ThemedButton } from '@/components/ui';
+import { Colors, Spacing } from '@/constants/theme';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -15,6 +17,7 @@ import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule'
 //
 // 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
+// 디자인: "1a 야간 네온"
 
 type RenderState = 'rendering' | 'done' | 'error';
 
@@ -84,7 +87,7 @@ export default function ShareScreen() {
       <SafeAreaView style={styles.center}>
         <Text style={styles.title}>이 화면은 iOS 전용이에요</Text>
         <Text style={styles.notice}>렌더링·저장 둘 다 네이티브 모듈이라 웹에서는 확인 안 돼요.</Text>
-        <Button title="홈으로" onPress={handleDone} />
+        <ThemedButton title="홈으로" onPress={handleDone} />
       </SafeAreaView>
     );
   }
@@ -92,8 +95,8 @@ export default function ShareScreen() {
   if (state === 'rendering') {
     return (
       <SafeAreaView style={styles.center}>
-        <ActivityIndicator />
-        <Text>결과물 만드는 중...</Text>
+        <ActivityIndicator color={Colors.accent} />
+        <Text style={styles.notice}>결과물 만드는 중...</Text>
       </SafeAreaView>
     );
   }
@@ -102,7 +105,7 @@ export default function ShareScreen() {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={styles.title}>결과물을 만들지 못했어요</Text>
-        <Button title="처음으로" onPress={handleDone} />
+        <ThemedButton title="처음으로" onPress={handleDone} />
       </SafeAreaView>
     );
   }
@@ -111,17 +114,32 @@ export default function ShareScreen() {
     <SafeAreaView style={styles.center}>
       <Text style={styles.title}>완성!</Text>
       <Text style={styles.path}>{outputPath}</Text>
-      <Button title="기기에 저장" onPress={handleSaveToPhotos} />
-      {saveStatus && <Text>{saveStatus}</Text>}
-      <Text style={styles.notice}>인스타그램 공유는 4단계(인스타 브릿지)에서 붙습니다.</Text>
-      <Button title="홈으로" onPress={handleDone} />
+      <View style={styles.actionColumn}>
+        <ThemedButton title="기기에 저장" onPress={handleSaveToPhotos} />
+        {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
+        <Text style={styles.notice}>인스타그램 공유는 4단계(인스타 브릿지)에서 붙습니다.</Text>
+        <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  title: { fontSize: 20, fontWeight: '600' },
-  path: { fontSize: 12, fontFamily: 'Menlo', color: '#555', textAlign: 'center' },
-  notice: { color: '#888', fontSize: 12, textAlign: 'center' },
+  center: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: Colors.text },
+  path: {
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
+  },
+  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center' },
+  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
 });

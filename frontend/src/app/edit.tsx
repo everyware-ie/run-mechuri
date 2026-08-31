@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
-  Button,
   Image,
   PanResponder,
   Pressable,
@@ -14,6 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IDENTITY_TRANSFORM, RoutePreview, type RoutePreset, type RouteTransform } from '@/components/route-preview';
+import { ThemedButton } from '@/components/ui';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // FRD: docs/specs/frd/result-editing.md
@@ -121,8 +122,8 @@ export default function EditScreen() {
   if (!draft.track || !draft.backgroundImagePath) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text>기록이나 배경이 아직 안 골라졌어요.</Text>
-        <Button title="처음으로" onPress={() => router.replace('/')} />
+        <Text style={styles.hint}>기록이나 배경이 아직 안 골라졌어요.</Text>
+        <ThemedButton title="처음으로" onPress={() => router.replace('/')} />
       </SafeAreaView>
     );
   }
@@ -162,27 +163,37 @@ export default function EditScreen() {
         </View>
 
         <Text style={styles.hint}>끌기: 이동 · 두 손가락: 확대·회전</Text>
-        <Button title="초기화" onPress={handleReset} />
-        <Button title="다음" onPress={handleNext} />
+        <View style={styles.actionRow}>
+          <ThemedButton title="초기화" variant="outline" onPress={handleReset} style={styles.actionButton} />
+          <ThemedButton title="다음" onPress={handleNext} style={styles.actionButton} />
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  container: { flex: 1, alignItems: 'center', padding: 16, gap: 16 },
-  previewBox: { borderRadius: 12, overflow: 'hidden', backgroundColor: '#111' },
-  presetRow: { flexDirection: 'row', gap: 8 },
-  presetButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#eee',
+  safeArea: { flex: 1, backgroundColor: Colors.bg },
+  center: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
   },
-  presetButtonSelected: { backgroundColor: '#208AEF' },
-  presetLabel: { color: '#333' },
-  presetLabelSelected: { color: '#fff', fontWeight: '600' },
-  hint: { color: '#888', fontSize: 12 },
+  container: { flex: 1, alignItems: 'center', padding: Spacing.md, gap: Spacing.md },
+  previewBox: { borderRadius: Radius.card, overflow: 'hidden', backgroundColor: Colors.bgCard },
+  presetRow: { flexDirection: 'row', gap: Spacing.xs },
+  presetButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: Radius.chip,
+    backgroundColor: Colors.bgCard,
+  },
+  presetButtonSelected: { backgroundColor: Colors.accent },
+  presetLabel: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  presetLabelSelected: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
+  hint: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11 },
+  actionRow: { flexDirection: 'row', gap: Spacing.sm, alignSelf: 'stretch' },
+  actionButton: { flex: 1 },
 });
