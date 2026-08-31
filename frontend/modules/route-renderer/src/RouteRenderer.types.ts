@@ -42,6 +42,9 @@ export type RenderClipOptions = {
   averageHeartRate: number | null;
 };
 
+/** export-and-share FRD §2-3. progress는 0~1. */
+export type RenderProgressEvent = { progress: number };
+
 export type RenderClipResult = {
   /** 완성된 mp4의 로컬 파일 경로 (file://). */
   outputPath: string;

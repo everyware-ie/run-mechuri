@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedButton } from '@/components/ui';
@@ -15,27 +15,70 @@ import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule'
 // v0 스코프: 인스타 공유(§3)는 4단계(인스타 브릿지) 이후. 지금은 §4 기기 저장까지만.
 // §2-2: 공유 화면에 들어온 시점이 아니라, 인코딩이 실제로 끝난 시점에만 완성으로 친다
 // (S8 리뷰에서 나온 그 모호함을 여기서는 처음부터 이렇게 설계함).
+// §2-3·common-rules §6: 대기 표시 타이밍 — 0.3초 뒤 스피너, 한 번 뜨면 0.5초는 유지,
+// 2초 넘기면 진행률+취소로 바뀐다. §2-4·F1·F2: 취소·실패 둘 다 편집 화면으로 돌아오고
+// 편집값은 유지된다(초안은 edit.tsx가 계속 저장해둔 그대로).
 //
 // 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
 // 디자인: "1a 야간 네온"
 
-type RenderState = 'rendering' | 'done' | 'error';
+const UI_SHOW_DELAY = 300;
+const UI_MIN_HOLD = 500;
+const UI_PROGRESS_DELAY = 2000;
+
+type UiPhase = 'hidden' | 'spinner' | 'progress';
 
 export default function ShareScreen() {
   const { draft, reset } = useCreationFlow();
-  const [state, setState] = useState<RenderState>('rendering');
+  const [uiPhase, setUiPhase] = useState<UiPhase>('hidden');
+  const [progress, setProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const shownAtRef = useRef<number | null>(null);
+  const cancelledRef = useRef(false);
+
+  // common-rules §6 타이밍: 0.3초에 표시, 2초에 진행률·취소로 전환.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const showTimer = setTimeout(() => {
+      setUiPhase('spinner');
+      shownAtRef.current = Date.now();
+    }, UI_SHOW_DELAY);
+    const progressTimer = setTimeout(() => setUiPhase('progress'), UI_PROGRESS_DELAY);
+    return () => {
+      clearTimeout(showTimer);
+      clearTimeout(progressTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const subscription = RouteRenderer.addListener('onRenderProgress', (event) => {
+      setProgress(event.progress);
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web') return; // 렌더러가 네이티브 전용이라 웹에서는 시도 자체를 안 함
 
     const { selectedRun, track, backgroundImagePath } = draft;
     if (!selectedRun || !track || !backgroundImagePath) {
-      setState('error');
+      Alert.alert('편집 정보를 찾을 수 없어요', '처음부터 다시 해주세요.', [
+        { text: '확인', onPress: () => router.replace('/') },
+      ]);
       return;
     }
+
+    // 한 번 표시된 대기 표시는 최소 0.5초는 유지한다(common-rules §6) — 인코딩이
+    // 그보다 먼저 끝나도 화면 전환은 그만큼 늦춘다. 아예 안 떴으면(0.3초 전에 끝남)
+    // 바로 전환한다.
+    const finishAfterMinHold = (fn: () => void) => {
+      const shownAt = shownAtRef.current;
+      const remaining = shownAt ? Math.max(0, UI_MIN_HOLD - (Date.now() - shownAt)) : 0;
+      setTimeout(fn, remaining);
+    };
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
 
@@ -75,12 +118,28 @@ export default function ShareScreen() {
           createdAt: new Date().toISOString(),
         });
         await clearDraft();
-        setOutputPath(result.outputPath);
-        setState('done');
+        finishAfterMinHold(() => setOutputPath(result.outputPath));
       })
-      .catch(() => setState('error'));
+      .catch(() => {
+        if (cancelledRef.current) {
+          // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
+          // 멈춘 거라 설명이 필요 없다.
+          router.back();
+          return;
+        }
+        // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
+        // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
+        Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
+          { text: '확인', onPress: () => router.back() },
+        ]);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleCancel = () => {
+    cancelledRef.current = true;
+    RouteRenderer.cancelRender();
+  };
 
   const handleSaveToPhotos = async () => {
     if (!outputPath) return;
@@ -115,20 +174,26 @@ export default function ShareScreen() {
     );
   }
 
-  if (state === 'rendering') {
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator color={Colors.accent} />
-        <Text style={styles.notice}>결과물 만드는 중...</Text>
-      </SafeAreaView>
-    );
-  }
+  if (!outputPath) {
+    if (uiPhase === 'hidden') return <SafeAreaView style={styles.center} />;
 
-  if (state === 'error') {
+    if (uiPhase === 'spinner') {
+      return (
+        <SafeAreaView style={styles.center}>
+          <ActivityIndicator color={Colors.accent} />
+          <Text style={styles.notice}>결과물 만드는 중...</Text>
+        </SafeAreaView>
+      );
+    }
+
+    // uiPhase === 'progress'
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.title}>결과물을 만들지 못했어요</Text>
-        <ThemedButton title="처음으로" onPress={handleDone} />
+        <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
+        </View>
+        <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
       </SafeAreaView>
     );
   }
@@ -165,4 +230,14 @@ const styles = StyleSheet.create({
   },
   notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center' },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
+  progressText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 32, color: Colors.text },
+  progressTrack: {
+    width: '80%',
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.bgCard,
+    overflow: 'hidden',
+  },
+  progressFill: { height: 6, backgroundColor: Colors.accent },
+  cancelButton: { marginTop: Spacing.lg, minWidth: 140 },
 });

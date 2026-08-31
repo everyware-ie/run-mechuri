@@ -81,6 +81,9 @@ enum RouteRendererError: Error, LocalizedError {
   case backgroundImageNotFound
   case writerSetupFailed
   case pixelBufferPoolMissing
+  /// export-and-share FRD §2-4·F2: 취소는 실패가 아니다. JS 쪽은 이 케이스를 문자열로
+  /// 구분하지 않고, 취소 버튼을 누른 시점을 자체적으로 기억해뒀다가 구분한다(share.tsx).
+  case cancelled
 
   var errorDescription: String? {
     switch self {
@@ -92,6 +95,8 @@ enum RouteRendererError: Error, LocalizedError {
       return "비디오 인코더 초기화에 실패했습니다"
     case .pixelBufferPoolMissing:
       return "프레임 버퍼 풀을 만들지 못했습니다"
+    case .cancelled:
+      return "취소했습니다"
     }
   }
 }
@@ -103,10 +108,22 @@ private enum RoutePreset: String {
 }
 
 public class RouteRendererModule: Module {
+  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제라
+  // 인스턴스 플래그 하나로 충분하다 — 작업별 취소 토큰까지는 필요 없다.
+  private var isCancelled = false
+
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
 
+    // export-and-share FRD §2-3: 인코딩 진행률.
+    Events("onRenderProgress")
+
+    Function("cancelRender") {
+      self.isCancelled = true
+    }
+
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
+      self.isCancelled = false
       guard options.points.count >= 2 else {
         throw RouteRendererError.notEnoughPoints
       }
@@ -136,6 +153,8 @@ public class RouteRendererModule: Module {
         stamp: options,
         to: outputURL
       )
+
+      self.sendEvent("onRenderProgress", ["progress": 1.0])
 
       var result = RenderClipResultPayload()
       result.outputPath = outputURL.absoluteString
@@ -649,6 +668,17 @@ public class RouteRendererModule: Module {
     writer.startSession(atSourceTime: .zero)
 
     for frameIndex in 0..<ClipSpec.totalFrames {
+      // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
+      if self.isCancelled {
+        writer.cancelWriting()
+        try? FileManager.default.removeItem(at: outputURL)
+        throw RouteRendererError.cancelled
+      }
+      // 매 프레임마다 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다 보낸다.
+      if frameIndex % 6 == 0 {
+        self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
+      }
+
       let progressFraction: Double
       if frameIndex < ClipSpec.drawFrames {
         progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
