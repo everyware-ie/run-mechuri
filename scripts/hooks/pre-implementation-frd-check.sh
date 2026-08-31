@@ -86,8 +86,14 @@ case "$REL" in
 esac
 
 # 구현 메인 소스만 대상 — 그 외(docs, 설정, 스크립트, 빌드 등)는 통과
+# frontend는 Expo 기본 템플릿이 src/ 아래에 두므로 src/ 유무 둘 다 인정한다
+# (2026-08-25 JiEung2 스캐폴딩 시 확인).
 case "$REL" in
-    backend/src/main/*|frontend/app/*|frontend/components/*|frontend/features/*|frontend/lib/*)
+    backend/src/main/*)
+        ;;
+    frontend/app/*|frontend/components/*|frontend/features/*|frontend/lib/*)
+        ;;
+    frontend/src/app/*|frontend/src/components/*|frontend/src/features/*|frontend/src/lib/*)
         ;;
     *)
         exit 0

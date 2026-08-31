@@ -2,8 +2,8 @@
 
 ## 서비스 개요
 
-러닝 관련 서비스 (가제, 제품명 미정). 팀메추리의 세 번째 프로덕트.
-**현재 `ideation` 단계 — 아직 코드가 없다.** 배경: [docs/meetings/2026-07-14/synthesis.md](docs/meetings/2026-07-14/synthesis.md)
+러닝 관련 서비스 (가제, 제품명 미정 — "메추리 런" 후보 검토 중). 팀메추리의 세 번째 프로덕트.
+**`ideation` 단계는 끝났다.** [2026-08-25 결정](docs/decisions/2026-08-25-react-native-expo-stack.md)으로 기술 스택(React Native + Expo)이 정해지고 FRD 7개가 `approved`로 승격되며 구현이 시작됐다. 배경: [docs/meetings/2026-07-14/synthesis.md](docs/meetings/2026-07-14/synthesis.md)
 
 ## 기획 문서의 정본 (이 레포)
 
@@ -77,16 +77,17 @@ python3 scripts/check-docs.py
 │   └── product/features/      # 기능별 구현 노트 (코드 착수 후 생성)
 ├── scripts/hooks/              # git 훅 (아래 "강제 게이트" 참고)
 ├── .claude/conventions/git.md  # 브랜치·커밋 규칙
+├── frontend/                    # React Native + Expo 앱 (2026-08-25 스캐폴딩)
+│   └── src/{app,components,constants,hooks}  # Expo Router 기본 템플릿 구조
 └── CLAUDE.md
 ```
 
 **아직 없는 것** (코드 착수 시점에 추가):
-- 앱 소스 — **React Native + Expo**로 정해졌다(2026-08-25). 디렉터리 이름과 배치는 착수 담당(JiEung2)이 정한다
-- `docs/architecture/` — 아키텍처 결정 없음
+- `docs/architecture/` — 아키텍처 결정 없음. 브릿지 3건(HealthKit·AVFoundation·인스타 공유)의 실제 설계는 [2026-08-25 결정](docs/decisions/2026-08-25-react-native-expo-stack.md) 이후 착수하며 정리한다
 
 ## 강제 게이트 (훅으로 자동 적용)
 
-kill-betting에서 검증된 훅을 그대로 설치했다. **아직 코드가 없어 지금은 발동하지 않는다** — `backend/src/main`·`frontend/{app,components,features,lib}` 편집 시점부터 동작한다.
+kill-betting에서 검증된 훅을 그대로 설치했다. `backend/src/main`·`frontend/{app,components,features,lib}`(Expo 기본 템플릿은 `src/` 아래에 두므로 `frontend/src/{app,components,features,lib}`도 동일하게 대상) 편집 시점부터 동작한다. **FRD 7개가 2026-08-25에 전부 `approved`로 승격됐으므로 이제 실질적으로 발동한다.**
 
 approved FRD라도 착수 전 확인 단계를 건너뛰지 못하도록 두 지점에서 훅이 강제한다:
 
