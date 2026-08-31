@@ -47,6 +47,14 @@ export default function ShareScreen() {
       transform: draft.transform,
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
+      stampMode: draft.stampConfig.mode,
+      stampItems: draft.stampConfig.enabled,
+      stampX: draft.stampConfig.position.x,
+      stampY: draft.stampConfig.position.y,
+      distanceMeters: selectedRun.distanceMeters,
+      durationSeconds: selectedRun.durationSeconds,
+      averagePaceSecPerKm: selectedRun.averagePaceSecPerKm,
+      averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
@@ -61,6 +69,7 @@ export default function ShareScreen() {
           preset: draft.preset,
           transform: draft.transform,
           smoothOptions: draft.smoothOptions,
+          stampConfig: draft.stampConfig,
           backgroundImagePath,
           outputPath: result.outputPath,
           createdAt: new Date().toISOString(),

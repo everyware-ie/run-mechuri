@@ -41,6 +41,14 @@ struct RouteTransformInput: Record {
   @Field var rotationDeg: Double = 0
 }
 
+/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 넷 중 어느 게 켜져 있나.
+struct StampItemsInput: Record {
+  @Field var distance: Bool = true
+  @Field var time: Bool = true
+  @Field var pace: Bool = true
+  @Field var heartRate: Bool = true
+}
+
 struct RenderClipOptionsInput: Record {
   @Field var points: [RoutePointInput] = []
   @Field var backgroundImagePath: String = ""
@@ -51,6 +59,17 @@ struct RenderClipOptionsInput: Record {
   @Field var smooth: Double = 0
   /// result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정).
   @Field var corner: Double = 0
+  /// result-editing FRD §7. "always" | "after" | "hidden".
+  @Field var stampMode: String = "hidden"
+  @Field var stampItems: StampItemsInput = StampItemsInput()
+  @Field var stampX: Double = 0
+  @Field var stampY: Double = 0
+  /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
+  @Field var distanceMeters: Double = 0
+  @Field var durationSeconds: Double = 0
+  @Field var averagePaceSecPerKm: Double = 0
+  /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
+  @Field var averageHeartRate: Double? = nil
 }
 
 struct RenderClipResultPayload: Record {
@@ -114,6 +133,7 @@ public class RouteRendererModule: Module {
         cumulativeDistances: cumulativeDistances,
         totalDistance: totalDistance,
         background: background,
+        stamp: options,
         to: outputURL
       )
 
@@ -411,14 +431,15 @@ public class RouteRendererModule: Module {
     ctx.restoreGState()
   }
 
-  /// §8 합성 순서(배경 → 경로) + 프리셋별 진행 표현(§6).
+  /// §8 합성 순서(배경 → 경로 → 각인) + 프리셋별 진행 표현(§6).
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
     projectedPoints: [CGPoint],
     cumulativeDistances: [Double],
     totalDistance: Double,
-    progressFraction: Double
+    progressFraction: Double,
+    stamp: RenderClipOptionsInput
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
     let renderer = UIGraphicsImageRenderer(size: size)
@@ -500,6 +521,77 @@ public class RouteRendererModule: Module {
           }
         }
       }
+
+      self.drawStamps(stamp, progressFraction: progressFraction, canvasSize: size)
+    }
+  }
+
+  // MARK: - 각인 (result-editing FRD §7 · route-rendering FRD §7)
+  //
+  // route-preview.tsx의 StampLayer와 같은 규칙: 넷을 다 새기되 심박은 데이터 있을 때만,
+  // 거리는 그려진 선 길이가 아니라 기록된 총 거리를 쓴다. 폰트는 미리보기(SVG, 로드된
+  // JetBrains Mono)와 다르게 시스템 모노스페이스를 쓴다 — 번들에 폰트 파일을 넣는
+  // 네이티브 자산 파이프라인이 아직 없어서, 미리보기와 최종 결과물의 폰트가 다를 수
+  // 있다(v0 근사, 프리셋 글로우 반경 근사와 같은 종류의 타협).
+
+  private func formatDistanceKm(_ meters: Double) -> String {
+    String(format: "%.2fkm", meters / 1000)
+  }
+
+  private func formatDuration(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    let s = total % 60
+    return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+  }
+
+  private func formatPace(_ secPerKm: Double) -> String {
+    let total = max(0, Int(secPerKm.rounded()))
+    return String(format: "%d'%02d\"/km", total / 60, total % 60)
+  }
+
+  private func formatHeartRate(_ bpm: Double) -> String {
+    String(format: "%.0fbpm", bpm)
+  }
+
+  private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    let isComplete = progressFraction >= 1
+    if stamp.stampMode == "hidden" { return }
+    if stamp.stampMode == "after" && !isComplete { return }
+
+    var items: [String] = []
+    if stamp.stampItems.distance { items.append(formatDistanceKm(stamp.distanceMeters * progressFraction)) }
+    if stamp.stampItems.time { items.append(formatDuration(stamp.durationSeconds * progressFraction)) }
+    if stamp.stampItems.pace { items.append(formatPace(stamp.averagePaceSecPerKm)) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { items.append(formatHeartRate(hr)) }
+    guard !items.isEmpty else { return }
+
+    let fontSize: CGFloat = 28
+    let gap: CGFloat = 22
+    // route-preview.tsx StampLayer와 동일한 기본 자리·간이 너비 추정(모노스페이스 가정).
+    let safeAreaBottomRatio: CGFloat = 0.2
+    let defaultY = canvasSize.height * (1 - safeAreaBottomRatio) - 90
+    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+    let y = defaultY + CGFloat(stamp.stampY)
+    let charWidth = fontSize * 0.62
+
+    let attributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
+      .foregroundColor: lineWarm,
+    ]
+
+    let widths = items.map { CGFloat($0.count) * charWidth }
+    let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
+    var cursorX = centerX - totalWidth / 2
+
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    for (i, text) in items.enumerated() {
+      ctx.saveGState()
+      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      (text as NSString).draw(at: CGPoint(x: cursorX, y: y), withAttributes: attributes)
+      ctx.restoreGState()
+      cursorX += widths[i] + gap
     }
   }
 
@@ -516,6 +608,7 @@ public class RouteRendererModule: Module {
     cumulativeDistances: [Double],
     totalDistance: Double,
     background: UIImage,
+    stamp: RenderClipOptionsInput,
     to outputURL: URL
   ) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
@@ -565,7 +658,8 @@ public class RouteRendererModule: Module {
         projectedPoints: projectedPoints,
         cumulativeDistances: cumulativeDistances,
         totalDistance: totalDistance,
-        progressFraction: progressFraction
+        progressFraction: progressFraction,
+        stamp: stamp
       )
 
       guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {

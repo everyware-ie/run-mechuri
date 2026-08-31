@@ -15,6 +15,8 @@ export type RouteTransform = {
   rotationDeg: number;
 };
 
+export type StampMode = 'always' | 'after' | 'hidden';
+
 export type RenderClipOptions = {
   points: RoutePoint[];
   /** 기기 로컬 파일 경로 (file://). 배경 사진. */
@@ -27,6 +29,17 @@ export type RenderClipOptions = {
   smooth: number;
   /** result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정). */
   corner: number;
+  /** result-editing FRD §7 · route-rendering FRD §7 각인 */
+  stampMode: StampMode;
+  stampItems: { distance: boolean; time: boolean; pace: boolean; heartRate: boolean };
+  stampX: number;
+  stampY: number;
+  /** 각인 값 계산용. 그려진 선 길이가 아니라 기록된 값을 쓴다(§7-3). */
+  distanceMeters: number;
+  durationSeconds: number;
+  averagePaceSecPerKm: number;
+  /** 데이터가 없으면 null(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다). */
+  averageHeartRate: number | null;
 };
 
 export type RenderClipResult = {

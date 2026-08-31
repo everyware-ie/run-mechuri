@@ -1,6 +1,13 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
-import { IDENTITY_SMOOTH, IDENTITY_TRANSFORM, type RoutePreset, type RouteTransform } from '@/components/route-preview';
+import {
+  IDENTITY_SMOOTH,
+  IDENTITY_STAMP,
+  IDENTITY_TRANSFORM,
+  type RoutePreset,
+  type RouteTransform,
+  type StampConfig,
+} from '@/components/route-preview';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
@@ -16,6 +23,8 @@ type CreationDraft = {
   transform: RouteTransform;
   /** result-editing FRD §5 다듬기 세기 */
   smoothOptions: SmoothOptions;
+  /** result-editing FRD §7 각인 */
+  stampConfig: StampConfig;
 };
 
 type CreationFlowContextValue = {
@@ -25,6 +34,7 @@ type CreationFlowContextValue = {
   setPreset: (preset: RoutePreset) => void;
   setTransform: (transform: RouteTransform) => void;
   setSmoothOptions: (smoothOptions: SmoothOptions) => void;
+  setStampConfig: (stampConfig: StampConfig) => void;
   /** result-editing FRD §4-3: 프리셋·각인은 그대로 두고 드로잉 조작값만 되돌린다. */
   resetTransform: () => void;
   /** 초안 이어서 만들기·결과물 다시 편집 등, 여러 값을 한 번에 채워 넣을 때. */
@@ -39,6 +49,7 @@ const emptyDraft: CreationDraft = {
   preset: 'default-drawing',
   transform: IDENTITY_TRANSFORM,
   smoothOptions: IDENTITY_SMOOTH,
+  stampConfig: IDENTITY_STAMP,
 };
 
 const CreationFlowContext = createContext<CreationFlowContextValue | null>(null);
@@ -54,6 +65,7 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
       setTransform: (transform) => setDraft((prev) => ({ ...prev, transform })),
       setSmoothOptions: (smoothOptions) => setDraft((prev) => ({ ...prev, smoothOptions })),
+      setStampConfig: (stampConfig) => setDraft((prev) => ({ ...prev, stampConfig })),
       resetTransform: () => setDraft((prev) => ({ ...prev, transform: IDENTITY_TRANSFORM })),
       loadDraft: (partial) => setDraft((prev) => ({ ...prev, ...partial })),
       reset: () => setDraft(emptyDraft),

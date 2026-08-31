@@ -4,7 +4,8 @@ import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, G, Path, Svg } from
 import { CANVAS_HEIGHT, CANVAS_WIDTH, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
 
-import { IDENTITY_SMOOTH, type RouteTransform } from './route-preview';
+import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
+import { IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RouteTransform, type StampConfig } from './route-preview';
 
 // FRD: docs/specs/frd/home-and-library.md §2-1 "썸네일: 결과물의 한 장면"
 //
@@ -17,9 +18,18 @@ type Props = {
   transform: RouteTransform;
   size: number; // 정사각형 한 변
   smoothOptions?: SmoothOptions;
+  run?: RunRecord;
+  stampConfig?: StampConfig;
 };
 
-export function RouteThumbnail({ points, transform, size, smoothOptions = IDENTITY_SMOOTH }: Props) {
+export function RouteThumbnail({
+  points,
+  transform,
+  size,
+  smoothOptions = IDENTITY_SMOOTH,
+  run,
+  stampConfig = IDENTITY_STAMP,
+}: Props) {
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
   if (projected.length < 2) return null;
@@ -31,6 +41,14 @@ export function RouteThumbnail({ points, transform, size, smoothOptions = IDENTI
       <Defs>
         <Filter id="thumbGlow" x="-100%" y="-100%" width="300%" height="300%">
           <FeGaussianBlur stdDeviation="10" result="blur" />
+          <FeMerge>
+            <FeMergeNode in="blur" />
+            <FeMergeNode in="SourceGraphic" />
+          </FeMerge>
+        </Filter>
+        {/* StampLayer(route-preview.tsx)가 참조하는 필터 id — 여기서도 정의해야 글로우가 붙는다. */}
+        <Filter id="glowSoft" x="-100%" y="-100%" width="300%" height="300%">
+          <FeGaussianBlur stdDeviation="6" result="blur" />
           <FeMerge>
             <FeMergeNode in="blur" />
             <FeMergeNode in="SourceGraphic" />
@@ -51,6 +69,9 @@ export function RouteThumbnail({ points, transform, size, smoothOptions = IDENTI
           filter="url(#thumbGlow)"
         />
       </G>
+
+      {/* §2-1 "완성된 순간" — 각인도 완주 시점(progressFraction=1) 상태로 함께 보여준다. */}
+      {run && <StampLayer run={run} config={stampConfig} progressFraction={1} />}
     </Svg>
   );
 }

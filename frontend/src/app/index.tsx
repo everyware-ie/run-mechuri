@@ -36,6 +36,7 @@ export default function HomeScreen() {
       preset: draft.preset,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
+      stampConfig: draft.stampConfig,
     });
     router.push('/edit');
   };
@@ -77,6 +78,8 @@ export default function HomeScreen() {
                         points={item.track.coordinates}
                         transform={item.transform}
                         smoothOptions={item.smoothOptions}
+                        run={item.run}
+                        stampConfig={item.stampConfig}
                         size={150}
                       />
                     </View>

@@ -33,6 +33,7 @@ export default function ResultDetailScreen() {
       preset: result.preset,
       transform: result.transform,
       smoothOptions: result.smoothOptions,
+      stampConfig: result.stampConfig,
     });
     router.push('/edit');
   };
@@ -77,6 +78,8 @@ export default function ResultDetailScreen() {
             points={result.track.coordinates}
             transform={result.transform}
             smoothOptions={result.smoothOptions}
+            run={result.run}
+            stampConfig={result.stampConfig}
             size={270}
           />
         </View>
