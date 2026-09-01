@@ -1,5 +1,5 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Rect, Svg, Text as SvgText, Defs, Filter, FeGaussianBlur, FeMerge, FeMergeNode } from 'react-native-svg';
 
@@ -257,8 +257,14 @@ function RouteLayer({
     // 시안 "glow" 알고리즘 이식(paint() mode!=='plain'/'seg' 분기). 시안은 캔버스 폭 ~345px
     // 기준으로 T.w=3(선 두께)·shadowBlur 10/20/26을 쓴다 — 우리 Skia 캔버스는 최종 출력과
     // 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온 길(+글로우)
-    // + 최근 10% 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
-    const hotStart = Math.max(0, targetDistance - totalDistance * 0.1);
+    // + 최근 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
+    //
+    // 잔광 길이는 "총 거리의 비율"이 아니라 캔버스 픽셀 고정값을 쓴다(2026-09,
+    // 실기기 피드백 — 머리 점은 매끄러운데 뒤따르는 잔광이 끊겨 보인다는 것).
+    // 경로마다 총 캔버스 길이(굴곡·왕복 여부)가 달라서 "총 거리의 10%"는 경로마다
+    // 실제 화면 픽셀 길이가 들쭉날쭉했다 — 고정 길이면 항상 같은 크기로 따라간다.
+    const HOT_TRAIL_LENGTH_PX = 260;
+    const hotStart = Math.max(0, targetDistance - HOT_TRAIL_LENGTH_PX);
     const before = pointsUpToDistance(hotStart, projected, cumulative);
     const hotTrail = traveled.slice(Math.max(0, before.length - 1));
     return (
@@ -452,17 +458,32 @@ export function StampLayerSvg({
       {items.map((text, i) => {
         const x = cursorX;
         cursorX += widths[i] + gap;
+        // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
+        // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹쳐서, 배경 밝기와
+        // 무관하게 또렷하게 한다(react-native-svg Text엔 paintOrder 타입이 없어
+        // stroke-then-fill 한 엘리먼트로는 안 되고 두 개를 겹친다).
         return (
-          <SvgText
-            key={i}
-            x={x}
-            y={y}
-            fontSize={fontSize}
-            fontFamily="JetBrainsMono_700Bold"
-            fill={LINE_WARM}
-            filter="url(#stampGlow)">
-            {text}
-          </SvgText>
+          <Fragment key={i}>
+            <SvgText
+              x={x}
+              y={y}
+              fontSize={fontSize}
+              fontFamily="JetBrainsMono_700Bold"
+              fill="none"
+              stroke="rgba(11,13,16,0.8)"
+              strokeWidth={7}>
+              {text}
+            </SvgText>
+            <SvgText
+              x={x}
+              y={y}
+              fontSize={fontSize}
+              fontFamily="JetBrainsMono_700Bold"
+              fill={LINE_WARM}
+              filter="url(#stampGlow)">
+              {text}
+            </SvgText>
+          </Fragment>
         );
       })}
     </>

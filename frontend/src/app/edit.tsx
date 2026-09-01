@@ -1,15 +1,15 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Dimensions,
+  Animated,
   Image,
   PanResponder,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,6 +33,11 @@ import { useCreationFlow } from '@/state/creation-flow';
 // FRD: docs/specs/frd/result-editing.md
 // 프리셋 선택(§3), 드로잉 크기·위치·회전 제스처+초기화(§4), 미리보기 재생 규칙(§2-1),
 // 다듬기 세기(§5), 각인 편집(§7)까지 구현. 속도·색은 여전히 여유 시라 이후(목업 구현 3/6).
+//
+// 2026-09: 미리보기를 화면 전체로 키우고 아래 컨트롤은 드래그로 접었다 펼 수 있는
+// 바텀시트로 뺐다(실기기 피드백 — 작은 카드 안에 눌려 있던 걸 크게 보고 싶다는 것,
+// 그리고 그 카드가 ScrollView 안에 있어서 드래그 제스처가 스크롤과 경합하던 문제도
+// 이 구조에선 아예 없어진다 — 미리보기 영역을 감싸는 스크롤 컨테이너가 없다).
 
 const STAMP_ITEMS: { id: StampItem; label: string }[] = [
   { id: 'distance', label: '거리' },
@@ -52,6 +57,10 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'light-runner', label: '불빛 러너' },
   { id: 'segment-lighting', label: '구간 점등' },
 ];
+
+const SHEET_EXPANDED_HEIGHT = 372;
+const SHEET_PEEK_HEIGHT = 30;
+const SHEET_COLLAPSE_DISTANCE = SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT;
 
 function touchDistance(t1: { pageX: number; pageY: number }, t2: { pageX: number; pageY: number }) {
   return Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
@@ -124,6 +133,9 @@ export default function EditScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
+      // 미리보기 영역 안에서 시작한 터치만 잡는다 — 이 responder는 previewArea
+      // 경계에 딱 맞는 뷰 하나에만 붙어 있어서(§ 아래 JSX), 그 바깥 터치(바텀시트,
+      // 헤더 등)는애초에 이 콜백 자체가 안 불린다.
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
@@ -193,6 +205,47 @@ export default function EditScreen() {
     })
   ).current;
 
+  // 아래 컨트롤 패널(바텀시트) — 손잡이를 드래그해서 접었다 펼 수 있다. 접으면
+  // 미리보기가 화면 거의 전체로 보인다. 손잡이 영역에만 반응해서 슬라이더·버튼
+  // 터치와 겹치지 않는다.
+  // PanResponder는 useRef로 한 번만 만들어져서 그 콜백들이 첫 렌더의 클로저를
+  // 계속 들고 있다 — useState로 두면 갱신이 반영 안 되는 stale closure가 되므로 ref로 둔다.
+  const sheetExpandedRef = useRef(true);
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const sheetDragStart = useRef(0);
+
+  const animateSheetTo = (expanded: boolean) => {
+    sheetExpandedRef.current = expanded;
+    Animated.spring(sheetTranslateY, {
+      toValue: expanded ? 0 : SHEET_COLLAPSE_DISTANCE,
+      useNativeDriver: true,
+      bounciness: 4,
+    }).start();
+  };
+
+  const sheetPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 2,
+      onPanResponderGrant: () => {
+        sheetTranslateY.stopAnimation((value) => {
+          sheetDragStart.current = value;
+        });
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        const next = sheetDragStart.current + gestureState.dy;
+        sheetTranslateY.setValue(Math.max(0, Math.min(SHEET_COLLAPSE_DISTANCE, next)));
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        // 40px 이상 내리면 접고, 40px 이상 올리면 펼치고, 그 사이는 원래 상태로 되돌린다.
+        const dy = gestureState.dy;
+        if (dy > 40) animateSheetTo(false);
+        else if (dy < -40) animateSheetTo(true);
+        else animateSheetTo(sheetExpandedRef.current);
+      },
+    })
+  ).current;
+
   // 홈과 보관함 FRD §3-1: "이어서 만들기"에 올라오는 건 마지막으로 편집한 것.
   // 이 화면에 들어와 있는 것 자체가 "지금 이걸 만지고 있다"는 뜻이라, 진입 시점과
   // 프리셋·변형값이 바뀔 때마다 초안을 저장해둔다. 완성되면 share.tsx에서 지운다.
@@ -231,10 +284,11 @@ export default function EditScreen() {
     router.push('/share');
   };
 
-  // "3안" 시안 S7: 카드는 화면 폭에 가깝고(margin 24) 높이는 352 안팎 — 9:16 캔버스를
-  // 그 안에 레터박스로 넣으면 시안처럼 경로 글로우가 어두운 여백 가운데 놓인다.
-  const previewWidth = Dimensions.get('window').width - 48;
-  const previewHeight = 352;
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const handlePreviewLayout = (e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    setPreviewSize({ width, height });
+  };
 
   const smoothLabel = (v: number) => (v === 0 ? '없음' : `${v} %`);
   const cornerLabel = (v: number) => (v === 0 ? '각지게' : `${v} %`);
@@ -256,7 +310,7 @@ export default function EditScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScreenHeader
         title="편집"
         right={
@@ -266,86 +320,102 @@ export default function EditScreen() {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={[styles.card, { width: previewWidth, height: previewHeight }]}>
-          <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill}>
-            <RoutePreview
-              points={draft.track.coordinates}
-              preset={draft.preset}
-              transform={transform}
-              smoothOptions={smoothOptions}
-              run={draft.selectedRun}
-              stampConfig={stampConfig}
-              showSafeAreaGuide
-              isInteracting={isInteracting}
-              viewWidth={previewWidth}
-              viewHeight={previewHeight}
-            />
+      {/* 미리보기 — 화면에서 헤더·바텀시트를 뺀 나머지 전부를 차지한다. 이 뷰 자체가
+          제스처 캡처 영역의 경계라, 시트나 헤더로 터치가 새 나갈 일이 없다. */}
+      <View style={styles.previewArea} onLayout={handlePreviewLayout}>
+        {previewSize.width > 0 && (
+          <>
+            <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, isInteracting && styles.previewActive]}>
+              <RoutePreview
+                points={draft.track.coordinates}
+                preset={draft.preset}
+                transform={transform}
+                smoothOptions={smoothOptions}
+                run={draft.selectedRun}
+                stampConfig={stampConfig}
+                showSafeAreaGuide
+                isInteracting={isInteracting}
+                viewWidth={previewSize.width}
+                viewHeight={previewSize.height}
+              />
+            </View>
+            <Text style={styles.cardHint}>
+              {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
+            </Text>
+          </>
+        )}
+      </View>
+
+      {/* 컨트롤 바텀시트 — 손잡이를 위아래로 끌면 접고 펼 수 있다. */}
+      {!stampSheetOpen && (
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
+          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
+            <View style={styles.sheetHandleBar} />
           </View>
-          <Text style={styles.cardHint}>
-            {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
-          </Text>
-        </View>
 
-        {/* §3 프리셋 */}
-        <Text style={styles.sectionLabel}>프리셋 · PRESET</Text>
-        <View style={styles.presetRow}>
-          {PRESETS.map((p) => {
-            const on = draft.preset === p.id;
-            return (
-              <Pressable
-                key={p.id}
-                onPress={() => handlePresetSelect(p.id)}
-                style={[styles.presetChip, on && styles.presetChipOn]}>
-                <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
+          <View style={styles.sheetContent}>
+            {/* §3 프리셋 */}
+            <Text style={styles.sectionLabel}>프리셋 · PRESET</Text>
+            <View style={styles.presetRow}>
+              {PRESETS.map((p) => {
+                const on = draft.preset === p.id;
+                return (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => handlePresetSelect(p.id)}
+                    style={[styles.presetChip, on && styles.presetChipOn]}>
+                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* §5: 결과를 보면서 조절한다. 시안 S7대로 직선·코너 두 축을 바로 노출한다
+                (FRD §5의 "기본은 한 축"과 다름 — 확인 노트에 기록). 슬라이더 범위 자체가
+                안전 구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
+            <View style={styles.sliderHead}>
+              <Text style={styles.sectionLabel}>직접 다듬기 · SMOOTH</Text>
+              <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
+            </View>
+            <Slider
+              value={smoothOptions.smooth}
+              onChange={(v) => handleSmoothAxisChange('smooth', v)}
+              onSlidingComplete={handleSmoothCommit}
+            />
+
+            <View style={styles.sliderHead}>
+              <Text style={styles.sectionLabel}>코너 반경 · CORNER</Text>
+              <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
+            </View>
+            <Slider
+              value={smoothOptions.corner}
+              onChange={(v) => handleSmoothAxisChange('corner', v)}
+              onSlidingComplete={handleSmoothCommit}
+            />
+
+            <View style={styles.outlineRow}>
+              <Pressable style={styles.outlineBtn} onPress={() => setStampSheetOpen(true)}>
+                <Text style={styles.outlineBtnText}>각인</Text>
               </Pressable>
-            );
-          })}
-        </View>
+              <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')}>
+                <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
+              </Pressable>
+              <Pressable style={styles.outlineBtn} onPress={handleReset}>
+                <Text style={styles.outlineBtnMuted}>초기화</Text>
+              </Pressable>
+            </View>
 
-        {/* §5: 결과를 보면서 조절한다. 시안 S7대로 직선·코너 두 축을 바로 노출한다
-            (FRD §5의 "기본은 한 축"과 다름 — 확인 노트에 기록). 슬라이더 범위 자체가
-            안전 구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
-        <View style={styles.sliderHead}>
-          <Text style={styles.sectionLabel}>직접 다듬기 · SMOOTH</Text>
-          <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
-        </View>
-        <Slider
-          value={smoothOptions.smooth}
-          onChange={(v) => handleSmoothAxisChange('smooth', v)}
-          onSlidingComplete={handleSmoothCommit}
-        />
-
-        <View style={styles.sliderHead}>
-          <Text style={styles.sectionLabel}>코너 반경 · CORNER</Text>
-          <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
-        </View>
-        <Slider
-          value={smoothOptions.corner}
-          onChange={(v) => handleSmoothAxisChange('corner', v)}
-          onSlidingComplete={handleSmoothCommit}
-        />
-
-        <View style={styles.outlineRow}>
-          <Pressable style={styles.outlineBtn} onPress={() => setStampSheetOpen(true)}>
-            <Text style={styles.outlineBtnText}>각인</Text>
-          </Pressable>
-          <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')}>
-            <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
-          </Pressable>
-          <Pressable style={styles.outlineBtn} onPress={handleReset}>
-            <Text style={styles.outlineBtnMuted}>초기화</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.note}>
-          적용 버튼이 없습니다. 초기화는 드로잉 조작만 되돌리고 프리셋·각인은 남습니다.
-        </Text>
-      </ScrollView>
+            <Text style={styles.note}>
+              적용 버튼이 없습니다. 초기화는 드로잉 조작만 되돌리고 프리셋·각인은 남습니다.
+            </Text>
+          </View>
+        </Animated.View>
+      )}
 
       {/* §7 각인 시트(S6) — 미리보기를 가리지 않도록 하단 패널로 둔다. 열려 있는 동안만
-          미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). */}
+          미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). 컨트롤
+          바텀시트와 자리를 다투지 않도록, 열려 있는 동안엔 그 시트를 안 그린다(위). */}
       {stampSheetOpen && (
         <View style={styles.sheet}>
           <View style={styles.sheetHead}>
@@ -404,18 +474,13 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   headerAction: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
-  scroll: { paddingHorizontal: 24, paddingBottom: 60, gap: 12, alignItems: 'stretch' },
-  card: {
-    alignSelf: 'center',
-    borderRadius: Radius.card,
-    overflow: 'hidden',
-    backgroundColor: Colors.bgCard,
-    marginBottom: 4,
-  },
+  previewArea: { flex: 1, backgroundColor: Colors.bgCard, overflow: 'hidden' },
+  // 조작 중임을 눈으로도 알 수 있게 — "터치 경계가 명확하지 않다"는 피드백 대응.
+  previewActive: { borderWidth: 2, borderColor: Colors.accent },
   cardHint: {
     position: 'absolute',
-    left: 14,
-    bottom: 12,
+    left: 16,
+    bottom: 14,
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 9.5,
     letterSpacing: 1,
@@ -488,16 +553,26 @@ const styles = StyleSheet.create({
     borderTopRightRadius: Radius.pill,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    paddingHorizontal: 24,
-    paddingTop: 20,
     paddingBottom: 34,
-    gap: 12,
   },
+  sheetHandleArea: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  sheetHandleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.borderStrong,
+  },
+  sheetContent: { paddingHorizontal: 24, gap: 12 },
   sheetHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+    paddingHorizontal: 24,
+    paddingTop: 20,
   },
   sheetTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: Colors.text },
 });
