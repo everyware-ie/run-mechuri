@@ -112,12 +112,17 @@ export function pointsUpToDistance(
 /** pointsUpToDistance와 같은 지점을 찾지만, 그 지점 하나만 필요할 때(머리 점·구간
  * 경계 점) 앞부분 전체를 slice로 새로 배열에 담지 않는다 — 애니메이션 중 매 프레임
  * 불려서(2026-09-01), 경로가 길어질수록(진행률이 높을수록) 매번 커지는 배열을
- * 할당하는 비용도 누적됐다. 반환값은 pointsUpToDistance(...).at(-1)과 같다. */
+ * 할당하는 비용도 누적됐다. 반환값은 pointsUpToDistance(...).at(-1)과 같다.
+ *
+ * 'worklet' 지시어: 불빛 러너(light-runner) 프리셋은 이 함수를 Reanimated
+ * useDerivedValue 안(UI 스레드)에서 부른다 — 다른 파일에서 가져다 쓰는 함수가
+ * 워클릿 안에서 불리려면 이 함수 자신도 워클릿으로 표시돼 있어야 한다. */
 export function pointAtDistance(
   targetDistance: number,
   projected: CanvasPoint[],
   cumulative: number[]
 ): CanvasPoint | undefined {
+  'worklet';
   if (projected.length === 0) return undefined;
   if (targetDistance <= 0) return projected[0];
   if (cumulative.length < 2) return projected[0];

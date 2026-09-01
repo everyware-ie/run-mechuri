@@ -1,6 +1,8 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
+import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import {
   Circle as SvgCircle,
   Rect as SvgRect,
@@ -148,16 +150,26 @@ export function RoutePreview({
   const lastTsRef = useRef<number | null>(null);
   const accumulatedRef = useRef(0);
 
+  // light-runner의 각인(거리·시간·페이스) 카운트업 숫자용 — 캔버스 자체는
+  // LightRunnerLayer 안의 SharedValue가 UI 스레드에서 그리므로 이 값과 무관하다.
+  // 대략 30단계(≈33ms)마다만 낮춰서 받으므로 숫자가 튀지 않으면서도 JS 리렌더는
+  // 훨씬 드물다.
+  const [lightRunnerStampProgress, setLightRunnerStampProgress] = useState(0);
+
   // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
   // ref는 안 건드린다). 프레임 delta는 아래 tick에서 어차피 0.1초로 클램프한다.
   const [seenPreset, setSeenPreset] = useState(preset);
   if (seenPreset !== preset) {
     setSeenPreset(preset);
     setElapsed(0);
+    setLightRunnerStampProgress(0);
   }
 
+  // light-runner는 이 JS state 루프를 아예 안 쓴다 — 아래 LightRunnerLayer가
+  // Reanimated로 UI 스레드에서 직접 돌린다(2026-09-01, "html처럼 안 부드럽다"는
+  // 실기기 피드백). 여기서 계속 돌리면 안 보이는 애니메이션에 리소스만 낭비된다.
   useEffect(() => {
-    if (isInteracting) {
+    if (isInteracting || preset === 'light-runner') {
       lastTsRef.current = null;
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       return;
@@ -186,12 +198,17 @@ export function RoutePreview({
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
-  }, [isInteracting]);
+  }, [isInteracting, preset]);
 
   if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   const progressFraction = Math.min(elapsed / DRAW_SECONDS, 1);
-  const targetDistance = totalDistance * progressFraction;
+  const stampProgressFraction = preset === 'light-runner' ? lightRunnerStampProgress : progressFraction;
+  // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
+  // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
+  // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
+  // 낮추고, 손을 떼면(정지 상태) 원래 반경으로 돌아온다.
+  const blurScale = isInteracting ? 0.4 : 1;
 
   // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
   // contain=min(다 보이게, 여백 남음) / cover=max(꽉 채우고 넘치는 만큼 자름).
@@ -219,17 +236,31 @@ export function RoutePreview({
     <View style={{ width: viewWidth, height: viewHeight }}>
       <Canvas style={{ flex: 1 }}>
         <Group transform={groupTransform}>
-          <RouteLayer
-            preset={preset}
-            projected={projected}
-            cumulative={cumulative}
-            totalDistance={totalDistance}
-            targetDistance={targetDistance}
-            progressFraction={progressFraction}
-            fullPath={fullPath}
-            rawFullPath={rawFullPath}
-            isInteracting={isInteracting}
-          />
+          {preset === 'segment-lighting' && (
+            <SegmentLayer
+              projected={projected}
+              cumulative={cumulative}
+              totalDistance={totalDistance}
+              progressFraction={progressFraction}
+              fullPath={fullPath}
+              blurScale={blurScale}
+            />
+          )}
+          {preset === 'light-runner' && (
+            <LightRunnerLayer
+              projected={projected}
+              cumulative={cumulative}
+              totalDistance={totalDistance}
+              fullPath={fullPath}
+              rawFullPath={rawFullPath}
+              isInteracting={isInteracting}
+              blurScale={blurScale}
+              onProgressSample={setLightRunnerStampProgress}
+            />
+          )}
+          {preset === 'default-drawing' && (
+            <DefaultDrawingLayer fullPath={fullPath} progressFraction={progressFraction} />
+          )}
         </Group>
       </Canvas>
 
@@ -250,135 +281,24 @@ export function RoutePreview({
           </Filter>
         </Defs>
         {showSafeAreaGuide && <SafeAreaGuide />}
-        <StampLayerSvg run={run} config={stampConfig} progressFraction={progressFraction} />
+        <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
       </Svg>
     </View>
   );
 }
 
-// ── 경로 레이어 (시안 canvas paint() 이식) ────────────────────────────────
-function RouteLayer({
-  preset,
-  projected,
-  cumulative,
-  totalDistance,
-  targetDistance,
-  progressFraction,
+// default-drawing — 시안 "plain" 그대로: 따뜻한 흰색 선, 글로우 없음(paint()의
+// mode==='plain' 분기는 shadowBlur를 걸지 않는다). 다만 시안의 plain은 정지 화면이고
+// FRD §6-1(경로 렌더링) "처음부터 선으로 그려져 나간다"는 애니메이션을 요구하므로
+// 그리는 부분만 보여주되, 매 프레임 점을 다시 훑지 않도록 fullPath를 네이티브
+// trim(start/end)으로 잘라 그린다(2026-09-01).
+function DefaultDrawingLayer({
   fullPath,
-  rawFullPath,
-  isInteracting,
+  progressFraction,
 }: {
-  preset: RoutePreset;
-  projected: CanvasPoint[];
-  cumulative: number[];
-  totalDistance: number;
-  targetDistance: number;
-  progressFraction: number;
   fullPath: ReturnType<typeof skPath>;
-  rawFullPath: ReturnType<typeof skPath>;
-  isInteracting: boolean;
+  progressFraction: number;
 }) {
-  const isComplete = progressFraction >= 1;
-  const head = pointAtDistance(targetDistance, projected, cumulative);
-  // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
-  // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
-  // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
-  // 낮추고, 손을 떼면(정지 상태) 원래 반경으로 돌아온다. 빠르게 움직이는 동안은
-  // 어차피 흐려 보여서 체감 차이는 작다.
-  const blurScale = isInteracting ? 0.4 : 1;
-
-  if (preset === 'segment-lighting') {
-    return (
-      <SegmentLayer
-        projected={projected}
-        cumulative={cumulative}
-        totalDistance={totalDistance}
-        progressFraction={progressFraction}
-        fullPath={fullPath}
-        blurScale={blurScale}
-      />
-    );
-  }
-
-  if (preset === 'light-runner') {
-    // 시안 "glow" 알고리즘 이식(paint() mode!=='plain'/'seg' 분기). 시안은 캔버스 폭 ~345px
-    // 기준으로 T.w=3(선 두께)·shadowBlur 10/20/26을 쓴다 — 우리 Skia 캔버스는 최종 출력과
-    // 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온 길(+글로우)
-    // + 최근 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
-    //
-    // 잔광 길이는 "총 거리의 비율"이 아니라 캔버스 픽셀 고정값을 쓴다(2026-09,
-    // 실기기 피드백 — 머리 점은 매끄러운데 뒤따르는 잔광이 끊겨 보인다는 것).
-    // 경로마다 총 캔버스 길이(굴곡·왕복 여부)가 달라서 "총 거리의 10%"는 경로마다
-    // 실제 화면 픽셀 길이가 들쭉날쭉했다 — 고정 길이면 항상 같은 크기로 따라간다.
-    //
-    // 실기기 피드백(2026-09-01): "움직일 때만 전체적으로 다 느려진다" — 애니메이션
-    // 프레임(최대 60fps)마다 pointsUpToDistance로 잘라낸 점 배열을 skPath로 새로
-    // 그렸는데, 진행률이 높아질수록(경로가 길어질수록) 매 프레임 배열 순회·Path 재구성
-    // 비용이 커졌다. Skia의 네이티브 trim(SkPath.trim, <Path start/end>)은 이미 만들어둔
-    // fullPath 하나를 두고 구간만 잘라 그리므로 JS에서 점을 매 프레임 다시 훑지 않는다.
-    const HOT_TRAIL_LENGTH_PX = 260;
-    const hotStartFraction =
-      totalDistance > 0 ? Math.max(0, targetDistance - HOT_TRAIL_LENGTH_PX) / totalDistance : 0;
-    return (
-      <Group>
-        <Path path={rawFullPath} style="stroke" strokeWidth={4.5} color={GHOST} />
-        <Path
-          path={fullPath}
-          style="stroke"
-          strokeWidth={7}
-          strokeCap="round"
-          strokeJoin="round"
-          color={BASE}
-        />
-        <Path
-          path={fullPath}
-          start={0}
-          end={progressFraction}
-          style="stroke"
-          strokeWidth={9}
-          strokeCap="round"
-          strokeJoin="round"
-          color={TRAVELED}>
-          <Shadow dx={0} dy={0} blur={30 * blurScale} color={GLOW} />
-        </Path>
-        {!isComplete && (
-          <Path
-            path={fullPath}
-            start={hotStartFraction}
-            end={progressFraction}
-            style="stroke"
-            strokeWidth={12}
-            strokeCap="round"
-            strokeJoin="round"
-            color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
-          </Path>
-        )}
-        {isComplete && (
-          <Path
-            path={fullPath}
-            style="stroke"
-            strokeWidth={13}
-            strokeCap="round"
-            strokeJoin="round"
-            color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
-          </Path>
-        )}
-        {!isComplete && head && (
-          <Circle cx={head.x} cy={head.y} r={16} color="#FFFFFF">
-            <Shadow dx={0} dy={0} blur={80 * blurScale} color={GLOW} />
-          </Circle>
-        )}
-      </Group>
-    );
-  }
-
-  // default-drawing — 시안 "plain" 그대로: 따뜻한 흰색 선, 글로우 없음(paint()의
-  // mode==='plain' 분기는 shadowBlur를 걸지 않는다). 다만 시안의 plain은 정지 화면이고
-  // FRD §6-1(경로 렌더링) "처음부터 선으로 그려져 나간다"는 애니메이션을 요구하므로
-  // 그리는 부분만 보여주되, 매 프레임 점을 다시 훑지 않도록 fullPath를 네이티브
-  // trim(start/end)으로 잘라 그린다(위 light-runner와 같은 이유, 2026-09-01).
   return (
     <Path
       path={fullPath}
@@ -390,6 +310,125 @@ function RouteLayer({
       strokeJoin="round"
       color={LINE_WARM}
     />
+  );
+}
+
+// 불빛 러너 — 시안 "glow" 알고리즘 이식(paint() mode!=='plain'/'seg' 분기). 시안은 캔버스
+// 폭 ~345px 기준으로 T.w=3(선 두께)·shadowBlur 10/20/26을 쓴다 — 우리 Skia 캔버스는 최종
+// 출력과 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온
+// 길(+글로우) + 최근 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
+//
+// 실기기 피드백(2026-09-01) "html처럼 부드럽지 않다, 앱의 한계냐" — 한계가 아니라
+// 구조 문제였다. 이전까지는 진행률(elapsed)을 React state로 두고 매 프레임 setState →
+// 리렌더 → Skia가 새 트리를 받는 왕복을 거쳤다. 여기서는 진행률을 Reanimated
+// SharedValue로 두고 useFrameCallback으로 UI 스레드에서 직접 갱신한다. Path의
+// start/end, Circle의 cx/cy에 SharedValue를 그대로 넘기면(react-native-skia의
+// Reanimated 연동) React 리렌더 없이 네이티브 쪽에서만 값이 갱신된다 — html의 raw
+// canvas 루프에 가장 가까운 구조. 프리셋이 'light-runner'로 바뀔 때마다 이 컴포넌트가
+// 새로 마운트되므로(부모의 preset 분기 렌더링), elapsed는 항상 0부터 새로 시작한다 —
+// §3 "프리셋을 바꾸면 처음부터 재생" 규칙이 저절로 지켜진다.
+function LightRunnerLayer({
+  projected,
+  cumulative,
+  totalDistance,
+  fullPath,
+  rawFullPath,
+  isInteracting,
+  blurScale,
+  onProgressSample,
+}: {
+  projected: CanvasPoint[];
+  cumulative: number[];
+  totalDistance: number;
+  fullPath: ReturnType<typeof skPath>;
+  rawFullPath: ReturnType<typeof skPath>;
+  isInteracting: boolean;
+  blurScale: number;
+  onProgressSample: (progress: number) => void;
+}) {
+  const elapsed = useSharedValue(0);
+  const progress = useDerivedValue(() => Math.min(elapsed.value / DRAW_SECONDS, 1));
+  const targetDistance = useDerivedValue(() => totalDistance * progress.value);
+
+  // 잔광 길이는 "총 거리의 비율"이 아니라 캔버스 픽셀 고정값을 쓴다(2026-09,
+  // 실기기 피드백 — 머리 점은 매끄러운데 뒤따르는 잔광이 끊겨 보인다는 것). 경로마다
+  // 총 캔버스 길이(굴곡·왕복 여부)가 달라서 "총 거리의 10%"는 경로마다 실제 화면
+  // 픽셀 길이가 들쭉날쭉했다 — 고정 길이면 항상 같은 크기로 따라간다.
+  const HOT_TRAIL_LENGTH_PX = 260;
+  const hotStartFraction = useDerivedValue(() => {
+    return totalDistance > 0 ? Math.max(0, targetDistance.value - HOT_TRAIL_LENGTH_PX) / totalDistance : 0;
+  });
+  const headX = useDerivedValue(() => pointAtDistance(targetDistance.value, projected, cumulative)?.x ?? 0);
+  const headY = useDerivedValue(() => pointAtDistance(targetDistance.value, projected, cumulative)?.y ?? 0);
+  // 완주(progress===1) 시점에 잔광·머리 점 → 굵은 정지 글로우로 층이 바뀐다. 매 프레임
+  // 바뀌는 값이 아니라 두 상태 사이 전환이라, 엘리먼트를 마운트/언마운트하는 대신(그러면
+  // React 리렌더가 다시 필요해진다) opacity로 켜고 끈다 — 항상 같은 엘리먼트 트리를 유지.
+  const runningOpacity = useDerivedValue(() => (progress.value >= 1 ? 0 : 1));
+  const completeOpacity = useDerivedValue(() => (progress.value >= 1 ? 1 : 0));
+
+  const frameCallback = useFrameCallback((frameInfo) => {
+    if (frameInfo.timeSincePreviousFrame === null) return;
+    const delta = Math.min(0.1, frameInfo.timeSincePreviousFrame / 1000);
+    elapsed.value = (elapsed.value + delta) % CYCLE_SECONDS;
+  });
+
+  useEffect(() => {
+    frameCallback.setActive(!isInteracting);
+  }, [isInteracting, frameCallback]);
+
+  // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
+  // 30단계(진행률 0→1 구간을 30칸으로 나눈 정도)로만 낮춰서 JS 쪽에 넘긴다. Skia
+  // 캔버스 자체(아래 SharedValue들)는 이 동기화와 무관하게 계속 UI 스레드에서 그려진다.
+  useAnimatedReaction(
+    () => Math.floor(progress.value * 30),
+    (bucket, prevBucket) => {
+      if (bucket !== prevBucket) {
+        scheduleOnRN(onProgressSample, progress.value);
+      }
+    }
+  );
+
+  return (
+    <Group>
+      <Path path={rawFullPath} style="stroke" strokeWidth={4.5} color={GHOST} />
+      <Path path={fullPath} style="stroke" strokeWidth={7} strokeCap="round" strokeJoin="round" color={BASE} />
+      <Path
+        path={fullPath}
+        start={0}
+        end={progress}
+        style="stroke"
+        strokeWidth={9}
+        strokeCap="round"
+        strokeJoin="round"
+        color={TRAVELED}>
+        <Shadow dx={0} dy={0} blur={30 * blurScale} color={GLOW} />
+      </Path>
+      <Path
+        path={fullPath}
+        start={hotStartFraction}
+        end={progress}
+        style="stroke"
+        strokeWidth={12}
+        strokeCap="round"
+        strokeJoin="round"
+        color={LINE_WARM}
+        opacity={runningOpacity}>
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+      </Path>
+      <Path
+        path={fullPath}
+        style="stroke"
+        strokeWidth={13}
+        strokeCap="round"
+        strokeJoin="round"
+        color={LINE_WARM}
+        opacity={completeOpacity}>
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+      </Path>
+      <Circle cx={headX} cy={headY} r={16} color="#FFFFFF" opacity={runningOpacity}>
+        <Shadow dx={0} dy={0} blur={80 * blurScale} color={GLOW} />
+      </Circle>
+    </Group>
   );
 }
 
