@@ -72,7 +72,13 @@ export function cumulativeDistances(points: Point[]): number[] {
   return result;
 }
 
-/** §5-4: 진행률은 거리(호 길이) 기준. 점 인덱스가 아니다. */
+/** §5-4: 진행률은 거리(호 길이) 기준. 점 인덱스가 아니다.
+ *
+ * 편집 화면 애니메이션은 이 함수를 매 프레임(최대 60fps) 부른다 — 예전엔 여기서
+ * 순회(O(n))로 targetDistance가 속한 구간을 찾았는데, 긴 경로일수록·애니메이션
+ * 후반부일수록 매 프레임 배열을 거의 끝까지 훑어야 해서 실기기에서 눈에 띄는
+ * 끊김의 원인이 됐다(2026-09-01). `cumulative`는 항상 오름차순이므로 이분 탐색으로
+ * 바꿔 O(log n)으로 줄였다 — 반환값은 이전과 동일하다. */
 export function pointsUpToDistance(
   targetDistance: number,
   projected: CanvasPoint[],
@@ -80,23 +86,27 @@ export function pointsUpToDistance(
 ): CanvasPoint[] {
   if (projected.length === 0) return [];
   if (targetDistance <= 0) return [projected[0]];
-  const result: CanvasPoint[] = [projected[0]];
-  for (let i = 1; i < projected.length; i++) {
-    if (cumulative[i] <= targetDistance) {
-      result.push(projected[i]);
-    } else {
-      const segStart = cumulative[i - 1];
-      const segEnd = cumulative[i];
-      const segLen = segEnd - segStart;
-      const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
-      result.push({
-        x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
-        y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
-      });
-      break;
-    }
+  if (cumulative.length < 2) return [projected[0]];
+  if (targetDistance >= cumulative[cumulative.length - 1]) return projected;
+
+  // cumulative[i] > targetDistance인 첫 인덱스 i를 찾는다(0 < i < length).
+  let lo = 1;
+  let hi = cumulative.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cumulative[mid] <= targetDistance) lo = mid + 1;
+    else hi = mid;
   }
-  return result;
+  const i = lo;
+  const segStart = cumulative[i - 1];
+  const segEnd = cumulative[i];
+  const segLen = segEnd - segStart;
+  const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
+  const interpolated: CanvasPoint = {
+    x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
+    y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
+  };
+  return [...projected.slice(0, i), interpolated];
 }
 
 /** 다듬기(route-smoothing.applySmoothing) 적용 후처럼 원본 위경도와 점 대응이 깨진

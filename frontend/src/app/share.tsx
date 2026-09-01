@@ -150,6 +150,12 @@ export default function ShareScreen() {
     // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
     // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
     const MediaLibrary = await import('expo-media-library');
+    // expo-media-library 57(SDK 57)에서 top-level 함수들이 새 클래스형 API로
+    // 갈아끼워지면서, 기본 진입점의 saveToLibraryAsync는 실제 구현이 없고 항상
+    // throw만 하는 껍데기로 바뀌었다(권한 승인 여부와 무관하게 무조건 실패).
+    // 실제 구현은 legacy 서브패스에만 남아 있어 거기서 따로 불러온다.
+    // (requestPermissionsAsync는 deprecated 목록에 없어 기본 진입점 그대로 둔다.)
+    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
     // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
     // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
     // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
@@ -160,7 +166,7 @@ export default function ShareScreen() {
       return;
     }
     try {
-      await MediaLibrary.saveToLibraryAsync(outputPath);
+      await saveToLibraryAsync(outputPath);
       setSaveStatus('기기에 저장했어요');
     } catch (error) {
       console.warn('saveToLibraryAsync failed', error);

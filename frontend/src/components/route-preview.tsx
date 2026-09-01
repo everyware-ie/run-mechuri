@@ -10,7 +10,6 @@ import {
   projectPoints,
   pointsUpToDistance,
   segmentUnitMeters,
-  toSvgPath,
   type CanvasPoint,
   type Point,
 } from '@/lib/route-projection';
@@ -85,9 +84,18 @@ type Props = {
   viewHeight: number;
 };
 
+// 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
+// MakeFromSVGString은 쓰지 않는다 — Skia Path API로 바로 그린다(2026-09-01, 실기기
+// 끊김 원인 중 하나였음). toSvgPath는 route-thumbnail.tsx 등 애니메이션이 없는
+// 곳에서만 쓴다.
 function skPath(points: CanvasPoint[]) {
-  const p = Skia.Path.MakeFromSVGString(toSvgPath(points));
-  return p ?? Skia.Path.Make();
+  const path = Skia.Path.Make();
+  if (points.length === 0) return path;
+  path.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    path.lineTo(points[i].x, points[i].y);
+  }
+  return path;
 }
 
 export function RoutePreview({
