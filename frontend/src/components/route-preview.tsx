@@ -1,7 +1,18 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { Line, Svg, Text as SvgText, Defs, Filter, FeGaussianBlur, FeMerge, FeMergeNode } from 'react-native-svg';
+import {
+  Circle as SvgCircle,
+  Rect as SvgRect,
+  Line,
+  Svg,
+  Text as SvgText,
+  Defs,
+  Filter,
+  FeGaussianBlur,
+  FeMerge,
+  FeMergeNode,
+} from 'react-native-svg';
 
 import {
   CANVAS_HEIGHT,
@@ -204,6 +215,7 @@ export function RoutePreview({
             progressFraction={progressFraction}
             fullPath={fullPath}
             rawFullPath={rawFullPath}
+            isInteracting={isInteracting}
           />
         </Group>
       </Canvas>
@@ -241,6 +253,7 @@ function RouteLayer({
   progressFraction,
   fullPath,
   rawFullPath,
+  isInteracting,
 }: {
   preset: RoutePreset;
   projected: CanvasPoint[];
@@ -250,10 +263,17 @@ function RouteLayer({
   progressFraction: number;
   fullPath: ReturnType<typeof skPath>;
   rawFullPath: ReturnType<typeof skPath>;
+  isInteracting: boolean;
 }) {
   const isComplete = progressFraction >= 1;
   const traveled = pointsUpToDistance(targetDistance, projected, cumulative);
   const head = traveled[traveled.length - 1];
+  // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
+  // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
+  // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
+  // 낮추고, 손을 떼면(정지 상태) 원래 반경으로 돌아온다. 빠르게 움직이는 동안은
+  // 어차피 흐려 보여서 체감 차이는 작다.
+  const blurScale = isInteracting ? 0.4 : 1;
 
   if (preset === 'segment-lighting') {
     return (
@@ -263,6 +283,7 @@ function RouteLayer({
         totalDistance={totalDistance}
         progressFraction={progressFraction}
         fullPath={fullPath}
+        blurScale={blurScale}
       />
     );
   }
@@ -299,7 +320,7 @@ function RouteLayer({
           strokeCap="round"
           strokeJoin="round"
           color={TRAVELED}>
-          <Shadow dx={0} dy={0} blur={30} color={GLOW} />
+          <Shadow dx={0} dy={0} blur={30 * blurScale} color={GLOW} />
         </Path>
         {!isComplete && (
           <Path
@@ -309,7 +330,7 @@ function RouteLayer({
             strokeCap="round"
             strokeJoin="round"
             color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
           </Path>
         )}
         {isComplete && (
@@ -320,12 +341,12 @@ function RouteLayer({
             strokeCap="round"
             strokeJoin="round"
             color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
           </Path>
         )}
         {!isComplete && head && (
           <Circle cx={head.x} cy={head.y} r={16} color="#FFFFFF">
-            <Shadow dx={0} dy={0} blur={80} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={80 * blurScale} color={GLOW} />
           </Circle>
         )}
       </Group>
@@ -356,12 +377,14 @@ function SegmentLayer({
   totalDistance,
   progressFraction,
   fullPath,
+  blurScale,
 }: {
   projected: CanvasPoint[];
   cumulative: number[];
   totalDistance: number;
   progressFraction: number;
   fullPath: ReturnType<typeof skPath>;
+  blurScale: number;
 }) {
   if (totalDistance <= 0) return null;
   const unit = segmentUnitMeters(totalDistance);
@@ -392,7 +415,7 @@ function SegmentLayer({
         strokeJoin="round"
         opacity={done ? 0.95 : 0.5}
         color={LINE_WARM}>
-        {done && <Shadow dx={0} dy={0} blur={45 + justLit * 65} color={GLOW} />}
+        {done && <Shadow dx={0} dy={0} blur={(45 + justLit * 65) * blurScale} color={GLOW} />}
       </Path>
     );
 
@@ -401,7 +424,7 @@ function SegmentLayer({
       if (boundary) {
         segments.push(
           <Circle key={`dot-${s}`} cx={boundary.x} cy={boundary.y} r={4 + justLit * 3} color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
           </Circle>
         );
       }
@@ -416,32 +439,69 @@ function SegmentLayer({
   );
 }
 
-// §7-1: 인스타 스토리 UI가 가리는 상하단(편집 중에만).
-// 실기기 피드백(2026-09): 반투명 채움 사각형이 편집 화면 위아래를 갈색 띠처럼
-// 덮어 보여서 눈에 거슬렸다 — 경계만 표시하는 얇은 점선으로 바꿨다.
+// §7-1: 인스타 스토리 UI가 가리는 상하단. 기본 숨김, 편집 화면의 토글 버튼으로만 켠다
+// (실기기 피드백 2026-09: 항상 떠 있으면 채움이든 점선이든 거슬린다는 지적 — 필요할
+// 때만 눌러서 확인하는 것으로 바꿨다). 결과물엔 어차피 안 나온다.
+//
+// 경계선뿐 아니라 실제 인스타 스토리 UI(프로필·닫기, 답장 입력창) 모양을 점선
+// 아웃라인으로 흉내 내서, 막연히 "위아래 몇 %"가 아니라 뭐가 거기 있는지 보여준다.
 function SafeAreaGuide() {
   const topY = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
   const bottomY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO);
+  const stroke = 'rgba(255,90,43,0.6)';
+  const strokeWidth = 3;
+  const dash = '10,8';
+  const commonProps = { stroke, strokeWidth, strokeDasharray: dash, fill: 'none' as const };
+
+  const avatarCx = 70;
+  const avatarCy = 68;
+  const avatarR = 28;
+
+  const closeCx = CANVAS_WIDTH - 60;
+  const closeCy = avatarCy;
+  const closeR = 16;
+
+  const replyWidth = CANVAS_WIDTH - 220;
+  const replyHeight = 76;
+  const replyX = (CANVAS_WIDTH - replyWidth) / 2;
+  const replyY = CANVAS_HEIGHT - 140;
+
   return (
     <>
+      {/* 경계선 — 정확한 안전 영역 기준선 */}
+      <Line x1={0} y1={topY} x2={CANVAS_WIDTH} y2={topY} {...commonProps} />
+      <Line x1={0} y1={bottomY} x2={CANVAS_WIDTH} y2={bottomY} {...commonProps} />
+
+      {/* 상단 — 프로필(아바타+이름 바)과 닫기 버튼 자리 */}
+      <SvgCircle cx={avatarCx} cy={avatarCy} r={avatarR} {...commonProps} />
+      <SvgRect
+        x={avatarCx + avatarR + 18}
+        y={avatarCy - 15}
+        width={240}
+        height={30}
+        rx={15}
+        {...commonProps}
+      />
+      <SvgCircle cx={closeCx} cy={closeCy} r={closeR} {...commonProps} />
       <Line
-        x1={0}
-        y1={topY}
-        x2={CANVAS_WIDTH}
-        y2={topY}
-        stroke="rgba(255,90,43,0.55)"
-        strokeWidth={3}
-        strokeDasharray="14,10"
+        x1={closeCx - 8}
+        y1={closeCy - 8}
+        x2={closeCx + 8}
+        y2={closeCy + 8}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
       />
       <Line
-        x1={0}
-        y1={bottomY}
-        x2={CANVAS_WIDTH}
-        y2={bottomY}
-        stroke="rgba(255,90,43,0.55)"
-        strokeWidth={3}
-        strokeDasharray="14,10"
+        x1={closeCx + 8}
+        y1={closeCy - 8}
+        x2={closeCx - 8}
+        y2={closeCy + 8}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
       />
+
+      {/* 하단 — 답장 입력창 자리 */}
+      <SvgRect x={replyX} y={replyY} width={replyWidth} height={replyHeight} rx={replyHeight / 2} {...commonProps} />
     </>
   );
 }
