@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "메추리 런",
     "slug": "mechuri",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,7 +8,7 @@
     "scheme": "frontend",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.mechuri.runmechuri",
       "infoPlist": {
         "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다."
