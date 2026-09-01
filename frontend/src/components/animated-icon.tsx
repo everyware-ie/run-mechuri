@@ -5,6 +5,8 @@ import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { Colors } from '@/constants/theme';
+
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 
@@ -33,7 +35,11 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  // 네이티브 스플래시(app.json expo-splash-screen) 다음에 이어지는 이 JS 오버레이가
+  // 여태 Expo 기본 로고(expo-logo.png)를 쓰고 있었다 — 우리 브랜드 캐릭터로 바꾼다.
+  const image = (
+    <Image style={styles.image} contentFit="contain" source={require('@/assets/images/splash-icon.png')} />
+  );
 
   return animate ? (
     <Animated.View
@@ -128,8 +134,8 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   image: {
-    width: 76,
-    height: 71,
+    width: 120,
+    height: 120,
   },
   background: {
     borderRadius: 40,
@@ -140,7 +146,10 @@ const styles = StyleSheet.create({
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    // 이전엔 Expo 기본 파란색(#208AEF)이 하드코딩돼 있었다 — 네이티브 스플래시(app.json)와
+    // 똑같이 우리 야간 네온 테마 배경으로 맞춘다. 안 맞으면 네이티브→JS 전환 순간
+    // 파란 화면이 한 프레임 끼어드는 것처럼 보인다.
+    backgroundColor: Colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
