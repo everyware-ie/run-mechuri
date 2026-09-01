@@ -11,7 +11,9 @@
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.mechuri.runmechuri",
       "infoPlist": {
-        "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다."
+        "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다.",
+        "NSHealthUpdateUsageDescription": "메추리 런은 건강 데이터를 읽기만 하며 새로 쓰거나 수정하지 않습니다.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
