@@ -68,9 +68,11 @@ export const IDENTITY_STAMP: StampConfig = {
   position: { x: 0, y: 0 },
 };
 
-// route-rendering FRD §7-5: 상단 14%·하단 20% 제안값 ("[확인 필요]" — 실기기 전까지 제안값).
-const SAFE_AREA_TOP_RATIO = 0.14;
-const SAFE_AREA_BOTTOM_RATIO = 0.2;
+// route-rendering FRD §7-5: 인스타 스토리에서 안 가려지는 영역. 원래 상단 14%·하단 20%
+// 제안값이었으나(비대칭), 실기기 피드백(2026-09)으로 세로 가운데에 두기로 함 — 안전 영역
+// 높이(0.66)는 그대로, 상하 여백만 같게(0.17). "[확인 필요]" — 실기기 전까지 제안값.
+const SAFE_AREA_TOP_RATIO = 0.17;
+const SAFE_AREA_BOTTOM_RATIO = 0.17;
 const STAMP_DEFAULT_Y = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 90;
 
 // FRD: docs/specs/frd/route-rendering.md §5·§6 · docs/specs/frd/result-editing.md §2-1

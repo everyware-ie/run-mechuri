@@ -435,11 +435,11 @@ export default function EditScreen() {
                 fit="cover"
               />
             </View>
-            {/* §7-1: 인스타에서 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
+            {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
             <Pressable
               onPress={() => setShowSafeGuide((v) => !v)}
               style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
-              <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>가려지는 영역</Text>
+              <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
             </Pressable>
             <Text style={styles.cardHint}>
               {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}

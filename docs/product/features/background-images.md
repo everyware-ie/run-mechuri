@@ -1,8 +1,8 @@
 # 기본 배경 이미지
 
 - FRD: [배경 선택](../../specs/frd/background-selection.md) §2 기본 이미지
-- 구현 상태: 에셋 10장 확보. **앱에는 시간대별 하나씩 3장 넣음** (아침-1-빛없음 · 점심-3-맑은한낮 · 저녁-3-맑은노을) — `frontend/src/constants/default-backgrounds.ts`
-- 파일: `frontend/assets/backgrounds/`
+- 구현 상태: 에셋 10장 확보. **앱에는 시간대별 하나씩 3장 넣음** (morning-1 빛없음 · noon-3 맑은한낮 · evening-3 맑은노을) — `frontend/src/constants/default-backgrounds.ts`
+- 파일: `frontend/assets/backgrounds/` (파일명 ASCII만 — Metro가 한글 에셋 경로를 못 읽는다)
 - 생성: `python3 scripts/generate-backgrounds.py`
 
 ## 무엇을 만들었나
@@ -81,9 +81,13 @@ sRGB 값을 그대로 보간하면 중간색이 탁해진다. 선형광으로 �
 
 ### 1. 앱에 무엇을 넣을지 — 정해짐 (2026-09-01)
 
-FRD §2-1이 정한 3장 그대로. 시간대별로 하나씩 골랐다: **아침-1-빛없음 · 점심-3-맑은한낮 ·
-저녁-3-맑은노을**. `frontend/src/constants/default-backgrounds.ts`. 나머지 후보 7장(팀 배경 포함)은
+FRD §2-1이 정한 3장 그대로. 시간대별로 하나씩 골랐다: **morning-1(빛없음) · noon-3(맑은한낮) ·
+evening-3(맑은노을)**. `frontend/src/constants/default-backgrounds.ts`. 나머지 후보 7장(팀 배경 포함)은
 에셋에만 남겨 두고 앱엔 안 넣는다.
+
+파일명은 ASCII만 쓴다. 한글 파일명(`저녁-3-맑은노을.png`)은 `require()`로 불러올 때 Metro 에셋
+서버가 경로를 URL 인코딩(`%2F`)한 채 디코드하지 못해 `ENOENT`로 죽는다 — 배경이 하나도 안 뜬다
+(2026-09-01 확인). 생성 스크립트도 ASCII로 뽑고 한글 설명은 주석에 둔다.
 
 ### 1-2. 팀 문양을 다른 배경에도 얹을지
 

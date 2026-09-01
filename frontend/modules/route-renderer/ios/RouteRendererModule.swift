@@ -634,7 +634,8 @@ public class RouteRendererModule: Module {
     let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
     if keyed.isEmpty && caption.isEmpty { return }
 
-    let safeAreaBottomRatio: CGFloat = 0.2
+    // route-preview.tsx SAFE_AREA_BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
+    let safeAreaBottomRatio: CGFloat = 0.17
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
     // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
