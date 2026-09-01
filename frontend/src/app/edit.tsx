@@ -19,10 +19,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   IDENTITY_TRANSFORM,
   RoutePreview,
+  STAMP_LAYOUTS,
   type RoutePreset,
   type RouteTransform,
   type StampConfig,
   type StampItem,
+  type StampLayout,
 } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
@@ -149,6 +151,11 @@ export default function EditScreen() {
   // 시안 S6 "한 줄 문구".
   const handleCaptionChange = (text: string) => {
     const next = { ...stampConfigRef.current, caption: text };
+    updateStampConfig(next);
+    commitStampConfig(next);
+  };
+  const handleLayoutSelect = (layout: StampLayout) => {
+    const next = { ...stampConfigRef.current, layout };
     updateStampConfig(next);
     commitStampConfig(next);
   };
@@ -521,6 +528,21 @@ export default function EditScreen() {
             <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
               완료
             </Text>
+          </View>
+
+          <Text style={styles.sectionLabel}>배치</Text>
+          <View style={styles.chipRow}>
+            {STAMP_LAYOUTS.map((l) => {
+              const on = (stampConfig.layout ?? 'row') === l.id;
+              return (
+                <Pressable
+                  key={l.id}
+                  onPress={() => handleLayoutSelect(l.id)}
+                  style={[styles.presetChip, on && styles.presetChipOn]}>
+                  <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           <Text style={styles.sectionLabel}>넣을 것</Text>

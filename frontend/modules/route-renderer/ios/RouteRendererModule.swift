@@ -64,6 +64,8 @@ struct RenderClipOptionsInput: Record {
   @Field var corner: Double = 0
   /// result-editing FRD §7. "always" | "after" | "hidden".
   @Field var stampMode: String = "hidden"
+  /// 각인 배치 프리셋 (시안 S6). "row" | "hero".
+  @Field var stampLayout: String = "row"
   @Field var stampItems: StampItemsInput = StampItemsInput()
   @Field var stampX: Double = 0
   @Field var stampY: Double = 0
@@ -617,43 +619,67 @@ public class RouteRendererModule: Module {
     if stamp.stampMode == "hidden" { return }
     if stamp.stampMode == "after" && !isComplete { return }
 
-    var items: [String] = []
-    if stamp.stampItems.distance { items.append(formatDistanceKm(stamp.distanceMeters * progressFraction)) }
-    if stamp.stampItems.time { items.append(formatDuration(stamp.durationSeconds * progressFraction)) }
-    if stamp.stampItems.pace { items.append(formatPace(stamp.averagePaceSecPerKm)) }
+    // 활성 항목을 키 → 값 순서대로. route-preview.tsx StampLayerSvg와 같은 순서·규칙.
+    var keyed: [(String, String)] = []
+    if stamp.stampItems.distance { keyed.append(("distance", formatDistanceKm(stamp.distanceMeters * progressFraction))) }
+    if stamp.stampItems.time { keyed.append(("time", formatDuration(stamp.durationSeconds * progressFraction))) }
+    if stamp.stampItems.pace { keyed.append(("pace", formatPace(stamp.averagePaceSecPerKm))) }
     if stamp.stampItems.date {
       let s = formatStampDate(stamp.runDate)
-      if !s.isEmpty { items.append(s) }
+      if !s.isEmpty { keyed.append(("date", s)) }
     }
-    if stamp.stampItems.place && !stamp.placeName.isEmpty { items.append(stamp.placeName) }
-    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { items.append(formatHeartRate(hr)) }
+    if stamp.stampItems.place && !stamp.placeName.isEmpty { keyed.append(("place", stamp.placeName)) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { keyed.append(("heartRate", formatHeartRate(hr))) }
 
     let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
-    if items.isEmpty && caption.isEmpty { return }
+    if keyed.isEmpty && caption.isEmpty { return }
 
-    // route-preview.tsx StampLayerSvg와 동일한 기본 자리.
     let safeAreaBottomRatio: CGFloat = 0.2
-    let defaultY = canvasSize.height * (1 - safeAreaBottomRatio) - 90
-    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-    let baseY = defaultY + CGFloat(stamp.stampY)
-
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
-    let drawCentered: (String, CGFloat, UIFont) -> Void = { text, y, font in
+    // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
+    let draw: (String, CGPoint, UIFont, NSTextAlignment) -> Void = { text, origin, font, align in
       let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
-      let size = (text as NSString).size(withAttributes: attrs)
-      let x = centerX - size.width / 2
+      let w = (text as NSString).size(withAttributes: attrs).width
+      let x = align == .center ? origin.x - w / 2 : origin.x
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-      (text as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
+      (text as NSString).draw(at: CGPoint(x: x, y: origin.y), withAttributes: attrs)
       ctx.restoreGState()
     }
 
-    // 한 줄 문구 — 항목 줄 위. Space Grotesk가 번들에 없어 시스템 폰트로 대체.
-    if !caption.isEmpty {
-      drawCentered(caption, baseY - 58, UIFont.systemFont(ofSize: 34, weight: .medium))
+    if stamp.stampLayout == "hero" {
+      // 시안 S8b — 왼쪽 아래: 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
+      let leftX = 64 + CGFloat(stamp.stampX)
+      let metaY = canvasSize.height * (1 - safeAreaBottomRatio) - 40 + CGFloat(stamp.stampY)
+      let heroKeys = ["distance", "time", "pace"]
+      let hero = keyed.first { heroKeys.contains($0.0) }
+      let metaItems = keyed.filter { $0.0 != hero?.0 }.map { $0.1 }
+      let heroSize: CGFloat = 132
+      let heroY = hero != nil ? metaY - 44 : metaY
+
+      if !metaItems.isEmpty {
+        draw(metaItems.joined(separator: "   "), CGPoint(x: leftX, y: metaY),
+             UIFont.monospacedSystemFont(ofSize: 30, weight: .medium), .left)
+      }
+      if let hero {
+        draw(hero.1, CGPoint(x: leftX, y: heroY), UIFont.systemFont(ofSize: heroSize, weight: .bold), .left)
+      }
+      if !caption.isEmpty {
+        let capY = (hero != nil ? heroY - heroSize + 6 : metaY) - (!metaItems.isEmpty && hero == nil ? 46 : 34)
+        draw(caption, CGPoint(x: leftX, y: capY), UIFont.systemFont(ofSize: 38, weight: .medium), .left)
+      }
+      return
     }
 
+    // 'row' — 가운데 한 줄 + 문구는 그 위.
+    let items = keyed.map { $0.1 }
+    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
+
+    if !caption.isEmpty {
+      draw(caption, CGPoint(x: centerX, y: baseY - 58), UIFont.systemFont(ofSize: 34, weight: .medium), .center)
+    }
     if !items.isEmpty {
       let fontSize: CGFloat = 28
       let gap: CGFloat = 22
@@ -663,10 +689,7 @@ public class RouteRendererModule: Module {
       let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
       var cursorX = centerX - totalWidth / 2
       for (i, text) in items.enumerated() {
-        ctx.saveGState()
-        ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-        (text as NSString).draw(at: CGPoint(x: cursorX, y: baseY), withAttributes: attrs)
-        ctx.restoreGState()
+        draw(text, CGPoint(x: cursorX, y: baseY), font, .left)
         cursorX += widths[i] + gap
       }
     }

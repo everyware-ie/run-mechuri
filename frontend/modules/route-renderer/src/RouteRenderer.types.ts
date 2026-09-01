@@ -16,6 +16,7 @@ export type RouteTransform = {
 };
 
 export type StampMode = 'always' | 'after' | 'hidden';
+export type StampLayout = 'row' | 'hero';
 
 export type RenderClipOptions = {
   points: RoutePoint[];
@@ -31,6 +32,8 @@ export type RenderClipOptions = {
   corner: number;
   /** result-editing FRD §7 · route-rendering FRD §7 각인 */
   stampMode: StampMode;
+  /** 각인 배치 프리셋 (시안 S6). */
+  stampLayout: StampLayout;
   stampItems: {
     distance: boolean;
     time: boolean;

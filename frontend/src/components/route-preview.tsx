@@ -37,10 +37,19 @@ export const IDENTITY_SMOOTH: SmoothOptions = { smooth: 0, corner: 0 };
 // 추가 — route-rendering §7은 원래 넷이었다(확인 노트 기록).
 export type StampItem = 'distance' | 'time' | 'pace' | 'heartRate' | 'date' | 'place';
 export type StampMode = 'always' | 'after' | 'hidden';
+/** 각인 배치. 'row' = 가운데 한 줄(간결), 'hero' = 왼쪽 아래 큰 거리 + 문구 + 메타(시안 S8b). */
+export type StampLayout = 'row' | 'hero';
+
+export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
+  { id: 'row', label: '간결' },
+  { id: 'hero', label: '크게' },
+];
 
 export type StampConfig = {
   /** §7-3 표시 타이밍. 시안 S6엔 UI가 없어(2026-09-01) 항상 'always' — 확인 노트 참고. */
   mode: StampMode;
+  /** 배치 프리셋. 기존 저장분엔 없어 렌더 시 'row'로 방어. */
+  layout: StampLayout;
   enabled: Record<StampItem, boolean>;
   /** 시안 S6 "한 줄 문구" — 결과물에 얹는 자유 텍스트 한 줄. 빈 문자열이면 안 그린다. */
   caption: string;
@@ -52,6 +61,7 @@ export type StampConfig = {
 
 export const IDENTITY_STAMP: StampConfig = {
   mode: 'always',
+  layout: 'hero',
   enabled: { distance: true, time: true, pace: true, heartRate: true, date: true, place: true },
   caption: '',
   placeName: '',
@@ -596,30 +606,50 @@ export function StampLayerSvg({
   if (config.mode === 'after' && !isComplete) return null;
 
   const enabled = config.enabled ?? ({} as StampConfig['enabled']);
-  const items: string[] = [];
-  if (enabled.distance) items.push(formatDistanceKm(run.distanceMeters * progressFraction));
-  if (enabled.time) items.push(formatDuration(run.durationSeconds * progressFraction));
-  if (enabled.pace) items.push(formatPace(run.averagePaceSecPerKm));
-  if (enabled.date) items.push(formatStampDate(run.date));
-  if (enabled.place && config.placeName) items.push(config.placeName);
-  if (enabled.heartRate && run.averageHeartRate !== undefined) {
-    items.push(formatHeartRate(run.averageHeartRate));
-  }
+  const has = (k: StampItem) => {
+    if (k === 'heartRate') return !!enabled.heartRate && run.averageHeartRate !== undefined;
+    if (k === 'place') return !!enabled.place && !!config.placeName;
+    return !!enabled[k];
+  };
+  const value = (k: StampItem): string => {
+    switch (k) {
+      case 'distance':
+        return formatDistanceKm(run.distanceMeters * progressFraction);
+      case 'time':
+        return formatDuration(run.durationSeconds * progressFraction);
+      case 'pace':
+        return formatPace(run.averagePaceSecPerKm);
+      case 'date':
+        return formatStampDate(run.date);
+      case 'place':
+        return config.placeName;
+      case 'heartRate':
+        return run.averageHeartRate !== undefined ? formatHeartRate(run.averageHeartRate) : '';
+    }
+  };
 
   const caption = (config.caption ?? '').trim();
-  if (items.length === 0 && !caption) return null;
-
-  const centerX = CANVAS_WIDTH / 2 + config.position.x;
-  const baseY = STAMP_DEFAULT_Y + config.position.y;
+  const layout: StampLayout = config.layout ?? 'row';
+  const ALL_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
+  const activeItems = ALL_ITEMS.filter(has);
+  if (activeItems.length === 0 && !caption) return null;
 
   // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
   // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
-  const glowText = (key: string, x: number, y: number, size: number, family: string, text: string) => (
+  const glowText = (
+    key: string,
+    x: number,
+    y: number,
+    size: number,
+    family: string,
+    text: string,
+    anchor: 'start' | 'middle' = 'start'
+  ) => (
     <Fragment key={key}>
-      <SvgText x={x} y={y} fontSize={size} fontFamily={family} fill="none" stroke="rgba(11,13,16,0.8)" strokeWidth={size * 0.26}>
+      <SvgText x={x} y={y} textAnchor={anchor} fontSize={size} fontFamily={family} fill="none" stroke="rgba(11,13,16,0.85)" strokeWidth={size * 0.24}>
         {text}
       </SvgText>
-      <SvgText x={x} y={y} fontSize={size} fontFamily={family} fill={LINE_WARM} filter="url(#stampGlow)">
+      <SvgText x={x} y={y} textAnchor={anchor} fontSize={size} fontFamily={family} fill={LINE_WARM} filter="url(#stampGlow)">
         {text}
       </SvgText>
     </Fragment>
@@ -627,13 +657,37 @@ export function StampLayerSvg({
 
   const nodes: React.ReactNode[] = [];
 
-  // 한 줄 문구 — 항목 줄 위에 가운데 정렬. Space Grotesk, 약간 크게.
-  if (caption) {
-    const capSize = 34;
-    const capWidth = caption.length * capSize * 0.52;
-    nodes.push(glowText('caption', centerX - capWidth / 2, baseY - 58, capSize, 'SpaceGrotesk_500Medium', caption));
+  if (layout === 'hero') {
+    // 시안 S8b — 왼쪽 아래 정렬. 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    const metaItems = activeItems.filter((k) => k !== heroKey);
+    const leftX = 64 + config.position.x;
+    // 메타 줄 baseline을 하단 안전 영역 살짝 위에 두고 위로 쌓는다.
+    const metaY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 40 + config.position.y;
+    const heroSize = 132;
+    const heroY = heroKey ? metaY - 44 : metaY;
+
+    if (metaItems.length > 0) {
+      nodes.push(glowText('meta', leftX, metaY, 30, 'JetBrainsMono_500Medium', metaItems.map(value).join('   ')));
+    }
+    if (heroKey) {
+      nodes.push(glowText('hero', leftX, heroY, heroSize, 'SpaceGrotesk_700Bold', value(heroKey)));
+    }
+    if (caption) {
+      const capY = (heroKey ? heroY - heroSize + 6 : metaY) - (metaItems.length && !heroKey ? 46 : 34);
+      nodes.push(glowText('caption', leftX, capY, 38, 'SpaceGrotesk_500Medium', caption));
+    }
+    return <>{nodes}</>;
   }
 
+  // 'row' — 가운데 한 줄 + 문구는 그 위에.
+  const centerX = CANVAS_WIDTH / 2 + config.position.x;
+  const baseY = STAMP_DEFAULT_Y + config.position.y;
+  const items = activeItems.map(value);
+
+  if (caption) {
+    nodes.push(glowText('caption', centerX, baseY - 58, 34, 'SpaceGrotesk_500Medium', caption, 'middle'));
+  }
   if (items.length > 0) {
     const fontSize = 28;
     const gap = 22;

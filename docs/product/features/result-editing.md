@@ -75,6 +75,7 @@
 - **한 줄 문구(caption)**: `StampConfig.caption` 자유 텍스트 40자. 미리보기·썸네일·최종 mp4 모두 항목 줄 위에 Space Grotesk로 가운데 그림(Swift는 폰트 없어 시스템 폰트 대체). 빈 문자열이면 안 그림
 - **표시 모드(항상/완성후만/숨김) UI 제거**: 시안 S6에 없어서 뺐다 — `mode`는 데이터엔 남아 'always' 고정. §7-3 "완성 후만"이 UI에서 사라짐 (아래 어긋남 기록)
 - **"자리(위/아래/없음)" 선택기**: 시안엔 있지만 이번엔 안 만듦("자리만 빼고" 요청). 기존 자유 드래그 위치가 그대로 남음
+- **배치 프리셋**(2026-09-01 추가): `StampConfig.layout` — `'row'`(가운데 한 줄, 간결) / `'hero'`(왼쪽 아래 큰 거리 + 문구 + 메타, 시안 S8b). 각인 시트에 "배치" 칩. 기본 'hero'. `hero`의 히어로 숫자는 거리 → 시간 → 페이스 순으로 켜진 첫 항목. TS(`StampLayerSvg`)·Swift(`drawStamps`) 양쪽 분기
 - 값은 `StampConfig`(caption·placeName·enabled.date·enabled.place)에 담아 draft/store/preview/thumbnail/renderer로 흐른다. 기존 저장분은 렌더 시 `?? ''` / `?? false`로 방어
 
 **아직 안 한 것**: 속도·색(§6). §4-1 "화면에서 직접 탭해서도 고를 수 있게 한다"는 요구는 토글 UI로만 만족시켰고, 드로잉/각인을 화면에서 직접 탭해 전환하는 건 아직 없다(히트테스트 미구현) — 다음에 붙일 것.

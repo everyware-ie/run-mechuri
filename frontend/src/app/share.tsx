@@ -95,6 +95,7 @@ export default function ShareScreen() {
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
       stampMode: draft.stampConfig.mode,
+      stampLayout: draft.stampConfig.layout ?? 'row',
       stampItems: {
         distance: draft.stampConfig.enabled?.distance ?? false,
         time: draft.stampConfig.enabled?.time ?? false,

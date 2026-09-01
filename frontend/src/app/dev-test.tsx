@@ -92,6 +92,7 @@ export default function HomeScreen() {
         smooth: 0,
         corner: 0,
         stampMode: 'hidden',
+        stampLayout: 'row',
         stampItems: { distance: false, time: false, pace: false, heartRate: false, date: false, place: false },
         stampX: 0,
         stampY: 0,
