@@ -82,6 +82,9 @@ export default function EditScreen() {
   // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
   // "3안" 시안 S7에는 드로잉/각인 토글이 없다 — [각인] 버튼이 시트(S6)를 연다.
   const [stampSheetOpen, setStampSheetOpen] = useState(false);
+  // §7-1 안전 영역 가이드 — 실기기 피드백(2026-09): 항상 떠 있으면 거슬린다는
+  // 지적으로 기본 숨김·버튼으로 토글하는 방식으로 바꿨다.
+  const [showSafeGuide, setShowSafeGuide] = useState(false);
   const insets = useSafeAreaInsets();
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
@@ -98,9 +101,39 @@ export default function EditScreen() {
     smoothOptionsRef.current = opts;
     setSmoothOptionsState(opts);
   };
-  const handleSmoothAxisChange = (axis: 'smooth' | 'corner', value: number) =>
-    updateSmoothOptions({ ...smoothOptionsRef.current, [axis]: value });
-  const handleSmoothCommit = () => commitSmoothOptions(smoothOptionsRef.current);
+  // applySmoothing(route-smoothing.ts)은 이동평균 + RDP 단순화 + 모서리 라운딩을
+  // 원본 GPS 점 전체에 매번 다시 돌린다 — 실기기 피드백(2026-09): 슬라이더를 끄는
+  // 동안 이게 손가락이 움직이는 raw 터치 이벤트마다(프레임보다 훨씬 잦게) 그대로
+  // 불려서 버벅였다. 최신값은 ref에 바로 반영해 시각적 반응은 즉시 유지하되, 실제
+  // 무거운 재계산(state 갱신 → useMemo)은 화면 프레임당 한 번으로 묶는다.
+  const pendingSmoothRef = useRef<SmoothOptions | null>(null);
+  const smoothRafRef = useRef<number | null>(null);
+  const flushPendingSmooth = () => {
+    if (smoothRafRef.current !== null) {
+      cancelAnimationFrame(smoothRafRef.current);
+      smoothRafRef.current = null;
+    }
+    if (pendingSmoothRef.current) {
+      updateSmoothOptions(pendingSmoothRef.current);
+      pendingSmoothRef.current = null;
+    }
+  };
+  const handleSmoothAxisChange = (axis: 'smooth' | 'corner', value: number) => {
+    pendingSmoothRef.current = { ...smoothOptionsRef.current, [axis]: value };
+    if (smoothRafRef.current === null) {
+      smoothRafRef.current = requestAnimationFrame(() => {
+        smoothRafRef.current = null;
+        if (pendingSmoothRef.current) {
+          updateSmoothOptions(pendingSmoothRef.current);
+          pendingSmoothRef.current = null;
+        }
+      });
+    }
+  };
+  const handleSmoothCommit = () => {
+    flushPendingSmooth();
+    commitSmoothOptions(smoothOptionsRef.current);
+  };
 
   // §7: 각인 넷은 하나의 묶음 — 위치 하나만 갖는다. 크기·회전은 없다(§4-2, 끌기만 반응).
   const [stampConfig, setStampConfigState] = useState<StampConfig>(draft.stampConfig);
@@ -344,13 +377,19 @@ export default function EditScreen() {
                 smoothOptions={smoothOptions}
                 run={draft.selectedRun}
                 stampConfig={stampConfig}
-                showSafeAreaGuide
+                showSafeAreaGuide={showSafeGuide}
                 isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
                 fit="cover"
               />
             </View>
+            {/* §7-1: 인스타에서 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
+            <Pressable
+              onPress={() => setShowSafeGuide((v) => !v)}
+              style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
+              <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>가려지는 영역</Text>
+            </Pressable>
             <Text style={styles.cardHint}>
               {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
             </Text>
@@ -492,6 +531,20 @@ const styles = StyleSheet.create({
   previewArea: { flex: 1, backgroundColor: Colors.bgCard, overflow: 'hidden' },
   // 조작 중임을 눈으로도 알 수 있게 — "터치 경계가 명확하지 않다"는 피드백 대응.
   previewActive: { borderWidth: 2, borderColor: Colors.accent },
+  guideToggle: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    backgroundColor: 'rgba(11,13,16,0.55)',
+  },
+  guideToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
+  guideToggleText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
+  guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
   cardHint: {
     position: 'absolute',
     left: 16,
