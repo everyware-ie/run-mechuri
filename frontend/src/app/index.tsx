@@ -1,11 +1,12 @@
 import { Link, router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
 import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -21,7 +22,36 @@ import { useCreationFlow } from '@/state/creation-flow';
 export default function HomeScreen() {
   const [results, setResults] = useState<SavedResult[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [checkedConnection, setCheckedConnection] = useState(false);
   const { loadDraft } = useCreationFlow();
+
+  // connect.tsx(시안 S0): 앱을 한 번도 연결 안 해본 첫 실행에서만 보여준다.
+  // useFocusEffect가 아니라 마운트 시 한 번만 — 연결 뒤엔 홈으로 돌아올 때마다
+  // 다시 검사할 필요가 없다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const connected = await hasConnectedOnce();
+      if (cancelled) return;
+      if (connected) {
+        setCheckedConnection(true);
+        return;
+      }
+      // 이 플래그가 생기기 전부터 이미 쓰던 사람(만든 결과물이 있음)에게는
+      // 이제 와서 첫 실행 화면을 보여주지 않는다 — 조용히 "연결됨"으로 채운다.
+      const existing = await listResults();
+      if (cancelled) return;
+      if (existing.length > 0) {
+        await markConnectedOnce();
+        if (!cancelled) setCheckedConnection(true);
+        return;
+      }
+      router.replace('/connect');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -43,6 +73,12 @@ export default function HomeScreen() {
     });
     router.push('/edit');
   };
+
+  // 연결 여부를 확인하는 동안(또는 /connect로 리다이렉트하는 동안)은 홈 내용이
+  // 잠깐 비쳤다 사라지는 걸 막는다.
+  if (!checkedConnection) {
+    return <SafeAreaView style={styles.safeArea} />;
+  }
 
   const [hero, ...rest] = results;
 
