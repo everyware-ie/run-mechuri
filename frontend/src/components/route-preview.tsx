@@ -146,6 +146,7 @@ export function RoutePreview({
   const [elapsed, setElapsed] = useState(0);
   const frameRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
+  const accumulatedRef = useRef(0);
 
   // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
   // ref는 안 건드린다). 프레임 delta는 아래 tick에서 어차피 0.1초로 클램프한다.
@@ -164,7 +165,19 @@ export function RoutePreview({
     const tick = (ts: number) => {
       if (lastTsRef.current !== null) {
         const delta = Math.min(0.1, (ts - lastTsRef.current) / 1000);
-        setElapsed((prev) => (prev + delta) % CYCLE_SECONDS);
+        accumulatedRef.current += delta;
+        // 실기기 피드백(2026-09-01): requestAnimationFrame은 화면 주사율 그대로
+        // 불린다 — ProMotion(120Hz) 기기에서는 이 애니메이션(Canvas 재구성 +
+        // Shadow 블러 30~80px 여러 겹)이 초당 최대 120번 다시 그려졌다. 천천히
+        // 진행되는 그리기 효과라 30fps로도 눈에 매끄러워서, state 갱신(=실제 다시
+        // 그리는 시점)만 그 주기로 묶는다 — requestAnimationFrame 자체는 계속
+        // 걸어서 화면 주사율과 무관하게 타이밍은 정확하게 유지한다.
+        const FRAME_INTERVAL = 1 / 30;
+        if (accumulatedRef.current >= FRAME_INTERVAL) {
+          const applied = accumulatedRef.current;
+          accumulatedRef.current = 0;
+          setElapsed((prev) => (prev + applied) % CYCLE_SECONDS);
+        }
       }
       lastTsRef.current = ts;
       frameRef.current = requestAnimationFrame(tick);
