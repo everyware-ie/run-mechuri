@@ -1,3 +1,4 @@
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -7,6 +8,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
@@ -28,6 +30,13 @@ import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { saveDraft } from '@/lib/draft-store';
 import type { SmoothOptions } from '@/lib/route-smoothing';
+import {
+  formatDistanceKm,
+  formatDuration,
+  formatHeartRate,
+  formatPace,
+  formatStampDate,
+} from '@/lib/stamp-format';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // FRD: docs/specs/frd/result-editing.md
@@ -39,18 +48,8 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 그리고 그 카드가 ScrollView 안에 있어서 드래그 제스처가 스크롤과 경합하던 문제도
 // 이 구조에선 아예 없어진다 — 미리보기 영역을 감싸는 스크롤 컨테이너가 없다).
 
-const STAMP_ITEMS: { id: StampItem; label: string }[] = [
-  { id: 'distance', label: '거리' },
-  { id: 'time', label: '시간' },
-  { id: 'pace', label: '페이스' },
-  { id: 'heartRate', label: '심박' },
-];
-
-const STAMP_MODES: { id: StampConfig['mode']; label: string }[] = [
-  { id: 'always', label: '항상' },
-  { id: 'after', label: '완성 후만' },
-  { id: 'hidden', label: '숨김' },
-];
+// 시안 S6 "넣을 것" 순서. 칩에는 실제 값도 함께 보여준다(stampChipLabel).
+const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
 const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'default-drawing', label: '기본 드로잉' },
@@ -142,16 +141,43 @@ export default function EditScreen() {
     stampConfigRef.current = c;
     setStampConfigState(c);
   };
-  const handleStampModeSelect = (mode: StampConfig['mode']) => {
-    const next = { ...stampConfigRef.current, mode };
-    updateStampConfig(next);
-    commitStampConfig(next);
-  };
   const handleStampItemToggle = (item: StampItem) => {
     const next = { ...stampConfigRef.current, enabled: { ...stampConfigRef.current.enabled, [item]: !stampConfigRef.current.enabled[item] } };
     updateStampConfig(next);
     commitStampConfig(next);
   };
+  // 시안 S6 "한 줄 문구".
+  const handleCaptionChange = (text: string) => {
+    const next = { ...stampConfigRef.current, caption: text };
+    updateStampConfig(next);
+    commitStampConfig(next);
+  };
+
+  // '장소' 각인 값 — 트랙 좌표(가운데 점)를 역지오코딩해 한 번 채운다. 실패하면
+  // 그냥 비워 둔다(칩은 "장소"로만 보이고, 켜도 아무것도 안 그린다).
+  useEffect(() => {
+    if ((stampConfigRef.current.placeName ?? '').length > 0) return;
+    const coords = draft.track?.coordinates;
+    if (!coords || coords.length === 0) return;
+    const mid = coords[Math.floor(coords.length / 2)];
+    let cancelled = false;
+    Location.reverseGeocodeAsync({ latitude: mid.latitude, longitude: mid.longitude })
+      .then((res) => {
+        if (cancelled) return;
+        const p = res[0];
+        const name = p?.district || p?.city || p?.subregion || p?.name || '';
+        if (!name) return;
+        const next = { ...stampConfigRef.current, placeName: name };
+        updateStampConfig(next);
+        commitStampConfig(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // 트랙이 바뀔 때만 한 번 — commit/update는 안정적이지 않아 넣으면 매 편집마다 재지오코딩된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.track]);
 
   const [isInteracting, setIsInteracting] = useState(false);
   const baseTransform = useRef<RouteTransform>(transform);
@@ -348,9 +374,27 @@ export default function EditScreen() {
     );
   }
 
+  const run = draft.selectedRun;
   const stampItems = STAMP_ITEMS.filter(
-    (item) => item.id !== 'heartRate' || draft.selectedRun?.averageHeartRate !== undefined
+    (item) => item !== 'heartRate' || run.averageHeartRate !== undefined
   );
+  // 시안 S6: 칩에 항목명 + 실제 값을 함께 보여준다.
+  const stampChipLabel = (item: StampItem): string => {
+    switch (item) {
+      case 'distance':
+        return `거리 ${formatDistanceKm(run.distanceMeters)}`;
+      case 'time':
+        return `시간 ${formatDuration(run.durationSeconds)}`;
+      case 'pace':
+        return `페이스 ${formatPace(run.averagePaceSecPerKm).replace('/km', '')}`;
+      case 'date':
+        return `날짜 ${formatStampDate(run.date)}`;
+      case 'place':
+        return stampConfig.placeName ? `장소 ${stampConfig.placeName}` : '장소';
+      case 'heartRate':
+        return `심박 ${run.averageHeartRate ? formatHeartRate(run.averageHeartRate) : ''}`;
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -479,35 +523,30 @@ export default function EditScreen() {
             </Text>
           </View>
 
-          <Text style={styles.sectionLabel}>표시</Text>
-          <View style={styles.chipRow}>
-            {STAMP_MODES.map((m) => {
-              const on = stampConfig.mode === m.id;
+          <Text style={styles.sectionLabel}>넣을 것</Text>
+          <View style={styles.chipRowWrap}>
+            {stampItems.map((item) => {
+              const on = stampConfig.enabled?.[item] ?? false;
               return (
                 <Pressable
-                  key={m.id}
-                  onPress={() => handleStampModeSelect(m.id)}
-                  style={[styles.presetChip, on && styles.presetChipOn]}>
-                  <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{m.label}</Text>
+                  key={item}
+                  onPress={() => handleStampItemToggle(item)}
+                  style={[styles.itemChip, on && styles.itemChipOn]}>
+                  <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
                 </Pressable>
               );
             })}
           </View>
 
-          <Text style={styles.sectionLabel}>넣을 것</Text>
-          <View style={styles.chipRowWrap}>
-            {stampItems.map((item) => {
-              const on = stampConfig.enabled[item.id];
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => handleStampItemToggle(item.id)}
-                  style={[styles.itemChip, on && styles.itemChipOn]}>
-                  <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{item.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <Text style={styles.sectionLabel}>한 줄 문구</Text>
+          <TextInput
+            value={stampConfig.caption ?? ''}
+            onChangeText={handleCaptionChange}
+            placeholder="예) 비 오는 날의 한강"
+            placeholderTextColor={Colors.textMuted}
+            maxLength={40}
+            style={styles.captionInput}
+          />
 
           <Text style={styles.note}>미리보기에서 각인을 끌어 위치를 옮길 수 있어요.</Text>
         </View>
@@ -563,6 +602,14 @@ const styles = StyleSheet.create({
   presetRow: { flexDirection: 'row', gap: 8 },
   chipRow: { flexDirection: 'row', gap: 8 },
   chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  captionInput: {
+    fontFamily: 'SpaceGrotesk_500Medium',
+    fontSize: 15,
+    color: Colors.text,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderStrong,
+    paddingVertical: 8,
+  },
   presetChip: {
     flex: 1,
     height: 40,

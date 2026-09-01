@@ -25,9 +25,16 @@
 - 동작(§2 인코딩·§4 기기 저장·§2-4 실패·F1·F2)은 그대로. 표시만 바꿈
 - **"인스타그램 스토리" 버튼은 아직 안 넣었다** — 브릿지(4단계) 없이 누를 데가 없어서, §3이 붙을 때 카드 아래 버튼 행으로 추가한다
 
-### `[확인 필요]` 한 줄 문구(캡션)
+### 한 줄 문구(캡션) — 구현함 (2026-09-01, JiEung2 결정)
 
-"3안" 시안 S8b·S6에는 결과물에 얹는 **자유 텍스트 한 줄("한 줄 문구")**이 있는데, export-and-share FRD에도 result-editing FRD에도 이 항목이 없다. PRD [§11 미결](../../specs/prd/running-drawing-mvp.md)의 "재방문 유인" 절은 "결과물에 누적 거리 한 줄 새기기" 같은 텍스트 후보를 오히려 약하게 봤다(각인이 그 자리를 이미 맡음). 시안에 있다는 이유만으로 코드에 넣으면 스펙이 조용히 제품 정의를 바꾸는 게 된다(CLAUDE.md 정합성 규칙 2). **phs00가 export-and-share FRD에 올릴지 결정한 뒤 구현한다.** 결정되면 각인과 나란한 렌더 파라미터로 붙이면 된다(`RouteRendererModule` `caption` 필드 + `route-preview.tsx` CaptionLayer + `edit.tsx` 입력 + draft/results 저장).
+"3안" 시안 S8b·S6의 **자유 텍스트 한 줄("한 줄 문구")**을 시안대로 구현했다. **approved FRD에는
+아직 없다** — PRD [§11 미결](../../specs/prd/running-drawing-mvp.md)의 "재방문 유인" 절은 텍스트-온-결과물
+후보를 약하게 봤었다(각인이 그 자리를 맡음). 시안에 명시돼 있고 JiEung2가 넣기로 해서 구현했으니,
+**phs00가 export-and-share / result-editing FRD에 반영할지 검토 요망**(CLAUDE.md 정합성 규칙 — 하류를
+고쳤으니 상류도 같은 흐름에서 정리).
+
+- `StampConfig.caption`(각인과 같은 묶음) 자유 텍스트 40자, `edit.tsx`의 각인 시트에서 입력
+- 각인 항목 줄 위에 가운데 정렬. 미리보기(`route-preview.tsx` StampLayerSvg)·썸네일·최종 mp4(`RouteRendererModule.swift` drawStamps) 모두. 자세한 건 [결과물 편집 노트](result-editing.md) §7 참고
 
 ## 어긋남 기록
 

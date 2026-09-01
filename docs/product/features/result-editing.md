@@ -64,8 +64,23 @@
 - **폰트 불일치(v0 근사)**: 미리보기는 로드된 JetBrains Mono, Swift 최종 렌더러는 시스템 모노스페이스(`UIFont.monospacedSystemFont`) — 폰트 파일을 네이티브 자산으로 번들링하는 파이프라인이 아직 없어서. 프리셋 글로우 반경 근사와 같은 종류의 타협
 - **값 저장**: `CreationDraft`·`Draft`·`SavedResult`에 `stampConfig` 추가, 기존 저장분은 `IDENTITY_STAMP`(항상·넷 다 켜짐·오프셋 0)로 기본값을 채움. 보관함 썸네일(`RouteThumbnail`)·결과물 상세에도 완주 시점(`progressFraction=1`) 상태로 함께 그림
 
+### 각인 시트 재구성 + 한 줄 문구·날짜·장소 (2026-09-01, 시안 S6)
+
+시안 S6에 맞춰 각인 시트를 다시 짰다. **이 항목들은 approved FRD(route-rendering §7·result-editing §7)에
+없다 — phs00가 FRD에 반영할지 검토 요망.**
+
+- **넣을 것 칩에 값을 함께 표시**: "거리 5.23km" "시간 28:14" "페이스 5'42"" "날짜 08.21" "장소 한강" "심박 152bpm". 켜면 accent 채움
+- **날짜(date)**: `run.date`(ISO) → `formatStampDate` "MM.dd". TS·Swift 양쪽 구현
+- **장소(place)**: `edit.tsx`에서 트랙 가운데 좌표를 `expo-location`의 `reverseGeocodeAsync`로 한 번 역지오코딩해 `StampConfig.placeName`에 채운다(district→city→subregion→name 순). 실패하면 빈 문자열 — 칩은 "장소"로만 보이고 켜도 안 그려진다. `expo-location` 의존성 추가(prebuild+재빌드 필요), `NSLocationWhenInUseUsageDescription` 추가
+- **한 줄 문구(caption)**: `StampConfig.caption` 자유 텍스트 40자. 미리보기·썸네일·최종 mp4 모두 항목 줄 위에 Space Grotesk로 가운데 그림(Swift는 폰트 없어 시스템 폰트 대체). 빈 문자열이면 안 그림
+- **표시 모드(항상/완성후만/숨김) UI 제거**: 시안 S6에 없어서 뺐다 — `mode`는 데이터엔 남아 'always' 고정. §7-3 "완성 후만"이 UI에서 사라짐 (아래 어긋남 기록)
+- **"자리(위/아래/없음)" 선택기**: 시안엔 있지만 이번엔 안 만듦("자리만 빼고" 요청). 기존 자유 드래그 위치가 그대로 남음
+- 값은 `StampConfig`(caption·placeName·enabled.date·enabled.place)에 담아 draft/store/preview/thumbnail/renderer로 흐른다. 기존 저장분은 렌더 시 `?? ''` / `?? false`로 방어
+
 **아직 안 한 것**: 속도·색(§6). §4-1 "화면에서 직접 탭해서도 고를 수 있게 한다"는 요구는 토글 UI로만 만족시켰고, 드로잉/각인을 화면에서 직접 탭해 전환하는 건 아직 없다(히트테스트 미구현) — 다음에 붙일 것.
 
 ## 어긋남 기록
 
-(아직 없음)
+- **각인 표시 모드(§7-3 "완성 후만" 포함) 선택 UI가 없어졌다** (2026-09-01). 시안 S6에 그 UI가 없어서 뺐다. `StampConfig.mode`는 데이터에 남아 'always' 고정으로 동작. FRD §7-3을 지키려면 UI를 다시 넣거나(시안의 "자리·없음"이 hidden을 겸하는 구조로 재해석) FRD를 시안에 맞춰 개정해야 함
+- **한 줄 문구·날짜·장소가 approved FRD에 없다** — route-rendering §7·result-editing §7은 각인을 넷으로 정의. 시안 S6 기준으로 구현했으니 phs00가 FRD에 반영 여부 결정
+- **미리보기(Skia/SVG)와 최종 mp4(CoreGraphics)의 한 줄 문구 폰트가 다르다** — 미리보기 Space Grotesk, Swift는 시스템 폰트(번들 폰트 파이프라인 없음). 각인 항목 폰트 불일치와 같은 종류

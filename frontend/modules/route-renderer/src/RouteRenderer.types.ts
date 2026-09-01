@@ -31,9 +31,23 @@ export type RenderClipOptions = {
   corner: number;
   /** result-editing FRD §7 · route-rendering FRD §7 각인 */
   stampMode: StampMode;
-  stampItems: { distance: boolean; time: boolean; pace: boolean; heartRate: boolean };
+  stampItems: {
+    distance: boolean;
+    time: boolean;
+    pace: boolean;
+    heartRate: boolean;
+    /** 시안 S6에서 추가(2026-09-01). */
+    date: boolean;
+    place: boolean;
+  };
   stampX: number;
   stampY: number;
+  /** 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다. */
+  caption: string;
+  /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */
+  placeName: string;
+  /** '날짜' 각인 값 계산용 — 러닝한 날 (ISO). */
+  runDate: string;
   /** 각인 값 계산용. 그려진 선 길이가 아니라 기록된 값을 쓴다(§7-3). */
   distanceMeters: number;
   durationSeconds: number;

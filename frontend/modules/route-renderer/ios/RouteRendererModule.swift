@@ -41,12 +41,15 @@ struct RouteTransformInput: Record {
   @Field var rotationDeg: Double = 0
 }
 
-/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 넷 중 어느 게 켜져 있나.
+/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 중 어느 게 켜져 있나.
+/// (date·place는 시안 S6에서 추가, 2026-09-01)
 struct StampItemsInput: Record {
   @Field var distance: Bool = true
   @Field var time: Bool = true
   @Field var pace: Bool = true
   @Field var heartRate: Bool = true
+  @Field var date: Bool = false
+  @Field var place: Bool = false
 }
 
 struct RenderClipOptionsInput: Record {
@@ -64,6 +67,12 @@ struct RenderClipOptionsInput: Record {
   @Field var stampItems: StampItemsInput = StampItemsInput()
   @Field var stampX: Double = 0
   @Field var stampY: Double = 0
+  /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
+  @Field var caption: String = ""
+  /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
+  @Field var placeName: String = ""
+  /// '날짜' 각인 값 계산용 — 러닝한 날 (ISO 8601).
+  @Field var runDate: String = ""
   /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
@@ -588,6 +597,21 @@ public class RouteRendererModule: Module {
     String(format: "%.0fbpm", bpm)
   }
 
+  /// 러닝한 날 (ISO) → "MM.dd". route-preview.tsx formatStampDate와 같은 규칙.
+  private func formatStampDate(_ iso: String) -> String {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    var date = f.date(from: iso)
+    if date == nil {
+      f.formatOptions = [.withInternetDateTime]
+      date = f.date(from: iso)
+    }
+    guard let d = date else { return "" }
+    let c = Calendar.current.dateComponents([.month, .day], from: d)
+    guard let m = c.month, let day = c.day else { return "" }
+    return String(format: "%02d.%02d", m, day)
+  }
+
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
     let isComplete = progressFraction >= 1
     if stamp.stampMode == "hidden" { return }
@@ -597,34 +621,54 @@ public class RouteRendererModule: Module {
     if stamp.stampItems.distance { items.append(formatDistanceKm(stamp.distanceMeters * progressFraction)) }
     if stamp.stampItems.time { items.append(formatDuration(stamp.durationSeconds * progressFraction)) }
     if stamp.stampItems.pace { items.append(formatPace(stamp.averagePaceSecPerKm)) }
+    if stamp.stampItems.date {
+      let s = formatStampDate(stamp.runDate)
+      if !s.isEmpty { items.append(s) }
+    }
+    if stamp.stampItems.place && !stamp.placeName.isEmpty { items.append(stamp.placeName) }
     if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { items.append(formatHeartRate(hr)) }
-    guard !items.isEmpty else { return }
 
-    let fontSize: CGFloat = 28
-    let gap: CGFloat = 22
-    // route-preview.tsx StampLayer와 동일한 기본 자리·간이 너비 추정(모노스페이스 가정).
+    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+    if items.isEmpty && caption.isEmpty { return }
+
+    // route-preview.tsx StampLayerSvg와 동일한 기본 자리.
     let safeAreaBottomRatio: CGFloat = 0.2
     let defaultY = canvasSize.height * (1 - safeAreaBottomRatio) - 90
     let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-    let y = defaultY + CGFloat(stamp.stampY)
-    let charWidth = fontSize * 0.62
-
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
-      .foregroundColor: lineWarm,
-    ]
-
-    let widths = items.map { CGFloat($0.count) * charWidth }
-    let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
-    var cursorX = centerX - totalWidth / 2
+    let baseY = defaultY + CGFloat(stamp.stampY)
 
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    for (i, text) in items.enumerated() {
+
+    let drawCentered: (String, CGFloat, UIFont) -> Void = { text, y, font in
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let size = (text as NSString).size(withAttributes: attrs)
+      let x = centerX - size.width / 2
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-      (text as NSString).draw(at: CGPoint(x: cursorX, y: y), withAttributes: attributes)
+      (text as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
       ctx.restoreGState()
-      cursorX += widths[i] + gap
+    }
+
+    // 한 줄 문구 — 항목 줄 위. Space Grotesk가 번들에 없어 시스템 폰트로 대체.
+    if !caption.isEmpty {
+      drawCentered(caption, baseY - 58, UIFont.systemFont(ofSize: 34, weight: .medium))
+    }
+
+    if !items.isEmpty {
+      let fontSize: CGFloat = 28
+      let gap: CGFloat = 22
+      let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let widths = items.map { ($0 as NSString).size(withAttributes: attrs).width }
+      let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
+      var cursorX = centerX - totalWidth / 2
+      for (i, text) in items.enumerated() {
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+        (text as NSString).draw(at: CGPoint(x: cursorX, y: baseY), withAttributes: attrs)
+        ctx.restoreGState()
+        cursorX += widths[i] + gap
+      }
     }
   }
 

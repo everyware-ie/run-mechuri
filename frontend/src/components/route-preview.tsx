@@ -27,26 +27,34 @@ import {
   type Point,
 } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
-import { formatDistanceKm, formatDuration, formatHeartRate, formatPace } from '@/lib/stamp-format';
+import { formatDistanceKm, formatDuration, formatHeartRate, formatPace, formatStampDate } from '@/lib/stamp-format';
 
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
 export const IDENTITY_SMOOTH: SmoothOptions = { smooth: 0, corner: 0 };
 
-// result-editing FRD §7 · route-rendering FRD §7
-export type StampItem = 'distance' | 'time' | 'pace' | 'heartRate';
+// result-editing FRD §7 · route-rendering FRD §7. '날짜'·'장소'는 시안 S6(2026-09-01)에서
+// 추가 — route-rendering §7은 원래 넷이었다(확인 노트 기록).
+export type StampItem = 'distance' | 'time' | 'pace' | 'heartRate' | 'date' | 'place';
 export type StampMode = 'always' | 'after' | 'hidden';
 
 export type StampConfig = {
+  /** §7-3 표시 타이밍. 시안 S6엔 UI가 없어(2026-09-01) 항상 'always' — 확인 노트 참고. */
   mode: StampMode;
   enabled: Record<StampItem, boolean>;
-  /** §4-1: 각인 넷은 하나의 묶음 — 위치 하나만 갖는다. 기본 자리(§7-5) 오프셋(캔버스 px). */
+  /** 시안 S6 "한 줄 문구" — 결과물에 얹는 자유 텍스트 한 줄. 빈 문자열이면 안 그린다. */
+  caption: string;
+  /** '장소' 각인 값 — 트랙 좌표를 역지오코딩해 채운다(edit.tsx). 비면 장소 항목은 안 나온다. */
+  placeName: string;
+  /** 각인 묶음(문구 + 항목)은 하나의 묶음 — 위치 하나만 갖는다. 기본 자리(§7-5) 오프셋(캔버스 px). */
   position: { x: number; y: number };
 };
 
 export const IDENTITY_STAMP: StampConfig = {
   mode: 'always',
-  enabled: { distance: true, time: true, pace: true, heartRate: true },
+  enabled: { distance: true, time: true, pace: true, heartRate: true, date: true, place: true },
+  caption: '',
+  placeName: '',
   position: { x: 0, y: 0 },
 };
 
@@ -587,59 +595,59 @@ export function StampLayerSvg({
   if (config.mode === 'hidden') return null;
   if (config.mode === 'after' && !isComplete) return null;
 
+  const enabled = config.enabled ?? ({} as StampConfig['enabled']);
   const items: string[] = [];
-  if (config.enabled.distance) items.push(formatDistanceKm(run.distanceMeters * progressFraction));
-  if (config.enabled.time) items.push(formatDuration(run.durationSeconds * progressFraction));
-  if (config.enabled.pace) items.push(formatPace(run.averagePaceSecPerKm));
-  if (config.enabled.heartRate && run.averageHeartRate !== undefined) {
+  if (enabled.distance) items.push(formatDistanceKm(run.distanceMeters * progressFraction));
+  if (enabled.time) items.push(formatDuration(run.durationSeconds * progressFraction));
+  if (enabled.pace) items.push(formatPace(run.averagePaceSecPerKm));
+  if (enabled.date) items.push(formatStampDate(run.date));
+  if (enabled.place && config.placeName) items.push(config.placeName);
+  if (enabled.heartRate && run.averageHeartRate !== undefined) {
     items.push(formatHeartRate(run.averageHeartRate));
   }
-  if (items.length === 0) return null;
 
-  const fontSize = 28;
-  const gap = 22;
+  const caption = (config.caption ?? '').trim();
+  if (items.length === 0 && !caption) return null;
+
   const centerX = CANVAS_WIDTH / 2 + config.position.x;
-  const y = STAMP_DEFAULT_Y + config.position.y;
-  const charWidth = fontSize * 0.62;
-  const widths = items.map((s) => s.length * charWidth);
-  const totalWidth = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
-  let cursorX = centerX - totalWidth / 2;
+  const baseY = STAMP_DEFAULT_Y + config.position.y;
 
-  return (
-    <>
-      {items.map((text, i) => {
-        const x = cursorX;
-        cursorX += widths[i] + gap;
-        // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
-        // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹쳐서, 배경 밝기와
-        // 무관하게 또렷하게 한다(react-native-svg Text엔 paintOrder 타입이 없어
-        // stroke-then-fill 한 엘리먼트로는 안 되고 두 개를 겹친다).
-        return (
-          <Fragment key={i}>
-            <SvgText
-              x={x}
-              y={y}
-              fontSize={fontSize}
-              fontFamily="JetBrainsMono_700Bold"
-              fill="none"
-              stroke="rgba(11,13,16,0.8)"
-              strokeWidth={7}>
-              {text}
-            </SvgText>
-            <SvgText
-              x={x}
-              y={y}
-              fontSize={fontSize}
-              fontFamily="JetBrainsMono_700Bold"
-              fill={LINE_WARM}
-              filter="url(#stampGlow)">
-              {text}
-            </SvgText>
-          </Fragment>
-        );
-      })}
-    </>
+  // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
+  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
+  const glowText = (key: string, x: number, y: number, size: number, family: string, text: string) => (
+    <Fragment key={key}>
+      <SvgText x={x} y={y} fontSize={size} fontFamily={family} fill="none" stroke="rgba(11,13,16,0.8)" strokeWidth={size * 0.26}>
+        {text}
+      </SvgText>
+      <SvgText x={x} y={y} fontSize={size} fontFamily={family} fill={LINE_WARM} filter="url(#stampGlow)">
+        {text}
+      </SvgText>
+    </Fragment>
   );
+
+  const nodes: React.ReactNode[] = [];
+
+  // 한 줄 문구 — 항목 줄 위에 가운데 정렬. Space Grotesk, 약간 크게.
+  if (caption) {
+    const capSize = 34;
+    const capWidth = caption.length * capSize * 0.52;
+    nodes.push(glowText('caption', centerX - capWidth / 2, baseY - 58, capSize, 'SpaceGrotesk_500Medium', caption));
+  }
+
+  if (items.length > 0) {
+    const fontSize = 28;
+    const gap = 22;
+    const charWidth = fontSize * 0.62;
+    const widths = items.map((s) => s.length * charWidth);
+    const totalWidth = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
+    let cursorX = centerX - totalWidth / 2;
+    items.forEach((text, i) => {
+      nodes.push(glowText(`item-${i}`, cursorX, baseY, fontSize, 'JetBrainsMono_700Bold', text));
+      cursorX += widths[i] + gap;
+    });
+  }
+
+  return <>{nodes}</>;
 }
 
 // route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.
