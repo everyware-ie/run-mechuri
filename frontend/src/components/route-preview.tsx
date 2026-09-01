@@ -254,13 +254,16 @@ function RouteLayer({
   }
 
   if (preset === 'light-runner') {
-    // 시안 "glow": 옅은 원본 + 지나온 길(+글로우) + 최근 6% 잔광(강한 글로우) + 머리 점.
-    const hotStart = Math.max(0, targetDistance - totalDistance * 0.06);
+    // 시안 "glow" 알고리즘 이식(paint() mode!=='plain'/'seg' 분기). 시안은 캔버스 폭 ~345px
+    // 기준으로 T.w=3(선 두께)·shadowBlur 10/20/26을 쓴다 — 우리 Skia 캔버스는 최종 출력과
+    // 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온 길(+글로우)
+    // + 최근 10% 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
+    const hotStart = Math.max(0, targetDistance - totalDistance * 0.1);
     const before = pointsUpToDistance(hotStart, projected, cumulative);
     const hotTrail = traveled.slice(Math.max(0, before.length - 1));
     return (
       <Group>
-        <Path path={rawFullPath} style="stroke" strokeWidth={3} color={GHOST} />
+        <Path path={rawFullPath} style="stroke" strokeWidth={4.5} color={GHOST} />
         <Path
           path={fullPath}
           style="stroke"
@@ -276,7 +279,7 @@ function RouteLayer({
           strokeCap="round"
           strokeJoin="round"
           color={TRAVELED}>
-          <Shadow dx={0} dy={0} blur={6} color={GLOW} />
+          <Shadow dx={0} dy={0} blur={30} color={GLOW} />
         </Path>
         {!isComplete && (
           <Path
@@ -286,7 +289,7 @@ function RouteLayer({
             strokeCap="round"
             strokeJoin="round"
             color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
           </Path>
         )}
         {isComplete && (
@@ -297,29 +300,31 @@ function RouteLayer({
             strokeCap="round"
             strokeJoin="round"
             color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
           </Path>
         )}
         {!isComplete && head && (
-          <Circle cx={head.x} cy={head.y} r={9} color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={16} color={GLOW} />
+          <Circle cx={head.x} cy={head.y} r={16} color="#FFFFFF">
+            <Shadow dx={0} dy={0} blur={80} color={GLOW} />
           </Circle>
         )}
       </Group>
     );
   }
 
-  // default-drawing — 시안 "plain"의 그리기 애니메이션 버전: 따뜻한 흰색 선 + 옅은 글로우.
+  // default-drawing — 시안 "plain" 그대로: 따뜻한 흰색 선, 글로우 없음(paint()의
+  // mode==='plain' 분기는 shadowBlur를 걸지 않는다). 다만 시안의 plain은 정지 화면이고
+  // FRD §6-1(경로 렌더링) "처음부터 선으로 그려져 나간다"는 애니메이션을 요구하므로
+  // 그리는 부분만(traveled) 잘라 그리는 것은 유지한다.
   return (
     <Path
       path={skPath(traveled)}
       style="stroke"
-      strokeWidth={10}
+      strokeWidth={9}
       strokeCap="round"
       strokeJoin="round"
-      color={LINE_WARM}>
-      <Shadow dx={0} dy={0} blur={5} color={GLOW} />
-    </Path>
+      color={LINE_WARM}
+    />
   );
 }
 
@@ -367,7 +372,7 @@ function SegmentLayer({
         strokeJoin="round"
         opacity={done ? 0.95 : 0.5}
         color={LINE_WARM}>
-        {done && <Shadow dx={0} dy={0} blur={9 + justLit * 13} color={GLOW} />}
+        {done && <Shadow dx={0} dy={0} blur={45 + justLit * 65} color={GLOW} />}
       </Path>
     );
 
@@ -376,7 +381,7 @@ function SegmentLayer({
       if (boundary) {
         segments.push(
           <Circle key={`dot-${s}`} cx={boundary.x} cy={boundary.y} r={4 + justLit * 3} color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={12} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
           </Circle>
         );
       }
