@@ -1,7 +1,7 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
-import { Rect, Svg, Text as SvgText, Defs, Filter, FeGaussianBlur, FeMerge, FeMergeNode } from 'react-native-svg';
+import { Line, Svg, Text as SvgText, Defs, Filter, FeGaussianBlur, FeMerge, FeMergeNode } from 'react-native-svg';
 
 import {
   CANVAS_HEIGHT,
@@ -417,18 +417,30 @@ function SegmentLayer({
 }
 
 // §7-1: 인스타 스토리 UI가 가리는 상하단(편집 중에만).
+// 실기기 피드백(2026-09): 반투명 채움 사각형이 편집 화면 위아래를 갈색 띠처럼
+// 덮어 보여서 눈에 거슬렸다 — 경계만 표시하는 얇은 점선으로 바꿨다.
 function SafeAreaGuide() {
-  const topHeight = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
-  const bottomHeight = CANVAS_HEIGHT * SAFE_AREA_BOTTOM_RATIO;
+  const topY = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
+  const bottomY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO);
   return (
     <>
-      <Rect x={0} y={0} width={CANVAS_WIDTH} height={topHeight} fill="rgba(255,90,43,0.14)" />
-      <Rect
-        x={0}
-        y={CANVAS_HEIGHT - bottomHeight}
-        width={CANVAS_WIDTH}
-        height={bottomHeight}
-        fill="rgba(255,90,43,0.14)"
+      <Line
+        x1={0}
+        y1={topY}
+        x2={CANVAS_WIDTH}
+        y2={topY}
+        stroke="rgba(255,90,43,0.55)"
+        strokeWidth={3}
+        strokeDasharray="14,10"
+      />
+      <Line
+        x1={0}
+        y1={bottomY}
+        x2={CANVAS_WIDTH}
+        y2={bottomY}
+        stroke="rgba(255,90,43,0.55)"
+        strokeWidth={3}
+        strokeDasharray="14,10"
       />
     </>
   );
