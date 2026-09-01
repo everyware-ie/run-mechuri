@@ -12,7 +12,7 @@ import {
   type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   IDENTITY_TRANSFORM,
@@ -59,8 +59,7 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
 ];
 
 const SHEET_EXPANDED_HEIGHT = 372;
-const SHEET_PEEK_HEIGHT = 30;
-const SHEET_COLLAPSE_DISTANCE = SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT;
+const SHEET_PEEK_HEIGHT = 44;
 
 function touchDistance(t1: { pageX: number; pageY: number }, t2: { pageX: number; pageY: number }) {
   return Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
@@ -83,6 +82,7 @@ export default function EditScreen() {
   // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
   // "3안" 시안 S7에는 드로잉/각인 토글이 없다 — [각인] 버튼이 시트(S6)를 연다.
   const [stampSheetOpen, setStampSheetOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
   const transformRef = useRef(transform);
@@ -213,11 +213,19 @@ export default function EditScreen() {
   const sheetExpandedRef = useRef(true);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetDragStart = useRef(0);
+  // 시트를 끌 때도 미리보기 애니메이션을 멈춘다 — 안 멈추면 계속 도는 Skia 글로우
+  // 렌더링(RAF)과 시트 드래그의 JS 스레드 작업이 같이 돌면서 드래그가 버벅였다.
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  // 실기기 피드백(2026-09): 다 내렸을 때 손잡이가 홈 인디케이터 스와이프 제스처
+  // 영역이랑 겹쳐서 잡기 힘들었다 — 접힌 상태에서 그만큼(insets.bottom)은 더 안
+  // 내려가게 한다. insets는 화면이 떠 있는 동안 안 바뀌므로 여기서 한 번만
+  // 읽어도 안전하다(sheetPanResponder도 useRef라 마운트 시점 클로저를 쓴다).
+  const sheetCollapseDistance = SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT - insets.bottom;
 
   const animateSheetTo = (expanded: boolean) => {
     sheetExpandedRef.current = expanded;
     Animated.spring(sheetTranslateY, {
-      toValue: expanded ? 0 : SHEET_COLLAPSE_DISTANCE,
+      toValue: expanded ? 0 : sheetCollapseDistance,
       useNativeDriver: true,
       bounciness: 4,
     }).start();
@@ -228,15 +236,17 @@ export default function EditScreen() {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 2,
       onPanResponderGrant: () => {
+        setIsSheetDragging(true);
         sheetTranslateY.stopAnimation((value) => {
           sheetDragStart.current = value;
         });
       },
       onPanResponderMove: (_evt, gestureState) => {
         const next = sheetDragStart.current + gestureState.dy;
-        sheetTranslateY.setValue(Math.max(0, Math.min(SHEET_COLLAPSE_DISTANCE, next)));
+        sheetTranslateY.setValue(Math.max(0, Math.min(sheetCollapseDistance, next)));
       },
       onPanResponderRelease: (_evt, gestureState) => {
+        setIsSheetDragging(false);
         // 40px 이상 내리면 접고, 40px 이상 올리면 펼치고, 그 사이는 원래 상태로 되돌린다.
         const dy = gestureState.dy;
         if (dy > 40) animateSheetTo(false);
@@ -335,7 +345,7 @@ export default function EditScreen() {
                 run={draft.selectedRun}
                 stampConfig={stampConfig}
                 showSafeAreaGuide
-                isInteracting={isInteracting}
+                isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
                 fit="cover"
@@ -350,7 +360,11 @@ export default function EditScreen() {
 
       {/* 컨트롤 바텀시트 — 손잡이를 위아래로 끌면 접고 펼 수 있다. */}
       {!stampSheetOpen && (
-        <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetTranslateY }] }]}>
+        <Animated.View
+          style={[
+            styles.sheet,
+            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetTranslateY }] },
+          ]}>
           <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
             <View style={styles.sheetHandleBar} />
           </View>
@@ -418,7 +432,7 @@ export default function EditScreen() {
           미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). 컨트롤
           바텀시트와 자리를 다투지 않도록, 열려 있는 동안엔 그 시트를 안 그린다(위). */}
       {stampSheetOpen && (
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
           <View style={styles.sheetHead}>
             <Text style={styles.sheetTitle}>각인</Text>
             <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
@@ -554,7 +568,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: Radius.pill,
     borderTopWidth: 1,
     borderColor: Colors.border,
-    paddingBottom: 34,
   },
   sheetHandleArea: {
     alignItems: 'center',
