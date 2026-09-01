@@ -19,7 +19,7 @@ import {
   CANVAS_WIDTH,
   cumulativeCanvasDistances,
   projectPoints,
-  pointsUpToDistance,
+  pointAtDistance,
   segmentUnitMeters,
   type CanvasPoint,
   type Point,
@@ -266,8 +266,7 @@ function RouteLayer({
   isInteracting: boolean;
 }) {
   const isComplete = progressFraction >= 1;
-  const traveled = pointsUpToDistance(targetDistance, projected, cumulative);
-  const head = traveled[traveled.length - 1];
+  const head = pointAtDistance(targetDistance, projected, cumulative);
   // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
   // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
   // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
@@ -298,10 +297,15 @@ function RouteLayer({
     // 실기기 피드백 — 머리 점은 매끄러운데 뒤따르는 잔광이 끊겨 보인다는 것).
     // 경로마다 총 캔버스 길이(굴곡·왕복 여부)가 달라서 "총 거리의 10%"는 경로마다
     // 실제 화면 픽셀 길이가 들쭉날쭉했다 — 고정 길이면 항상 같은 크기로 따라간다.
+    //
+    // 실기기 피드백(2026-09-01): "움직일 때만 전체적으로 다 느려진다" — 애니메이션
+    // 프레임(최대 60fps)마다 pointsUpToDistance로 잘라낸 점 배열을 skPath로 새로
+    // 그렸는데, 진행률이 높아질수록(경로가 길어질수록) 매 프레임 배열 순회·Path 재구성
+    // 비용이 커졌다. Skia의 네이티브 trim(SkPath.trim, <Path start/end>)은 이미 만들어둔
+    // fullPath 하나를 두고 구간만 잘라 그리므로 JS에서 점을 매 프레임 다시 훑지 않는다.
     const HOT_TRAIL_LENGTH_PX = 260;
-    const hotStart = Math.max(0, targetDistance - HOT_TRAIL_LENGTH_PX);
-    const before = pointsUpToDistance(hotStart, projected, cumulative);
-    const hotTrail = traveled.slice(Math.max(0, before.length - 1));
+    const hotStartFraction =
+      totalDistance > 0 ? Math.max(0, targetDistance - HOT_TRAIL_LENGTH_PX) / totalDistance : 0;
     return (
       <Group>
         <Path path={rawFullPath} style="stroke" strokeWidth={4.5} color={GHOST} />
@@ -314,7 +318,9 @@ function RouteLayer({
           color={BASE}
         />
         <Path
-          path={skPath(traveled)}
+          path={fullPath}
+          start={0}
+          end={progressFraction}
           style="stroke"
           strokeWidth={9}
           strokeCap="round"
@@ -324,7 +330,9 @@ function RouteLayer({
         </Path>
         {!isComplete && (
           <Path
-            path={skPath(hotTrail)}
+            path={fullPath}
+            start={hotStartFraction}
+            end={progressFraction}
             style="stroke"
             strokeWidth={12}
             strokeCap="round"
@@ -356,10 +364,13 @@ function RouteLayer({
   // default-drawing — 시안 "plain" 그대로: 따뜻한 흰색 선, 글로우 없음(paint()의
   // mode==='plain' 분기는 shadowBlur를 걸지 않는다). 다만 시안의 plain은 정지 화면이고
   // FRD §6-1(경로 렌더링) "처음부터 선으로 그려져 나간다"는 애니메이션을 요구하므로
-  // 그리는 부분만(traveled) 잘라 그리는 것은 유지한다.
+  // 그리는 부분만 보여주되, 매 프레임 점을 다시 훑지 않도록 fullPath를 네이티브
+  // trim(start/end)으로 잘라 그린다(위 light-runner와 같은 이유, 2026-09-01).
   return (
     <Path
-      path={skPath(traveled)}
+      path={fullPath}
+      start={0}
+      end={progressFraction}
       style="stroke"
       strokeWidth={9}
       strokeCap="round"
@@ -400,15 +411,18 @@ function SegmentLayer({
 
     const done = progressFraction >= segEndFraction;
     const endDistance = done ? segEndDist : progressFraction * totalDistance;
-    const segPoints = pointsUpToDistance(endDistance, projected, cumulative);
-    const before = pointsUpToDistance(segStartDist, projected, cumulative);
-    const slice = segPoints.slice(Math.max(0, before.length - 1));
+    const endFraction = endDistance / totalDistance;
     const justLit = done ? Math.max(0, 1 - (progressFraction - segEndFraction) * 14) : 0;
 
+    // 실기기 피드백(2026-09-01): 구간마다 매 프레임 점 배열을 슬라이스해 새 Path를
+    // 만들었다 — fullPath 하나를 구간 경계 비율로 네이티브 trim해서 그리면 JS에서
+    // 점을 훑을 필요가 없다(위 light-runner/default-drawing과 같은 이유).
     segments.push(
       <Path
         key={s}
-        path={skPath(slice)}
+        path={fullPath}
+        start={segStartFraction}
+        end={endFraction}
         style="stroke"
         strokeWidth={10 + justLit * 4}
         strokeCap="round"
@@ -420,7 +434,7 @@ function SegmentLayer({
     );
 
     if (done) {
-      const boundary = pointsUpToDistance(segEndDist, projected, cumulative).at(-1);
+      const boundary = pointAtDistance(segEndDist, projected, cumulative);
       if (boundary) {
         segments.push(
           <Circle key={`dot-${s}`} cx={boundary.x} cy={boundary.y} r={4 + justLit * 3} color={LINE_WARM}>
