@@ -47,9 +47,15 @@ export default function ConnectScreen() {
   const handleConnect = async () => {
     // §1-3: 권한은 "쓰려는 순간"에 묻는다 — 실제 요청은 기록 선택 화면 진입 시
     // 그 화면이 스스로 한다(record-selection.tsx). 여기선 "다시 이 화면을 보여줄
-    // 필요 없다"만 기록하고 넘어간다.
+    // 필요 없다"만 기록하고 홈으로 돌아간다.
+    //
+    // 기록 선택으로 바로 넘기지 않는다 — 홈(index.tsx)이 이미 이 화면 진입 전에
+    // router.replace('/connect')로 스택에서 빠져 있어서, 여기서 또 replace로
+    // 기록 선택을 밀어 넣으면 스택에 홈이 아예 없어져 버린다("GO_BACK not handled"
+    // 경고의 원인이었다). 홈은 항상 "결과물 목록"(FRD 홈과 보관함 §1)이라 코어
+    // 루프의 시작점은 거기서 "새로 만들기"를 눌러야 한다.
     await markConnectedOnce();
-    router.replace('/record-selection');
+    router.replace('/');
   };
 
   return (

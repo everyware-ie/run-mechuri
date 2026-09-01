@@ -82,6 +82,15 @@ type Props = {
   isInteracting: boolean;
   viewWidth: number;
   viewHeight: number;
+  /**
+   * 'contain'(기본) — 9:16 전체가 다 보이게 맞춘다. 화면 비율이 9:16과 다르면
+   * 위아래(또는 좌우)에 여백이 남는다(배경 이미지로 채워짐).
+   * 'cover' — 화면을 꽉 채우고 넘치는 만큼 잘라낸다. 실제 내보내기는 이 화면
+   * 크롭과 무관하게 항상 정확한 9:16 전체를 그린다(RouteRendererModule.swift가
+   * 화면 크기가 아니라 CANVAS_WIDTH/HEIGHT 기준으로 따로 계산) — 편집 중
+   * 미리보기에서만 화면을 꽉 채워 보여주는 표시 방식 차이일 뿐이다.
+   */
+  fit?: 'contain' | 'cover';
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -109,6 +118,7 @@ export function RoutePreview({
   isInteracting,
   viewWidth,
   viewHeight,
+  fit = 'contain',
 }: Props) {
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
@@ -160,7 +170,11 @@ export function RoutePreview({
   const targetDistance = totalDistance * progressFraction;
 
   // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
-  const fitScale = Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
+  // contain=min(다 보이게, 여백 남음) / cover=max(꽉 채우고 넘치는 만큼 자름).
+  const fitScale =
+    fit === 'cover'
+      ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
+      : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
   const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
   const offsetY = (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
 
@@ -200,7 +214,7 @@ export function RoutePreview({
         width={viewWidth}
         height={viewHeight}
         viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-        preserveAspectRatio="xMidYMid meet">
+        preserveAspectRatio={fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'}>
         <Defs>
           <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
             <FeGaussianBlur stdDeviation="6" result="b" />

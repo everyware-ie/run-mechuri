@@ -338,6 +338,7 @@ export default function EditScreen() {
                 isInteracting={isInteracting}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
+                fit="cover"
               />
             </View>
             <Text style={styles.cardHint}>
