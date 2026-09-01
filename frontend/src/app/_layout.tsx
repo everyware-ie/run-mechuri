@@ -34,22 +34,13 @@ export default function RootLayout() {
     <ThemeProvider value={DarkTheme}>
       <AnimatedSplashOverlay />
       <CreationFlowProvider>
+        {/* 시안대로 네이티브 내비 바를 쓰지 않는다 — 각 화면이 ScreenHeader로 상단 행을 직접 그린다. */}
         <Stack
           screenOptions={{
-            headerShown: true,
-            headerStyle: { backgroundColor: Colors.bg },
-            headerTintColor: Colors.text,
-            headerTitleStyle: { fontFamily: 'SpaceGrotesk_500Medium' },
+            headerShown: false,
             contentStyle: { backgroundColor: Colors.bg },
-          }}>
-          <Stack.Screen name="index" options={{ title: '메추리 런' }} />
-          <Stack.Screen name="record-selection" options={{ title: '기록 선택' }} />
-          <Stack.Screen name="background-selection" options={{ title: '배경 선택' }} />
-          <Stack.Screen name="edit" options={{ title: '편집' }} />
-          <Stack.Screen name="share" options={{ title: '공유' }} />
-          <Stack.Screen name="result/[id]" options={{ title: '결과물' }} />
-          <Stack.Screen name="dev-test" options={{ title: '개발용 확인' }} />
-        </Stack>
+          }}
+        />
       </CreationFlowProvider>
     </ThemeProvider>
   );

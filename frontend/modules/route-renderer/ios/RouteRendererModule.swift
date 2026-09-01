@@ -450,7 +450,22 @@ public class RouteRendererModule: Module {
     ctx.restoreGState()
   }
 
+  /// 배경을 출력 크기(1080×1920)로 한 번만 크롭·스케일한다(짧은 축 기준 확대 후 중앙 크롭).
+  /// writeClip 루프에서 프레임마다 원본을 다시 그리지 않도록.
+  private func prepareBackground(_ background: UIImage) -> UIImage {
+    let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+    let renderer = UIGraphicsImageRenderer(size: size)
+    return renderer.image { _ in
+      let bgSize = background.size
+      let bgScale = max(size.width / bgSize.width, size.height / bgSize.height)
+      let scaledSize = CGSize(width: bgSize.width * bgScale, height: bgSize.height * bgScale)
+      let origin = CGPoint(x: (size.width - scaledSize.width) / 2, y: (size.height - scaledSize.height) / 2)
+      background.draw(in: CGRect(origin: origin, size: scaledSize))
+    }
+  }
+
   /// §8 합성 순서(배경 → 경로 → 각인) + 프리셋별 진행 표현(§6).
+  /// `background`는 prepareBackground로 이미 출력 크기에 맞춰진 이미지다.
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
@@ -465,12 +480,8 @@ public class RouteRendererModule: Module {
     let targetDistance = totalDistance * progressFraction
 
     return renderer.image { _ in
-      // 배경: 화면을 가득 채우도록 짧은 축 기준 확대 후 중앙 크롭
-      let bgSize = background.size
-      let bgScale = max(size.width / bgSize.width, size.height / bgSize.height)
-      let scaledSize = CGSize(width: bgSize.width * bgScale, height: bgSize.height * bgScale)
-      let origin = CGPoint(x: (size.width - scaledSize.width) / 2, y: (size.height - scaledSize.height) / 2)
-      background.draw(in: CGRect(origin: origin, size: scaledSize))
+      // 배경은 이미 출력 크기 — 그대로 채운다.
+      background.draw(in: CGRect(origin: .zero, size: size))
 
       switch preset {
       case .defaultDrawing:
@@ -667,43 +678,58 @@ public class RouteRendererModule: Module {
     writer.startWriting()
     writer.startSession(atSourceTime: .zero)
 
+    // 배경은 프레임마다 안 바뀐다 — 화면 크기로 한 번만 크롭·스케일해 둔다.
+    // (매 프레임 원본을 다시 그리면 디코딩·스케일 비용 + 임시 버퍼가 쌓인다.)
+    let preparedBackground = self.prepareBackground(background)
+
+    var thrown: Error?
     for frameIndex in 0..<ClipSpec.totalFrames {
-      // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
-      if self.isCancelled {
+      // 각 프레임의 임시 할당(UIImage·CGImage·CoreGraphics 그림자 버퍼)을 즉시 반환한다.
+      // 이게 없으면 360프레임 × 수십 MB가 메서드가 끝날 때까지 쌓여 jetsam이 앱을 죽인다.
+      autoreleasepool {
+        // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
+        if self.isCancelled {
+          thrown = RouteRendererError.cancelled
+          return
+        }
+        // 매 프레임 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다.
+        if frameIndex % 6 == 0 {
+          self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
+        }
+
+        let progressFraction: Double
+        if frameIndex < ClipSpec.drawFrames {
+          progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
+        } else {
+          progressFraction = 1.0 // 정지 구간: 완성된 경로 유지 (§5-3)
+        }
+        let frameImage = self.drawFrame(
+          preset: preset,
+          background: preparedBackground,
+          projectedPoints: projectedPoints,
+          cumulativeDistances: cumulativeDistances,
+          totalDistance: totalDistance,
+          progressFraction: progressFraction,
+          stamp: stamp
+        )
+
+        guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {
+          thrown = RouteRendererError.pixelBufferPoolMissing
+          return
+        }
+
+        while !writerInput.isReadyForMoreMediaData && !self.isCancelled {
+          Thread.sleep(forTimeInterval: 0.01)
+        }
+        let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
+        adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
+      }
+
+      if let error = thrown {
         writer.cancelWriting()
         try? FileManager.default.removeItem(at: outputURL)
-        throw RouteRendererError.cancelled
+        throw error
       }
-      // 매 프레임마다 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다 보낸다.
-      if frameIndex % 6 == 0 {
-        self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
-      }
-
-      let progressFraction: Double
-      if frameIndex < ClipSpec.drawFrames {
-        progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
-      } else {
-        progressFraction = 1.0 // 정지 구간: 완성된 경로 유지 (§5-3)
-      }
-      let frameImage = drawFrame(
-        preset: preset,
-        background: background,
-        projectedPoints: projectedPoints,
-        cumulativeDistances: cumulativeDistances,
-        totalDistance: totalDistance,
-        progressFraction: progressFraction,
-        stamp: stamp
-      )
-
-      guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {
-        throw RouteRendererError.pixelBufferPoolMissing
-      }
-
-      while !writerInput.isReadyForMoreMediaData {
-        Thread.sleep(forTimeInterval: 0.01)
-      }
-      let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
-      adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
     }
 
     writerInput.markAsFinished()

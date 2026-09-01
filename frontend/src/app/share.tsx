@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { RouteThumbnail } from '@/components/route-thumbnail';
+import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -22,6 +24,8 @@ import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule'
 // 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
 // 디자인: "1a 야간 네온"
+
+const CARD_SIZE = 300;
 
 const UI_SHOW_DELAY = 300;
 const UI_MIN_HOLD = 500;
@@ -146,15 +150,20 @@ export default function ShareScreen() {
     // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
     // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
     const MediaLibrary = await import('expo-media-library');
-    const { status } = await MediaLibrary.requestPermissionsAsync();
+    // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
+    // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
+    // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
+    // writeOnly로 요청해 plist와 맞춘다.
+    const { status } = await MediaLibrary.requestPermissionsAsync(true);
     if (status !== 'granted') {
-      setSaveStatus('사진 저장 권한이 거부됐어요. 인스타 공유는 4단계에서 붙습니다.');
+      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
       return;
     }
     try {
       await MediaLibrary.saveToLibraryAsync(outputPath);
       setSaveStatus('기기에 저장했어요');
-    } catch {
+    } catch (error) {
+      console.warn('saveToLibraryAsync failed', error);
       setSaveStatus('저장에 실패했어요');
     }
   };
@@ -186,33 +195,98 @@ export default function ShareScreen() {
       );
     }
 
-    // uiPhase === 'progress'
+    // uiPhase === 'progress' — "3안" 시안 S8a 인코딩 중.
+    const pct = Math.round(progress * 100);
+    const encTrack = draft.track;
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
+      <SafeAreaView style={styles.safeArea}>
+        <ScreenHeader title="내보내기" onBack={null} />
+        <View style={styles.doneBody}>
+          <View style={styles.encCard}>
+            {encTrack && draft.selectedRun && draft.backgroundImagePath && (
+              <>
+                <Image
+                  source={{ uri: draft.backgroundImagePath }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+                <RouteThumbnail
+                  points={encTrack.coordinates}
+                  transform={draft.transform}
+                  smoothOptions={draft.smoothOptions}
+                  run={draft.selectedRun}
+                  stampConfig={draft.stampConfig}
+                  size={CARD_SIZE}
+                />
+              </>
+            )}
+            <View style={styles.encOverlay}>
+              <Text style={styles.encPct}>{pct}%</Text>
+              <Text style={styles.encLabel}>영상으로 만드는 중</Text>
+            </View>
+          </View>
+
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${pct}%` }]} />
+          </View>
+          <Text style={styles.encSpec}>12초 · 1080×1920</Text>
+
+          <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
+          <Text style={styles.notice}>
+            이 화면을 벗어나도 인코딩은 계속됩니다. 끝나면 보관함에 완성으로 들어옵니다.
+          </Text>
         </View>
-        <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
       </SafeAreaView>
     );
   }
 
+  // §2-2: 여기까지 왔으면 인코딩이 끝났고, 편집 정보(트랙·배경·기록)는 다 있다.
+  // "3안" 전체 화면 시안(theme.ts 참고)의 S8b 공유 카드 — 배경 위에 완주 시점의
+  // 경로·각인을 얹고, 그 아래 거리·날짜를 둔다. 보관함 상세(result/[id].tsx)와 같은
+  // 구성이라 "완성됐고 이게 보관함에 이렇게 남는다"가 한눈에 읽힌다.
+  const { selectedRun, track, backgroundImagePath } = draft;
+  if (!selectedRun || !track || !backgroundImagePath) {
+    return <SafeAreaView style={styles.center} />;
+  }
+
   return (
-    <SafeAreaView style={styles.center}>
-      <Text style={styles.title}>완성!</Text>
-      <Text style={styles.path}>{outputPath}</Text>
-      <View style={styles.actionColumn}>
-        <ThemedButton title="기기에 저장" onPress={handleSaveToPhotos} />
-        {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
-        <Text style={styles.notice}>인스타그램 공유는 4단계(인스타 브릿지)에서 붙습니다.</Text>
-        <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
+    <SafeAreaView style={styles.safeArea}>
+      <ScreenHeader title="완성!" onBack={null} />
+      <View style={styles.doneBody}>
+        <View style={styles.card}>
+          <Image source={{ uri: backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <RouteThumbnail
+            points={track.coordinates}
+            transform={draft.transform}
+            smoothOptions={draft.smoothOptions}
+            run={selectedRun}
+            stampConfig={draft.stampConfig}
+            size={CARD_SIZE}
+          />
+          <Text style={styles.cardTag}>메추리 · {selectedRun.date.slice(0, 10)}</Text>
+        </View>
+        <Text style={styles.distance}>
+          {(selectedRun.distanceMeters / 1000).toFixed(2)}
+          <Text style={styles.distanceUnit}> km</Text>
+        </Text>
+
+        <View style={styles.actionColumn}>
+          <ThemedButton title="기기에 저장" onPress={handleSaveToPhotos} />
+          {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
+          <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
+          {/* §3 인스타그램 스토리 공유는 인스타 네이티브 브릿지(4단계) 이후. */}
+          <Text style={styles.notice}>
+            공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.{'\n'}
+            인스타그램 스토리 공유는 4단계(인스타 브릿지)에서 붙습니다.
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: Colors.bg },
   center: {
     flex: 1,
     backgroundColor: Colors.bg,
@@ -221,23 +295,76 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.sm,
   },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: Colors.text },
-  path: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 11,
-    color: Colors.textMuted,
-    textAlign: 'center',
+  doneBody: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
   },
-  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center' },
-  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
-  progressText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 32, color: Colors.text },
-  progressTrack: {
-    width: '80%',
-    height: 6,
-    borderRadius: 3,
+  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: Colors.text },
+  card: {
+    width: CARD_SIZE,
+    height: CARD_SIZE,
+    borderRadius: Radius.card,
+    overflow: 'hidden',
     backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+  },
+  cardTag: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: Colors.accent,
+  },
+  distance: {
+    fontFamily: 'SpaceGrotesk_700Bold',
+    fontSize: 34,
+    color: Colors.text,
+    letterSpacing: -1.2,
+    marginTop: Spacing.sm,
+  },
+  distanceUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
+  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
+  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
+  encCard: {
+    width: CARD_SIZE,
+    height: CARD_SIZE,
+    borderRadius: Radius.card,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+  },
+  encOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(11,13,16,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  encPct: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 40, color: Colors.accent, letterSpacing: -1.6 },
+  encLabel: {
+    fontFamily: 'JetBrainsMono_500Medium',
+    fontSize: 10.5,
+    letterSpacing: 1.2,
+    color: Colors.textMuted,
+  },
+  encSpec: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted, alignSelf: 'flex-start' },
+  progressTrack: {
+    alignSelf: 'stretch',
+    height: 3,
+    backgroundColor: Colors.border,
     overflow: 'hidden',
   },
-  progressFill: { height: 6, backgroundColor: Colors.accent },
-  cancelButton: { marginTop: Spacing.lg, minWidth: 140 },
+  progressFill: { height: 3, backgroundColor: Colors.accent },
+  cancelButton: { marginTop: Spacing.md, alignSelf: 'stretch' },
 });

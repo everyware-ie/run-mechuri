@@ -4,6 +4,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
@@ -64,14 +65,18 @@ export default function ResultDetailScreen() {
   if (result === undefined) return <SafeAreaView style={styles.safeArea} />;
   if (result === null) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.notice}>결과물을 찾을 수 없어요.</Text>
+      <SafeAreaView style={styles.safeArea}>
+        <ScreenHeader title="결과물" />
+        <View style={styles.center}>
+          <Text style={styles.notice}>결과물을 찾을 수 없어요.</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenHeader title="결과물" />
       <View style={styles.container}>
         <View style={styles.previewBox}>
           <RouteThumbnail

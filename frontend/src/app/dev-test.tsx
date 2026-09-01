@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Button, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScreenHeader } from '@/components/screen-header';
 import { useCreationFlow } from '@/state/creation-flow';
 
 import HealthKitBridge from '../../modules/health-kit-bridge/src/HealthKitBridgeModule';
@@ -108,6 +109,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenHeader title="개발용 확인" />
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>HealthKit 연결 확인</Text>
         <Button title="권한 요청 + 실외 러닝 불러오기" onPress={handleCheckHealth} />
