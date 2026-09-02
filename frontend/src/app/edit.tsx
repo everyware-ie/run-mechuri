@@ -202,6 +202,10 @@ export default function EditScreen() {
   // previewArea의 실측 크기 — 아래 panResponder 클로저 안에서 각인 탭 히트테스트에 쓴다.
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewSizeRef = useRef(previewSize);
+  // 가이드가 켜져 있는 동안은 미리보기 fit이 'cover'로 바뀐다(아래 JSX) — 히트테스트도
+  // 같은 fit을 써야 탭 좌표가 어긋나지 않는다.
+  const showSafeGuideRef = useRef(showSafeGuide);
+  showSafeGuideRef.current = showSafeGuide;
 
   // 실기기 피드백(2026-09-02): "각인 시트가 열려 있을 때만 각인을 옮길 수 있다"는
   // 기존 규칙 대신, 드로잉처럼 화면을 직접 탭한 지점으로 대상을 고른다 — §4-1이
@@ -224,8 +228,8 @@ export default function EditScreen() {
         setIsInteracting(true);
 
         // 탭 지점(뷰 픽셀) → 캔버스 좌표로 역변환해 각인 영역 히트테스트.
-        // RoutePreview가 실제로 쓰는 것과 같은 fit('cover-safe')·bottomInset이어야
-        // 좌표가 어긋나지 않는다(아래 JSX의 RoutePreview 호출과 값이 같아야 함).
+        // RoutePreview가 실제로 쓰는 것과 같은 fit·bottomInset이어야 좌표가 어긋나지
+        // 않는다(아래 JSX의 RoutePreview 호출과 값이 같아야 함).
         const run = selectedRunRef.current;
         const bounds = run ? computeStampBounds(run, stampConfigRef.current) : null;
         let isStamp = false;
@@ -233,7 +237,7 @@ export default function EditScreen() {
           const { fitScale, offsetX, offsetY } = computeFitTransform(
             previewSizeRef.current.width,
             previewSizeRef.current.height,
-            'cover-safe',
+            showSafeGuideRef.current ? 'cover' : 'cover-safe',
             SHEET_EXPANDED_HEIGHT + insets.bottom
           );
           const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
@@ -495,10 +499,17 @@ export default function EditScreen() {
                 isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
-                fit="cover-safe"
+                // 실기기 피드백(2026-09-02): 가이드(SafeAreaGuide)는 캔버스 전체
+                // 기준으로 인스타 UI가 덮는 위·아래 자리(아바타·답장창 모양)까지
+                // 보여주는 건데, cover-safe는 애초에 그 부분을 화면 밖으로
+                // 잘라내 버려서 가이드를 켜도 경계선만 화면 끝에 걸치고 아바타·
+                // 답장창 모양은 아예 안 보였다("이상하게 나온다"의 원인). 가이드를
+                // 볼 때만 캔버스 전체가 다 보이는 'cover'로 잠깐 바꿔서, 인스타
+                // UI가 실제로 어디를 덮는지 제대로 비교할 수 있게 한다.
+                fit={showSafeGuide ? 'cover' : 'cover-safe'}
                 // previewArea가 flex:1이라 바텀시트(펼친 상태 기준, 접으면 더
                 // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
-                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다.
+                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다. cover-safe에서만 쓰임.
                 bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
                 stampSelected={stampTargeted}
               />
