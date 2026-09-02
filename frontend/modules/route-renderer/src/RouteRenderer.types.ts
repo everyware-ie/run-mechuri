@@ -45,6 +45,8 @@ export type RenderClipOptions = {
   };
   stampX: number;
   stampY: number;
+  /** 각인 묶음 크기 배율(2026-09-02 추가). 기본 1. */
+  stampScale?: number;
   /** 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다. */
   caption: string;
   /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */

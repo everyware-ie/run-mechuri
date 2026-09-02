@@ -17,6 +17,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
+  computeFitTransform,
+  computeStampBounds,
   IDENTITY_TRANSFORM,
   RoutePreview,
   STAMP_LAYOUTS,
@@ -136,7 +138,9 @@ export default function EditScreen() {
     commitSmoothOptions(smoothOptionsRef.current);
   };
 
-  // §7: 각인 넷은 하나의 묶음 — 위치 하나만 갖는다. 크기·회전은 없다(§4-2, 끌기만 반응).
+  // §7: 각인 넷은 하나의 묶음 — 위치·크기 하나씩만 갖는다(2026-09-02: 원래 §4-2는
+  // "크기·회전 없음, 끌기만 반응"이었는데, 화면에서 직접 탭해 고르는 김에 크기
+  // 조정도 요청받아 scale을 추가했다 — 회전은 그대로 없음).
   const [stampConfig, setStampConfigState] = useState<StampConfig>(draft.stampConfig);
   const stampConfigRef = useRef(stampConfig);
   const updateStampConfig = (c: StampConfig) => {
@@ -189,13 +193,25 @@ export default function EditScreen() {
   const [isInteracting, setIsInteracting] = useState(false);
   const baseTransform = useRef<RouteTransform>(transform);
   const baseStampPosition = useRef(stampConfig.position);
+  const baseStampScale = useRef(stampConfig.scale ?? 1);
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
-  // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
-  // 렌더 중에 읽지 않고 제스처 핸들러에서만 읽으므로 ref로 둔다.
+  // draft.selectedRun은 이 화면에 들어오기 전에 이미 정해져 안 바뀌지만, panResponder는
+  // useRef라 첫 렌더 클로저를 그대로 들고 있으므로(아래) ref로 최신값을 보장한다.
+  const selectedRunRef = useRef(draft.selectedRun);
+  selectedRunRef.current = draft.selectedRun;
+  // previewArea의 실측 크기 — 아래 panResponder 클로저 안에서 각인 탭 히트테스트에 쓴다.
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const previewSizeRef = useRef(previewSize);
+
+  // 실기기 피드백(2026-09-02): "각인 시트가 열려 있을 때만 각인을 옮길 수 있다"는
+  // 기존 규칙 대신, 드로잉처럼 화면을 직접 탭한 지점으로 대상을 고른다 — §4-1이
+  // 원래 요구하던 "화면에서 직접 탭해서도 고를 수 있게 한다"를 만족시킨다. 탭
+  // 지점이 각인의 대략적 영역(computeStampBounds, route-preview.tsx) 안이면 그
+  // 제스처는 각인을, 아니면 경로를 움직인다. 렌더 중에 읽지 않고 제스처 핸들러
+  // 안에서만 읽으므로 ref로 둔다. stampTargeted는 "지금 각인을 쥐고 있다"는 걸
+  // RoutePreview의 선택 점선 박스에 전달하는 용도라 state로 따로 둔다.
   const editTargetRef = useRef<'drawing' | 'stamp'>('drawing');
-  useEffect(() => {
-    editTargetRef.current = stampSheetOpen ? 'stamp' : 'drawing';
-  }, [stampSheetOpen]);
+  const [stampTargeted, setStampTargeted] = useState(false);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -206,12 +222,39 @@ export default function EditScreen() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         setIsInteracting(true);
-        if (editTargetRef.current === 'stamp') {
-          baseStampPosition.current = stampConfigRef.current.position;
-          return;
+
+        // 탭 지점(뷰 픽셀) → 캔버스 좌표로 역변환해 각인 영역 히트테스트.
+        // RoutePreview가 실제로 쓰는 것과 같은 fit('cover-safe')·bottomInset이어야
+        // 좌표가 어긋나지 않는다(아래 JSX의 RoutePreview 호출과 값이 같아야 함).
+        const run = selectedRunRef.current;
+        const bounds = run ? computeStampBounds(run, stampConfigRef.current) : null;
+        let isStamp = false;
+        if (bounds) {
+          const { fitScale, offsetX, offsetY } = computeFitTransform(
+            previewSizeRef.current.width,
+            previewSizeRef.current.height,
+            'cover-safe',
+            SHEET_EXPANDED_HEIGHT + insets.bottom
+          );
+          const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
+          const canvasX = (touch.locationX - offsetX) / fitScale;
+          const canvasY = (touch.locationY - offsetY) / fitScale;
+          isStamp =
+            canvasX >= bounds.x &&
+            canvasX <= bounds.x + bounds.width &&
+            canvasY >= bounds.y &&
+            canvasY <= bounds.y + bounds.height;
         }
-        baseTransform.current = transformRef.current;
+        editTargetRef.current = isStamp ? 'stamp' : 'drawing';
+        setStampTargeted(isStamp);
+
         const touches = evt.nativeEvent.touches;
+        if (isStamp) {
+          baseStampPosition.current = stampConfigRef.current.position;
+          baseStampScale.current = stampConfigRef.current.scale ?? 1;
+        } else {
+          baseTransform.current = transformRef.current;
+        }
         if (touches.length === 2) {
           gestureStart.current = {
             distance: touchDistance(touches[0], touches[1]),
@@ -222,18 +265,37 @@ export default function EditScreen() {
         }
       },
       onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        const touches = evt.nativeEvent.touches;
         if (editTargetRef.current === 'stamp') {
-          // §4-2: 각인은 끌기(위치)만 반응한다.
-          updateStampConfig({
-            ...stampConfigRef.current,
-            position: {
-              x: baseStampPosition.current.x + gestureState.dx,
-              y: baseStampPosition.current.y + gestureState.dy,
-            },
-          });
+          // 각인은 끌기(위치) + 두 손가락 핀치(크기)만 반응한다 — 회전은 없음.
+          if (touches.length === 2) {
+            if (!gestureStart.current) {
+              gestureStart.current = {
+                distance: touchDistance(touches[0], touches[1]),
+                angle: touchAngleDeg(touches[0], touches[1]),
+              };
+            }
+            const newDistance = touchDistance(touches[0], touches[1]);
+            const scaleDelta = newDistance / (gestureStart.current.distance || 1);
+            updateStampConfig({
+              ...stampConfigRef.current,
+              position: {
+                x: baseStampPosition.current.x + gestureState.dx,
+                y: baseStampPosition.current.y + gestureState.dy,
+              },
+              scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
+            });
+          } else {
+            updateStampConfig({
+              ...stampConfigRef.current,
+              position: {
+                x: baseStampPosition.current.x + gestureState.dx,
+                y: baseStampPosition.current.y + gestureState.dy,
+              },
+            });
+          }
           return;
         }
-        const touches = evt.nativeEvent.touches;
         if (touches.length === 2) {
           if (!gestureStart.current) {
             gestureStart.current = {
@@ -261,6 +323,7 @@ export default function EditScreen() {
       },
       onPanResponderRelease: () => {
         setIsInteracting(false);
+        setStampTargeted(false);
         gestureStart.current = null;
         if (editTargetRef.current === 'stamp') {
           commitStampConfig(stampConfigRef.current);
@@ -360,9 +423,9 @@ export default function EditScreen() {
     router.push('/share');
   };
 
-  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const handlePreviewLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
+    previewSizeRef.current = { width, height };
     setPreviewSize({ width, height });
   };
 
@@ -437,6 +500,7 @@ export default function EditScreen() {
                 // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
                 // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다.
                 bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
+                stampSelected={stampTargeted}
               />
             </View>
             {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
@@ -446,7 +510,7 @@ export default function EditScreen() {
               <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
             </Pressable>
             <Text style={styles.cardHint}>
-              {stampSheetOpen ? '끌기 · 각인 묶음 위치' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
+              {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
             </Text>
           </>
         )}
@@ -522,9 +586,11 @@ export default function EditScreen() {
         </Animated.View>
       )}
 
-      {/* §7 각인 시트(S6) — 미리보기를 가리지 않도록 하단 패널로 둔다. 열려 있는 동안만
-          미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). 컨트롤
-          바텀시트와 자리를 다투지 않도록, 열려 있는 동안엔 그 시트를 안 그린다(위).
+      {/* §7 각인 시트(S6) — 프리셋·넣을 것·한 줄 문구 등 "값"을 고르는 곳. 위치·크기는
+          이제 이 시트를 열지 않아도 미리보기에서 각인을 직접 탭해 바꿀 수 있다(위
+          panResponder의 히트테스트, editTarget='stamp') — 이 시트는 텍스트 값 편집
+          전용으로 역할이 좁혀졌다. 컨트롤 바텀시트와 자리를 다투지 않도록, 열려
+          있는 동안엔 그 시트를 안 그린다(위).
           실기기 피드백(2026-09-02): 예전엔 이 시트가 손잡이 없는 고정 View라 접을
           수 없었다 — "화면의 반을 차지해서 각인 프리셋을 눌러도 바뀌는 게 안 보인다"는
           불만의 원인. 컨트롤 시트와 똑같이 sheetTranslateY/sheetPanResponder를 그대로

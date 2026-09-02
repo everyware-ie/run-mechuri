@@ -106,6 +106,7 @@ export default function ShareScreen() {
       },
       stampX: draft.stampConfig.position.x,
       stampY: draft.stampConfig.position.y,
+      stampScale: draft.stampConfig.scale ?? 1,
       caption: draft.stampConfig.caption ?? '',
       placeName: draft.stampConfig.placeName ?? '',
       runDate: selectedRun.date,

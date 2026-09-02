@@ -69,6 +69,9 @@ struct RenderClipOptionsInput: Record {
   @Field var stampItems: StampItemsInput = StampItemsInput()
   @Field var stampX: Double = 0
   @Field var stampY: Double = 0
+  /// 각인 묶음 크기 배율(2026-09-02 추가) — route-preview.tsx StampConfig.scale과 같은 개념.
+  /// 자리(stampX/Y)는 그대로 두고 글자 크기·내부 간격에만 곱한다.
+  @Field var stampScale: Double = 1
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
   /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
@@ -649,6 +652,10 @@ public class RouteRendererModule: Module {
       ctx.restoreGState()
     }
 
+    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(stampX/Y)는 그대로 두고
+    // 글자 크기·내부 간격에만 곱한다.
+    let s = CGFloat(stamp.stampScale)
+
     if stamp.stampLayout == "hero" {
       // 시안 S8b — 왼쪽 아래: 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
       let leftX = 64 + CGFloat(stamp.stampX)
@@ -656,19 +663,19 @@ public class RouteRendererModule: Module {
       let heroKeys = ["distance", "time", "pace"]
       let hero = keyed.first { heroKeys.contains($0.0) }
       let metaItems = keyed.filter { $0.0 != hero?.0 }.map { $0.1 }
-      let heroSize: CGFloat = 132
-      let heroY = hero != nil ? metaY - 44 : metaY
+      let heroSize: CGFloat = 132 * s
+      let heroY = hero != nil ? metaY - 44 * s : metaY
 
       if !metaItems.isEmpty {
         draw(metaItems.joined(separator: "   "), CGPoint(x: leftX, y: metaY),
-             UIFont.monospacedSystemFont(ofSize: 30, weight: .medium), .left)
+             UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .medium), .left)
       }
       if let hero {
         draw(hero.1, CGPoint(x: leftX, y: heroY), UIFont.systemFont(ofSize: heroSize, weight: .bold), .left)
       }
       if !caption.isEmpty {
-        let capY = (hero != nil ? heroY - heroSize + 6 : metaY) - (!metaItems.isEmpty && hero == nil ? 46 : 34)
-        draw(caption, CGPoint(x: leftX, y: capY), UIFont.systemFont(ofSize: 38, weight: .medium), .left)
+        let capY = (hero != nil ? heroY - heroSize + 6 * s : metaY) - (!metaItems.isEmpty && hero == nil ? 46 * s : 34 * s)
+        draw(caption, CGPoint(x: leftX, y: capY), UIFont.systemFont(ofSize: 38 * s, weight: .medium), .left)
       }
       return
     }
@@ -679,11 +686,11 @@ public class RouteRendererModule: Module {
     let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
 
     if !caption.isEmpty {
-      draw(caption, CGPoint(x: centerX, y: baseY - 58), UIFont.systemFont(ofSize: 34, weight: .medium), .center)
+      draw(caption, CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
     }
     if !items.isEmpty {
-      let fontSize: CGFloat = 28
-      let gap: CGFloat = 22
+      let fontSize: CGFloat = 28 * s
+      let gap: CGFloat = 22 * s
       let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
       let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
       let widths = items.map { ($0 as NSString).size(withAttributes: attrs).width }

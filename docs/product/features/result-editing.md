@@ -55,7 +55,7 @@
 값 계산·표기는 `frontend/src/lib/stamp-format.ts`(TS)에 common-rules FRD §7 표기 규칙(거리 소수 둘째 자리 km, 분'초"/km 페이스, mm:ss/h:mm:ss 시간, bpm 심박) 그대로 구현. Swift는 `RouteRendererModule.swift`의 `formatDistanceKm`/`formatDuration`/`formatPace`/`formatHeartRate`에 같은 규칙을 이식.
 
 - **하나의 묶음**(§4-1 "각인 넷은 하나의 묶음"): 위치는 `StampConfig.position` 하나뿐. 항목별 개별 배치는 로드맵
-- **편집 대상 고르기**(§4-1): `edit.tsx`에 "드로잉 / 각인" 토글을 새로 뒀다. 선택된 대상에만 제스처가 적용됨 — 각인은 끌기(위치)만, 크기·회전 없음(§4-2)
+- **편집 대상 고르기**(§4-1): 처음엔 각인 시트가 열려 있는 동안만 각인이 대상이 되는 방식이었다(사실상 [각인]/[완료] 버튼이 토글 역할). **2026-09-02부터는 화면에서 직접 탭한 지점으로 대상을 고른다** — 탭 지점이 각인의 대략적 영역 안이면 각인을, 아니면 드로잉을 움직인다(아래 "각인 탭-선택 + 크기 조정" 참고). §4-1 "화면에서 직접 탭해서도 고를 수 있게 한다"를 이제 만족한다
 - **표시 모드**(§7-2): 항상(기본) / 완성 후만 / 숨김. 항목별 켜고 끄기(§7-4)는 칩 4개, 심박은 `averageHeartRate`가 없는 기록이면 칩 자체가 안 뜬다(§2-3 빈 자리를 안 남김)
 - **값의 움직임**(§7-3): "항상" 모드는 `progressFraction`(0~1)에 따라 거리·시간이 0에서 최종값까지 카운트업. 거리는 그려진 선 길이가 아니라 `run.distanceMeters`를 씀 — 다듬기 세기를 바꿔도 표시 거리가 안 흔들림
 - **페이스·심박의 근사**: FRD는 "그 구간 값"/"그 시점 bpm"을 요구하지만, `RunRecord`가 평균값(`averagePaceSecPerKm`/`averageHeartRate`)만 갖고 있어(HealthKit 브릿지가 시계열을 안 읽어옴) 두 값 다 진행 내내 평균값으로 고정 표시한다. 시계열 데이터를 나중에 붙이면 이 근사를 없앨 수 있다
@@ -78,7 +78,7 @@
 - **각인 프리셋**(2026-09-01 추가, 2026-09-02 라벨 정정): `StampConfig.layout` — `'row'`(가운데 한 줄, 간결) / `'hero'`(왼쪽 아래 큰 거리 + 문구 + 메타, 시안 S8b). 처음엔 각인 시트에 "배치"라는 라벨을 썼는데, 이게 위치 배치가 아니라 표현 스타일을 고르는 프리셋이라는 피드백을 받아 드로잉 프리셋과 같은 라벨 패턴("각인 프리셋 · PRESET")으로 바꿨다. 기본 'hero'. `hero`의 히어로 숫자는 거리 → 시간 → 페이스 순으로 켜진 첫 항목. TS(`StampLayerSvg`)·Swift(`drawStamps`) 양쪽 분기. `StampLayout`은 확장 가능한 유니온이라 프리셋이 늘어도 이 자리만 늘리면 됨
 - 값은 `StampConfig`(caption·placeName·enabled.date·enabled.place)에 담아 draft/store/preview/thumbnail/renderer로 흐른다. 기존 저장분은 렌더 시 `?? ''` / `?? false`로 방어
 
-**아직 안 한 것**: 속도·색(§6). §4-1 "화면에서 직접 탭해서도 고를 수 있게 한다"는 요구는 토글 UI로만 만족시켰고, 드로잉/각인을 화면에서 직접 탭해 전환하는 건 아직 없다(히트테스트 미구현) — 다음에 붙일 것.
+**아직 안 한 것**: 속도·색(§6).
 
 ### 각인 시트를 컨트롤 시트와 같은 구조로 (2026-09-02)
 
@@ -100,8 +100,18 @@
 
 밝은 배경 사진 위에서 안전 영역 가이드 점선이 흐려 보인다는 피드백 — 각인 텍스트(`glowText`)와 같은 방식으로, 굵은 검정 아웃라인을 먼저 깔고 그 위에 밝은 주황 점선을 겹치는 이중 스트로크로 바꿨다(`SafeAreaGuide`).
 
+### 각인 탭-선택 + 크기 조정 (2026-09-02)
+
+"각인 시트를 열어야만 위치를 옮길 수 있다"가 불편하다는 피드백과, 드로잉처럼 각인도 화면에서 직접 탭해 고르고 끌기·핀치로 위치·크기를 바꿀 수 있게 해달라는 요청.
+
+- **탭 히트테스트**: `route-preview.tsx`에 `computeStampBounds(run, config)`를 새로 뒀다 — 각인 텍스트 레이아웃 계산(`stampTextDescriptors`, 그리기·바운즈 계산이 따로 놀면 어긋나서 하나로 합침)에서 대략적인 바운딩 박스를 뽑는다. `computeFitTransform(viewWidth, viewHeight, fit, bottomInset)`도 함께 분리해 `edit.tsx`가 RoutePreview와 똑같은 좌표 변환으로 탭 지점(뷰 픽셀) → 캔버스 좌표를 계산한다. `edit.tsx`의 `panResponder`가 `onPanResponderGrant`에서 이 바운즈 안인지로 그 제스처의 대상(`editTargetRef`)을 정한다 — 예전처럼 `stampSheetOpen`으로 정하지 않는다. 각인 시트는 이제 프리셋·넣을 것·한 줄 문구 같은 "값"만 편집하는 곳으로 역할이 좁혀졌다
+- **선택 표시**: 탭한 지점이 각인이면 `stampTargeted` state를 켜서 `RoutePreview`의 `stampSelected` prop으로 넘긴다 — 점선 박스(주황, `computeStampBounds` 그대로)를 각인 둘레에 그려 "지금 이걸 쥐고 있다"를 보여준다. 손을 떼면 꺼짐(계속 선택 상태를 유지하는 게 아니라, 쥐고 있는 동안만)
+- **크기 조정**: `StampConfig.scale`(기본 1) 추가 — 자리(`position`)는 그대로 두고 글자 크기·내부 간격에만 곱한다. 두 손가락 핀치의 거리 비율로 계산, 범위 0.5~3. **회전은 없음** — §4-2가 원래 "각인은 끌기만, 크기·회전 없음"이었는데 크기는 이번에 풀었고 회전은 그대로 안 풂(요청에 없었음) — 아래 "어긋남 기록"에 남김
+- **결과물(Swift) 반영**: `RouteRendererModule.swift`의 `RenderClipOptionsInput.stampScale`(기본 1)을 추가해 `drawStamps`가 TS `stampTextDescriptors`와 같은 배율 수식을 쓴다. `share.tsx`가 `draft.stampConfig.scale ?? 1`을 넘김 — 미리보기에서 키운 크기가 결과물에도 그대로 나옴
+
 ## 어긋남 기록
 
 - **각인 표시 모드(§7-3 "완성 후만" 포함) 선택 UI가 없어졌다** (2026-09-01). 시안 S6에 그 UI가 없어서 뺐다. `StampConfig.mode`는 데이터에 남아 'always' 고정으로 동작. FRD §7-3을 지키려면 UI를 다시 넣거나(시안의 "자리·없음"이 hidden을 겸하는 구조로 재해석) FRD를 시안에 맞춰 개정해야 함
 - **한 줄 문구·날짜·장소가 approved FRD에 없다** — route-rendering §7·result-editing §7은 각인을 넷으로 정의. 시안 S6 기준으로 구현했으니 phs00가 FRD에 반영 여부 결정
 - **미리보기(Skia/SVG)와 최종 mp4(CoreGraphics)의 한 줄 문구 폰트가 다르다** — 미리보기 Space Grotesk, Swift는 시스템 폰트(번들 폰트 파이프라인 없음). 각인 항목 폰트 불일치와 같은 종류
+- **각인에 크기 조정이 생겼다** (2026-09-02). approved FRD §4-2는 "각인은 끌기(위치)만 반응, 크기·회전 없음"으로 정의돼 있는데, 실기기 피드백으로 크기(scale)를 추가했다(회전은 그대로 없음). phs00가 FRD §4-2를 "위치·크기, 회전 없음"으로 개정할지 결정 필요

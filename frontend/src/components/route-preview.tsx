@@ -58,6 +58,10 @@ export type StampConfig = {
   placeName: string;
   /** 각인 묶음(문구 + 항목)은 하나의 묶음 — 위치 하나만 갖는다. 기본 자리(§7-5) 오프셋(캔버스 px). */
   position: { x: number; y: number };
+  /** 각인 묶음 크기 배율(2026-09-02 추가). 기본 자리(anchor)는 그대로 두고 글자 크기·
+   * 내부 간격만 이 값을 곱해 키우거나 줄인다 — 기존 저장분엔 없는 필드라 읽을 때
+   * `?? 1`로 방어. */
+  scale?: number;
 };
 
 export const IDENTITY_STAMP: StampConfig = {
@@ -67,6 +71,7 @@ export const IDENTITY_STAMP: StampConfig = {
   caption: '',
   placeName: '',
   position: { x: 0, y: 0 },
+  scale: 1,
 };
 
 // route-rendering FRD §7-5: 인스타 스토리에서 안 가려지는 영역. 원래 상단 14%·하단 20%
@@ -75,6 +80,35 @@ export const IDENTITY_STAMP: StampConfig = {
 const SAFE_AREA_TOP_RATIO = 0.17;
 const SAFE_AREA_BOTTOM_RATIO = 0.17;
 const STAMP_DEFAULT_Y = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 90;
+
+// 캔버스(1080x1920) 좌표 → 뷰 픽셀 변환. RoutePreview 내부(Canvas Group·SVG
+// 오버레이)와 edit.tsx(각인 탭 히트테스트)가 정확히 같은 좌표를 쓰려면 이 계산이
+// 한 곳에만 있어야 한다(2026-09-02, 각인 탭-선택 기능 추가하며 분리) — 따로
+// 베끼면 언젠가 둘이 조용히 어긋난다.
+export function computeFitTransform(
+  viewWidth: number,
+  viewHeight: number,
+  fit: 'contain' | 'cover' | 'cover-safe',
+  bottomInset = 0
+): { fitScale: number; offsetX: number; offsetY: number; usableHeight: number } {
+  const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
+  const safeHeight = CANVAS_HEIGHT * (1 - SAFE_AREA_TOP_RATIO - SAFE_AREA_BOTTOM_RATIO);
+  const usableHeight = fit === 'cover-safe' ? Math.max(1, viewHeight - bottomInset) : viewHeight;
+
+  const fitScale =
+    fit === 'cover'
+      ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
+      : fit === 'cover-safe'
+        ? Math.max(viewWidth / CANVAS_WIDTH, usableHeight / safeHeight)
+        : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
+  const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
+  const offsetY =
+    fit === 'cover-safe'
+      ? (usableHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
+      : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
+
+  return { fitScale, offsetX, offsetY, usableHeight };
+}
 
 // FRD: docs/specs/frd/route-rendering.md §5·§6 · docs/specs/frd/result-editing.md §2-1
 //
@@ -138,6 +172,9 @@ type Props = {
    * 밀려 들어가 안 보인다. 기본 0(전부 보인다고 가정).
    */
   bottomInset?: number;
+  /** 실기기 피드백(2026-09-02): 각인을 화면에서 직접 탭해 고를 때, 지금 각인이
+   * "선택된" 대상임을 점선 박스로 보여준다(edit.tsx가 탭 히트테스트 결과로 켬). */
+  stampSelected?: boolean;
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -167,6 +204,7 @@ export function RoutePreview({
   viewHeight,
   fit = 'contain',
   bottomInset = 0,
+  stampSelected = false,
 }: Props) {
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
@@ -252,34 +290,12 @@ export function RoutePreview({
   // 말한 게 아니라 "손을 뗐다"는 뜻이었을 뿐, 재생 자체의 비용은 그대로였다).
   const blurScale = isInteracting ? 0.4 : 0.7;
 
-  // 안전 영역(캔버스 좌표) — cover-safe 계산에 쓴다. 캔버스 전체가 아니라 이
-  // 구간만 꽉 채우면, 어차피 스토리에서 가려질 위아래만 잘려 나간다.
-  const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
-  const safeHeight = CANVAS_HEIGHT * (1 - SAFE_AREA_TOP_RATIO - SAFE_AREA_BOTTOM_RATIO);
-
-  // 실기기 피드백(2026-09-02): edit.tsx의 미리보기 View는 flex:1이라 바텀시트가
-  // 가리는 만큼까지 포함해서 onLayout 높이가 잡힌다(시트는 그 위에 겹쳐 그리는
-  // absolute 오버레이라 별도 flex 공간을 안 차지함) — cover-safe가 "안전 영역"을
-  // 이 높이 전체에 꽉 채우면, 안전 영역 하단 가까이(STAMP_DEFAULT_Y) 있는 각인
-  // 텍스트가 실제로는 시트 뒤로 밀려 들어가 안 보이게 됐다. bottomInset(시트가
-  // 가리는 만큼)을 빼고 "실제로 보이는 높이"만 기준으로 안전 영역을 채운다.
-  const usableHeight = fit === 'cover-safe' ? Math.max(1, viewHeight - bottomInset) : viewHeight;
-
   // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
   // contain=min(다 보이게, 여백 남음) / cover=max(캔버스 전체 기준 꽉 채움) /
-  // cover-safe=max(안전 영역 기준, 시트에 안 가려진 높이만 채움).
-  const fitScale =
-    fit === 'cover'
-      ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
-      : fit === 'cover-safe'
-        ? Math.max(viewWidth / CANVAS_WIDTH, usableHeight / safeHeight)
-        : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
-  const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
-  // cover-safe는 캔버스 중앙이 아니라 "안 가려진 영역" 중앙에 안전 영역 중앙을 맞춘다.
-  const offsetY =
-    fit === 'cover-safe'
-      ? (usableHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
-      : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
+  // cover-safe=max(안전 영역 기준, 시트에 안 가려진 높이만 채움). edit.tsx의 각인
+  // 탭 히트테스트도 같은 computeFitTransform을 쓴다 — 계산이 어긋나면 안 된다.
+  const { fitScale, offsetX, offsetY } = computeFitTransform(viewWidth, viewHeight, fit, bottomInset);
+  const stampBounds = stampSelected ? computeStampBounds(run, stampConfig) : null;
 
   // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy)
   const groupTransform = [
@@ -349,6 +365,19 @@ export function RoutePreview({
         <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
           {showSafeAreaGuide && <SafeAreaGuide />}
           <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
+          {stampBounds && (
+            <SvgRect
+              x={stampBounds.x}
+              y={stampBounds.y}
+              width={stampBounds.width}
+              height={stampBounds.height}
+              rx={16}
+              stroke={GLOW}
+              strokeWidth={3}
+              strokeDasharray="10,8"
+              fill="none"
+            />
+          )}
         </G>
       </Svg>
     </View>
@@ -679,20 +708,30 @@ function SafeAreaGuide() {
   );
 }
 
+type StampTextDescriptor = {
+  key: string;
+  x: number;
+  y: number;
+  size: number;
+  family: string;
+  text: string;
+  anchor: 'start' | 'middle';
+};
+
 // route-rendering FRD §7: 넷을 다 새긴다, 심박은 데이터 있을 때만, 항목별로 끈다.
 // §7-3: "항상"은 진행률 카운트업, "완성 후만"은 정지 구간에만. 거리는 기록된 총 거리 기준.
-export function StampLayerSvg({
-  run,
-  config,
-  progressFraction,
-}: {
-  run: RunRecord;
-  config: StampConfig;
-  progressFraction: number;
-}) {
+//
+// StampLayerSvg(그리기)와 computeStampBounds(탭 히트테스트·선택 박스)가 같은 좌표
+// 계산을 나눠 갖고 있으면 둘이 조용히 어긋나기 쉬워서, 실제 위치·크기 계산은 여기
+// 한 곳에만 두고 둘 다 이 함수를 부른다(2026-09-02, 각인 탭-선택 기능 추가하며 분리).
+function stampTextDescriptors(
+  run: RunRecord,
+  config: StampConfig,
+  progressFraction: number
+): StampTextDescriptor[] {
   const isComplete = progressFraction >= 1;
-  if (config.mode === 'hidden') return null;
-  if (config.mode === 'after' && !isComplete) return null;
+  if (config.mode === 'hidden') return [];
+  if (config.mode === 'after' && !isComplete) return [];
 
   const enabled = config.enabled ?? ({} as StampConfig['enabled']);
   const has = (k: StampItem) => {
@@ -721,30 +760,13 @@ export function StampLayerSvg({
   const layout: StampLayout = config.layout ?? 'row';
   const ALL_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
   const activeItems = ALL_ITEMS.filter(has);
-  if (activeItems.length === 0 && !caption) return null;
+  if (activeItems.length === 0 && !caption) return [];
 
-  // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
-  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
-  const glowText = (
-    key: string,
-    x: number,
-    y: number,
-    size: number,
-    family: string,
-    text: string,
-    anchor: 'start' | 'middle' = 'start'
-  ) => (
-    <Fragment key={key}>
-      <SvgText x={x} y={y} textAnchor={anchor} fontSize={size} fontFamily={family} fill="none" stroke="rgba(11,13,16,0.85)" strokeWidth={size * 0.24}>
-        {text}
-      </SvgText>
-      <SvgText x={x} y={y} textAnchor={anchor} fontSize={size} fontFamily={family} fill={LINE_WARM} filter="url(#stampGlow)">
-        {text}
-      </SvgText>
-    </Fragment>
-  );
-
-  const nodes: React.ReactNode[] = [];
+  // 각인 묶음 크기 배율(§ StampConfig.scale) — 기본 자리(앵커 x/y)는 그대로 두고
+  // 글자 크기·내부 간격에만 곱한다. 앵커 자체가 배율을 타면 크기를 키울 때마다
+  // 자리가 같이 밀려서 "고정된 자리에서 커진다"는 감각이 깨진다.
+  const s = config.scale ?? 1;
+  const nodes: StampTextDescriptor[] = [];
 
   if (layout === 'hero') {
     // 시안 S8b — 왼쪽 아래 정렬. 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
@@ -753,20 +775,44 @@ export function StampLayerSvg({
     const leftX = 64 + config.position.x;
     // 메타 줄 baseline을 하단 안전 영역 살짝 위에 두고 위로 쌓는다.
     const metaY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 40 + config.position.y;
-    const heroSize = 132;
-    const heroY = heroKey ? metaY - 44 : metaY;
+    const heroSize = 132 * s;
+    const heroY = heroKey ? metaY - 44 * s : metaY;
 
     if (metaItems.length > 0) {
-      nodes.push(glowText('meta', leftX, metaY, 30, 'JetBrainsMono_500Medium', metaItems.map(value).join('   ')));
+      nodes.push({
+        key: 'meta',
+        x: leftX,
+        y: metaY,
+        size: 30 * s,
+        family: 'JetBrainsMono_500Medium',
+        text: metaItems.map(value).join('   '),
+        anchor: 'start',
+      });
     }
     if (heroKey) {
-      nodes.push(glowText('hero', leftX, heroY, heroSize, 'SpaceGrotesk_700Bold', value(heroKey)));
+      nodes.push({
+        key: 'hero',
+        x: leftX,
+        y: heroY,
+        size: heroSize,
+        family: 'SpaceGrotesk_700Bold',
+        text: value(heroKey),
+        anchor: 'start',
+      });
     }
     if (caption) {
-      const capY = (heroKey ? heroY - heroSize + 6 : metaY) - (metaItems.length && !heroKey ? 46 : 34);
-      nodes.push(glowText('caption', leftX, capY, 38, 'SpaceGrotesk_500Medium', caption));
+      const capY = (heroKey ? heroY - heroSize + 6 * s : metaY) - (metaItems.length && !heroKey ? 46 * s : 34 * s);
+      nodes.push({
+        key: 'caption',
+        x: leftX,
+        y: capY,
+        size: 38 * s,
+        family: 'SpaceGrotesk_500Medium',
+        text: caption,
+        anchor: 'start',
+      });
     }
-    return <>{nodes}</>;
+    return nodes;
   }
 
   // 'row' — 가운데 한 줄 + 문구는 그 위에.
@@ -775,22 +821,114 @@ export function StampLayerSvg({
   const items = activeItems.map(value);
 
   if (caption) {
-    nodes.push(glowText('caption', centerX, baseY - 58, 34, 'SpaceGrotesk_500Medium', caption, 'middle'));
+    nodes.push({
+      key: 'caption',
+      x: centerX,
+      y: baseY - 58 * s,
+      size: 34 * s,
+      family: 'SpaceGrotesk_500Medium',
+      text: caption,
+      anchor: 'middle',
+    });
   }
   if (items.length > 0) {
-    const fontSize = 28;
-    const gap = 22;
+    const fontSize = 28 * s;
+    const gap = 22 * s;
     const charWidth = fontSize * 0.62;
-    const widths = items.map((s) => s.length * charWidth);
+    const widths = items.map((str) => str.length * charWidth);
     const totalWidth = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
     let cursorX = centerX - totalWidth / 2;
     items.forEach((text, i) => {
-      nodes.push(glowText(`item-${i}`, cursorX, baseY, fontSize, 'JetBrainsMono_700Bold', text));
+      nodes.push({
+        key: `item-${i}`,
+        x: cursorX,
+        y: baseY,
+        size: fontSize,
+        family: 'JetBrainsMono_700Bold',
+        text,
+        anchor: 'start',
+      });
       cursorX += widths[i] + gap;
     });
   }
 
-  return <>{nodes}</>;
+  return nodes;
+}
+
+export function StampLayerSvg({
+  run,
+  config,
+  progressFraction,
+}: {
+  run: RunRecord;
+  config: StampConfig;
+  progressFraction: number;
+}) {
+  const nodes = stampTextDescriptors(run, config, progressFraction);
+  if (nodes.length === 0) return null;
+
+  // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
+  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
+  return (
+    <>
+      {nodes.map((n) => (
+        <Fragment key={n.key}>
+          <SvgText
+            x={n.x}
+            y={n.y}
+            textAnchor={n.anchor}
+            fontSize={n.size}
+            fontFamily={n.family}
+            fill="none"
+            stroke="rgba(11,13,16,0.85)"
+            strokeWidth={n.size * 0.24}>
+            {n.text}
+          </SvgText>
+          <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={LINE_WARM} filter="url(#stampGlow)">
+            {n.text}
+          </SvgText>
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+export type CanvasRect = { x: number; y: number; width: number; height: number };
+
+// 실기기 피드백(2026-09-02): 각인도 드로잉처럼 화면에서 직접 탭해 고르고
+// 끌기·핀치로 위치·크기를 바꿀 수 있게 해달라는 요청 — edit.tsx가 탭 지점이
+// 각인 위인지 판정(히트테스트)하고, 선택 중엔 이 사각형으로 점선 박스를 그린다.
+// 진행률에 따라 숫자가 카운트업되며 폭이 미세하게 변하지만(예: "0.00km"→"5.23km")
+// 자리·대략적인 크기는 거의 안 변하므로, 히트테스트·선택 박스 목적으로는 완주
+// 시점(progressFraction=1) 값으로 고정 계산해도 충분하다 — 매 프레임 재계산할
+// 필요가 없다.
+export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasRect | null {
+  const nodes = stampTextDescriptors(run, config, 1);
+  if (nodes.length === 0) return null;
+
+  // 글자폭 추정치라 정확하진 않지만, 탭 히트박스는 넉넉한 편이 오히려 쓰기 좋다.
+  let left = Infinity;
+  let right = -Infinity;
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const n of nodes) {
+    const width = n.text.length * n.size * 0.62;
+    const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.x;
+    const nodeRight = nodeLeft + width;
+    const nodeTop = n.y - n.size * 0.85; // 대략적인 ascent
+    const nodeBottom = n.y + n.size * 0.3; // 대략적인 descent
+    left = Math.min(left, nodeLeft);
+    right = Math.max(right, nodeRight);
+    top = Math.min(top, nodeTop);
+    bottom = Math.max(bottom, nodeBottom);
+  }
+  const padding = 28;
+  return {
+    x: left - padding,
+    y: top - padding,
+    width: right - left + padding * 2,
+    height: bottom - top + padding * 2,
+  };
 }
 
 // route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.
