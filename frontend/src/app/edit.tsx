@@ -509,6 +509,11 @@ export default function EditScreen() {
 
   const handlePresetSelect = (preset: RoutePreset) => {
     commitPreset(preset);
+    // 실기기 피드백(2026-09-02): 재생이 기본 정지로 바뀐 뒤로, 프리셋을 눌러도
+    // 뭐가 달라지는지(불빛이 달리는지, 구간이 켜지는지) 안 보인다 — 프리셋을
+    // 고르는 그 순간만큼은 한 번 자동으로 재생해서 보여준다(누르면 한
+    // 사이클 후 자동으로 다시 정지, 위 isPlaying 타이머와 동일).
+    setIsPlaying(true);
   };
 
   const handleNext = () => {
@@ -621,10 +626,10 @@ export default function EditScreen() {
                 않는다. */}
             <Pressable
               onPress={() => setIsPlaying((v) => !v)}
-              style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
+              style={[styles.playToggle, { bottom: 8 + insets.bottom }, isPlaying && styles.playToggleOn]}>
               <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
             </Pressable>
-            <Text style={styles.cardHint}>
+            <Text style={[styles.cardHint, { bottom: 14 + insets.bottom }]}>
               {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
             </Text>
           </>

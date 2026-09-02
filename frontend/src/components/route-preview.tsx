@@ -1,5 +1,5 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -235,88 +235,44 @@ export function RoutePreview({
   const rawFullPath = useMemo(() => skPath(rawProjected), [rawProjected]);
   const fullPath = useMemo(() => skPath(projected), [projected]);
 
-  const [elapsed, setElapsed] = useState(0);
-  const frameRef = useRef<number | null>(null);
-  const lastTsRef = useRef<number | null>(null);
-  const accumulatedRef = useRef(0);
-
-  // light-runner의 각인(거리·시간·페이스) 카운트업 숫자용 — 캔버스 자체는
-  // LightRunnerLayer 안의 SharedValue가 UI 스레드에서 그리므로 이 값과 무관하다.
-  // 대략 30단계(≈33ms)마다만 낮춰서 받으므로 숫자가 튀지 않으면서도 JS 리렌더는
-  // 훨씬 드물다.
-  const [lightRunnerStampProgress, setLightRunnerStampProgress] = useState(0);
+  // 실기기 피드백(2026-09-02): 세 프리셋 다 이제 진행률을 Reanimated
+  // SharedValue(UI 스레드)로 들고 있어서(아래 useUIThreadProgress·
+  // LightRunnerLayer), 여기 JS 쪽엔 "그리기 자체"를 위한 진행률 state가 더 이상
+  // 없다 — 각인(거리·시간·페이스) 카운트업 숫자를 SVG로 그리는 데만 이 값이
+  // 필요해서, 어느 프리셋이 켜져 있든 그 프리셋 레이어가 onProgressSample로
+  // 대략 30단계마다만 낮춰서 여기로 올려준다(JS 리렌더가 드묾).
+  const [uiStampProgress, setUiStampProgress] = useState(0);
 
   // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
-  // ref는 안 건드린다). 프레임 delta는 아래 tick에서 어차피 0.1초로 클램프한다.
+  // ref는 안 건드린다).
   const [seenPreset, setSeenPreset] = useState(preset);
   if (seenPreset !== preset) {
     setSeenPreset(preset);
-    setElapsed(0);
-    setLightRunnerStampProgress(0);
+    setUiStampProgress(0);
   }
 
   // 재생 버튼(2026-09-02): 정지(playing=false) → 재생(true)으로 바뀔 때마다
-  // 처음부터 다시 재생한다. light-runner는 elapsed(JS state)가 아니라
-  // LightRunnerLayer 내부의 Reanimated SharedValue가 진행률을 들고 있어서
-  // (UI 스레드), 여기서 elapsed만 0으로 되돌려서는 그쪽까지 리셋이 안 된다 —
-  // playToken을 바꿔 LightRunnerLayer를 강제로 다시 마운트시킨다(프리셋이
-  // 바뀔 때 자연히 새로 마운트되며 리셋되는 것과 같은 방식).
+  // 처음부터 다시 재생한다. light-runner는 진행률을 LightRunnerLayer 내부의
+  // Reanimated SharedValue(UI 스레드)가 들고 있어서, playToken을 바꿔 그
+  // 컴포넌트를 강제로 다시 마운트시켜 리셋한다(프리셋이 바뀔 때 자연히 새로
+  // 마운트되며 리셋되는 것과 같은 방식). 나머지 둘(useUIThreadProgress)은
+  // playing 값 자체가 바뀌는 걸 보고 훅 안에서 직접 리셋하므로 재마운트가
+  // 필요 없다.
   const [playToken, setPlayToken] = useState(0);
   const [seenPlaying, setSeenPlaying] = useState(playing);
   if (seenPlaying !== playing) {
     setSeenPlaying(playing);
     if (playing) {
-      setElapsed(0);
-      setLightRunnerStampProgress(0);
+      setUiStampProgress(0);
       setPlayToken((t) => t + 1);
     }
   }
-
-  // light-runner는 이 JS state 루프를 아예 안 쓴다 — 아래 LightRunnerLayer가
-  // Reanimated로 UI 스레드에서 직접 돌린다(2026-09-01, "html처럼 안 부드럽다"는
-  // 실기기 피드백). 여기서 계속 돌리면 안 보이는 애니메이션에 리소스만 낭비된다.
-  //
-  // 실기기 피드백(2026-09-02): "재생 중엔 편집(경로·각인 이동)이 계속 느리다" —
-  // 재생과 조작이 겹치는 걸 원천적으로 줄이려고, 명시적으로 재생 버튼을
-  // 누르지 않으면(playing=false, edit.tsx 기본값) 이 루프 자체를 안 돌린다.
-  useEffect(() => {
-    if (isInteracting || preset === 'light-runner' || !playing) {
-      lastTsRef.current = null;
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-      return;
-    }
-    const tick = (ts: number) => {
-      if (lastTsRef.current !== null) {
-        const delta = Math.min(0.1, (ts - lastTsRef.current) / 1000);
-        accumulatedRef.current += delta;
-        // 실기기 피드백(2026-09-01): requestAnimationFrame은 화면 주사율 그대로
-        // 불린다 — ProMotion(120Hz) 기기에서는 이 애니메이션(Canvas 재구성 +
-        // Shadow 블러 30~80px 여러 겹)이 초당 최대 120번 다시 그려졌다. 천천히
-        // 진행되는 그리기 효과라 30fps로도 눈에 매끄러워서, state 갱신(=실제 다시
-        // 그리는 시점)만 그 주기로 묶는다 — requestAnimationFrame 자체는 계속
-        // 걸어서 화면 주사율과 무관하게 타이밍은 정확하게 유지한다.
-        const FRAME_INTERVAL = 1 / 30;
-        if (accumulatedRef.current >= FRAME_INTERVAL) {
-          const applied = accumulatedRef.current;
-          accumulatedRef.current = 0;
-          setElapsed((prev) => (prev + applied) % CYCLE_SECONDS);
-        }
-      }
-      lastTsRef.current = ts;
-      frameRef.current = requestAnimationFrame(tick);
-    };
-    frameRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
-    };
-  }, [isInteracting, preset, playing]);
 
   if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
   // 썸네일이 "완성된 순간"만 보여주는 것과 같은 원칙.
-  const progressFraction = playing ? Math.min(elapsed / DRAW_SECONDS, 1) : 1;
-  const stampProgressFraction = !playing ? 1 : preset === 'light-runner' ? lightRunnerStampProgress : progressFraction;
+  const stampProgressFraction = !playing ? 1 : uiStampProgress;
   // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
   // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
   // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
@@ -359,9 +315,11 @@ export function RoutePreview({
               projected={projected}
               cumulative={cumulative}
               totalDistance={totalDistance}
-              progressFraction={progressFraction}
               fullPath={fullPath}
+              isInteracting={isInteracting}
+              playing={playing}
               blurScale={blurScale}
+              onProgressSample={setUiStampProgress}
             />
           )}
           {preset === 'light-runner' && (
@@ -377,11 +335,16 @@ export function RoutePreview({
               isInteracting={isInteracting}
               playing={playing}
               blurScale={blurScale}
-              onProgressSample={setLightRunnerStampProgress}
+              onProgressSample={setUiStampProgress}
             />
           )}
           {preset === 'default-drawing' && (
-            <DefaultDrawingLayer fullPath={fullPath} progressFraction={progressFraction} />
+            <DefaultDrawingLayer
+              fullPath={fullPath}
+              isInteracting={isInteracting}
+              playing={playing}
+              onProgressSample={setUiStampProgress}
+            />
           )}
         </Group>
       </Canvas>
@@ -435,16 +398,21 @@ export function RoutePreview({
 // trim(start/end)으로 잘라 그린다(2026-09-01).
 function DefaultDrawingLayer({
   fullPath,
-  progressFraction,
+  isInteracting,
+  playing,
+  onProgressSample,
 }: {
   fullPath: ReturnType<typeof skPath>;
-  progressFraction: number;
+  isInteracting: boolean;
+  playing: boolean;
+  onProgressSample: (progress: number) => void;
 }) {
+  const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
   return (
     <Path
       path={fullPath}
       start={0}
-      end={progressFraction}
+      end={progress}
       style="stroke"
       strokeWidth={9}
       strokeCap="round"
@@ -459,6 +427,52 @@ function DefaultDrawingLayer({
 // 출력과 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온
 // 길(+글로우) + 최근 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
 //
+// 실기기 피드백(2026-09-02) "기본 드로잉/구간 점등도 여전히 느리다" — light-runner만
+// Reanimated(UI 스레드)로 옮겨져 있었고, 나머지 둘은 아직 elapsed를 React state로 두고
+// 매 프레임 setState → 리렌더 → Skia가 새 트리를 받는 왕복을 거쳤다(위 light-runner
+// 주석과 같은 문제). 이 훅이 그 왕복을 없앤 "진행률" 하나를 세 프리셋이 공통으로
+// 쓸 수 있게 뽑아낸 것 — light-runner는 targetDistance·잔광 등 자기만의 파생값이
+// 많아 자기 것을 그대로 두고, DefaultDrawingLayer·SegmentLayer가 이걸 쓴다.
+function useUIThreadProgress(
+  isInteracting: boolean,
+  playing: boolean,
+  onProgressSample: (progress: number) => void
+) {
+  const elapsed = useSharedValue(0);
+  const progress = useDerivedValue(() => Math.min(elapsed.value / DRAW_SECONDS, 1));
+
+  const frameCallback = useFrameCallback((frameInfo) => {
+    if (frameInfo.timeSincePreviousFrame === null) return;
+    const delta = Math.min(0.1, frameInfo.timeSincePreviousFrame / 1000);
+    elapsed.value = (elapsed.value + delta) % CYCLE_SECONDS;
+  });
+
+  useEffect(() => {
+    frameCallback.setActive(!isInteracting && playing);
+  }, [isInteracting, playing, frameCallback]);
+
+  // 재생 버튼(2026-09-02): 정지 상태(playing=false)에선 완성된 모습을 보여주고
+  // (light-runner와 같은 원칙), 재생을 누를 때마다(playing이 true로 바뀔 때)
+  // 처음부터 다시 그린다 — light-runner처럼 key={playToken}으로 컴포넌트를
+  // 통째로 다시 마운트시키지 않고, 이 훅 안에서 직접 elapsed를 리셋한다.
+  useEffect(() => {
+    elapsed.value = playing ? 0 : DRAW_SECONDS;
+  }, [playing, elapsed]);
+
+  // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
+  // 30단계로만 낮춰서 JS 쪽에 넘긴다(light-runner와 같은 이유).
+  useAnimatedReaction(
+    () => Math.floor(progress.value * 30),
+    (bucket, prevBucket) => {
+      if (bucket !== prevBucket) {
+        scheduleOnRN(onProgressSample, progress.value);
+      }
+    }
+  );
+
+  return progress;
+}
+
 // 실기기 피드백(2026-09-01) "html처럼 부드럽지 않다, 앱의 한계냐" — 한계가 아니라
 // 구조 문제였다. 이전까지는 진행률(elapsed)을 React state로 두고 매 프레임 setState →
 // 리렌더 → Skia가 새 트리를 받는 왕복을 거쳤다. 여기서는 진행률을 Reanimated
@@ -588,73 +602,162 @@ function LightRunnerLayer({
 
 // 시안 "seg": 옅은 전체 경로 위에 구간마다(완료=밝게, 그리는 중=중간) 쌓고,
 // 방금 완료된 구간일수록 반짝인다.
+// 실기기 피드백(2026-09-02): light-runner만 UI 스레드(Reanimated)로 옮겨져 있어서
+// 구간 점등은 여전히 매 프레임 JS state(progressFraction)가 바뀔 때마다 이 함수
+// 전체가 다시 불려 도형 배열을 통째로 새로 만들었다 — 셋 중 가장 무거운 경로였다.
+// 구간 하나하나의 end/opacity/strokeWidth/blur를 각자의 Reanimated 파생값으로
+// 만들어 두면, 진행률이 바뀌어도 네이티브 쪽에서만 값이 갱신되고 이 컴포넌트
+// 자체는 다시 렌더링될 필요가 없다(light-runner와 같은 원리).
+//
+// 구간 개수(segmentCount)는 경로 길이에 따라 달라지는데, 컴포넌트 안에서 훅을
+// 개수만큼 반복 호출(.map 등)하면 React 훅 규칙을 어긴다 — 매 렌더 훅 호출 수가
+// 같아야 한다는 규칙은 여기선 "이 라우트가 살아있는 동안 segmentCount가 안
+// 바뀐다"고 보장할 수 없어서(다듬기 세기를 바꾸면 totalDistance가 바뀌고,
+// segmentCount도 같이 바뀔 수 있다) 실제로 위험하다. 그래서 넉넉한 고정 칸수
+// (MAX_SEGMENTS)만큼 항상 훅을 부르고, 실제 구간 수를 넘는 칸은 안 그린다
+// (opacity 0 등으로) — FRD §6-3 목표(점등 5~8회)를 크게 웃도는 값이다.
+const MAX_SEGMENTS = 12;
+
+function useSegmentReactiveProps(
+  progress: ReturnType<typeof useSharedValue<number>>,
+  segStartFraction: number,
+  segEndFraction: number,
+  blurScale: number,
+  active: boolean
+) {
+  const end = useDerivedValue(() => {
+    if (!active) return segStartFraction;
+    const p = progress.value;
+    if (p <= segStartFraction) return segStartFraction;
+    return Math.min(p, segEndFraction);
+  }, [active, segStartFraction, segEndFraction]);
+  const opacity = useDerivedValue(() => {
+    if (!active) return 0;
+    return progress.value >= segEndFraction ? 0.95 : 0.5;
+  }, [active, segEndFraction]);
+  const strokeWidth = useDerivedValue(() => {
+    if (!active) return 10;
+    const p = progress.value;
+    if (p < segEndFraction) return 10;
+    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
+    return 10 + justLit * 4;
+  }, [active, segEndFraction]);
+  const blur = useDerivedValue(() => {
+    if (!active) return 0;
+    const p = progress.value;
+    if (p < segEndFraction) return 0;
+    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
+    return (45 + justLit * 65) * blurScale;
+  }, [active, segEndFraction, blurScale]);
+  const dotR = useDerivedValue(() => {
+    if (!active) return 0;
+    const p = progress.value;
+    if (p < segEndFraction) return 0;
+    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
+    return 4 + justLit * 3;
+  }, [active, segEndFraction]);
+  const dotOpacity = useDerivedValue(() => {
+    if (!active) return 0;
+    return progress.value >= segEndFraction ? 1 : 0;
+  }, [active, segEndFraction]);
+  return { end, opacity, strokeWidth, blur, dotR, dotOpacity };
+}
+
 function SegmentLayer({
   projected,
   cumulative,
   totalDistance,
-  progressFraction,
   fullPath,
+  isInteracting,
+  playing,
   blurScale,
+  onProgressSample,
 }: {
   projected: CanvasPoint[];
   cumulative: number[];
   totalDistance: number;
-  progressFraction: number;
   fullPath: ReturnType<typeof skPath>;
+  isInteracting: boolean;
+  playing: boolean;
   blurScale: number;
+  onProgressSample: (progress: number) => void;
 }) {
-  if (totalDistance <= 0) return null;
-  const unit = segmentUnitMeters(totalDistance);
-  const segmentCount = Math.ceil(totalDistance / unit);
+  const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
 
-  const segments = [];
-  for (let s = 0; s < segmentCount; s++) {
-    const segStartDist = s * unit;
-    const segEndDist = Math.min(totalDistance, (s + 1) * unit);
-    const segStartFraction = segStartDist / totalDistance;
-    const segEndFraction = segEndDist / totalDistance;
-    if (progressFraction <= segStartFraction) break;
+  const unit = totalDistance > 0 ? segmentUnitMeters(totalDistance) : 1;
+  const segmentCount = totalDistance > 0 ? Math.min(MAX_SEGMENTS, Math.ceil(totalDistance / unit)) : 0;
 
-    const done = progressFraction >= segEndFraction;
-    const endDistance = done ? segEndDist : progressFraction * totalDistance;
-    const endFraction = endDistance / totalDistance;
-    const justLit = done ? Math.max(0, 1 - (progressFraction - segEndFraction) * 14) : 0;
-
-    // 실기기 피드백(2026-09-01): 구간마다 매 프레임 점 배열을 슬라이스해 새 Path를
-    // 만들었다 — fullPath 하나를 구간 경계 비율로 네이티브 trim해서 그리면 JS에서
-    // 점을 훑을 필요가 없다(위 light-runner/default-drawing과 같은 이유).
-    segments.push(
-      <Path
-        key={s}
-        path={fullPath}
-        start={segStartFraction}
-        end={endFraction}
-        style="stroke"
-        strokeWidth={10 + justLit * 4}
-        strokeCap="round"
-        strokeJoin="round"
-        opacity={done ? 0.95 : 0.5}
-        color={LINE_WARM}>
-        {done && <Shadow dx={0} dy={0} blur={(45 + justLit * 65) * blurScale} color={GLOW} />}
-      </Path>
-    );
-
-    if (done) {
-      const boundary = pointAtDistance(segEndDist, projected, cumulative);
-      if (boundary) {
-        segments.push(
-          <Circle key={`dot-${s}`} cx={boundary.x} cy={boundary.y} r={4 + justLit * 3} color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
-          </Circle>
-        );
-      }
+  // 구간 경계(거리·비율)는 totalDistance/unit이 바뀔 때만 다시 계산 — 매 프레임이 아니라
+  // "다듬기 세기를 바꿨다" 같은 드문 경우에만 바뀐다.
+  const bounds = useMemo(() => {
+    const arr: { segStartFraction: number; segEndFraction: number; segEndDist: number; active: boolean }[] = [];
+    for (let s = 0; s < MAX_SEGMENTS; s++) {
+      const segStartDist = s * unit;
+      const segEndDist = Math.min(totalDistance, (s + 1) * unit);
+      arr.push({
+        segStartFraction: totalDistance > 0 ? segStartDist / totalDistance : 0,
+        segEndFraction: totalDistance > 0 ? segEndDist / totalDistance : 0,
+        segEndDist,
+        active: s < segmentCount,
+      });
     }
-  }
+    return arr;
+  }, [unit, totalDistance, segmentCount]);
+
+  // 점(boundary dot) 자리는 시간에 안 따라 바뀌는 값이라(어느 구간이 "막 켜졌는지"의
+  // 잔광 정도만 바뀔 뿐, 점 자체의 캔버스 위치는 고정) 훅 없이 그냥 계산한다.
+  const dotPositions = useMemo(
+    () => bounds.map((b) => (b.active ? pointAtDistance(b.segEndDist, projected, cumulative) : undefined)),
+    [bounds, projected, cumulative]
+  );
+
+  // MAX_SEGMENTS는 리터럴 상수라 이 12개 호출은 매 렌더 항상 정확히 12번, 같은
+  // 순서로 실행된다(조건·반복문이 아니라 그냥 나열) — 실제 구간 수(segmentCount)가
+  // 몇이든 안전하다. bounds[i]가 없을 수 없도록 위에서 항상 MAX_SEGMENTS개를
+  // 채워 넣는다.
+  const seg0 = useSegmentReactiveProps(progress, bounds[0].segStartFraction, bounds[0].segEndFraction, blurScale, bounds[0].active);
+  const seg1 = useSegmentReactiveProps(progress, bounds[1].segStartFraction, bounds[1].segEndFraction, blurScale, bounds[1].active);
+  const seg2 = useSegmentReactiveProps(progress, bounds[2].segStartFraction, bounds[2].segEndFraction, blurScale, bounds[2].active);
+  const seg3 = useSegmentReactiveProps(progress, bounds[3].segStartFraction, bounds[3].segEndFraction, blurScale, bounds[3].active);
+  const seg4 = useSegmentReactiveProps(progress, bounds[4].segStartFraction, bounds[4].segEndFraction, blurScale, bounds[4].active);
+  const seg5 = useSegmentReactiveProps(progress, bounds[5].segStartFraction, bounds[5].segEndFraction, blurScale, bounds[5].active);
+  const seg6 = useSegmentReactiveProps(progress, bounds[6].segStartFraction, bounds[6].segEndFraction, blurScale, bounds[6].active);
+  const seg7 = useSegmentReactiveProps(progress, bounds[7].segStartFraction, bounds[7].segEndFraction, blurScale, bounds[7].active);
+  const seg8 = useSegmentReactiveProps(progress, bounds[8].segStartFraction, bounds[8].segEndFraction, blurScale, bounds[8].active);
+  const seg9 = useSegmentReactiveProps(progress, bounds[9].segStartFraction, bounds[9].segEndFraction, blurScale, bounds[9].active);
+  const seg10 = useSegmentReactiveProps(progress, bounds[10].segStartFraction, bounds[10].segEndFraction, blurScale, bounds[10].active);
+  const seg11 = useSegmentReactiveProps(progress, bounds[11].segStartFraction, bounds[11].segEndFraction, blurScale, bounds[11].active);
+  const slots = [seg0, seg1, seg2, seg3, seg4, seg5, seg6, seg7, seg8, seg9, seg10, seg11];
+
+  if (totalDistance <= 0) return null;
 
   return (
     <Group>
       <Path path={fullPath} style="stroke" strokeWidth={10} color={GHOST} />
-      {segments}
+      {slots.map((seg, s) => (
+        <Path
+          key={s}
+          path={fullPath}
+          start={bounds[s].segStartFraction}
+          end={seg.end}
+          style="stroke"
+          strokeWidth={seg.strokeWidth}
+          strokeCap="round"
+          strokeJoin="round"
+          opacity={seg.opacity}
+          color={LINE_WARM}>
+          <Shadow dx={0} dy={0} blur={seg.blur} color={GLOW} />
+        </Path>
+      ))}
+      {slots.map((seg, s) => {
+        const dot = dotPositions[s];
+        if (!dot) return null;
+        return (
+          <Circle key={`dot-${s}`} cx={dot.x} cy={dot.y} r={seg.dotR} color={LINE_WARM} opacity={seg.dotOpacity}>
+            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+          </Circle>
+        );
+      })}
     </Group>
   );
 }

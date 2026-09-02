@@ -117,6 +117,27 @@
 - light-runner는 진행률을 JS state가 아니라 `LightRunnerLayer` 내부 Reanimated `SharedValue`가 UI 스레드에서 들고 있어서, 재생을 다시 누를 때마다 `key={playToken}`으로 그 컴포넌트를 통째로 새로 마운트시켜 리셋한다(프리셋이 바뀔 때 자연히 새로 마운트되며 리셋되는 것과 같은 방식). 정지로 바뀔 때는 마운트가 유지되므로 `elapsed.value`를 완주 지점으로 직접 옮겨 다른 두 프리셋과 같은 "정지=완성" 을 맞춘다
 - **알려진 린트 소음**: `elapsed.value = DRAW_SECONDS`(JS `useEffect`에서 Reanimated SharedValue에 값을 쓰는, 문서화된 정상 패턴)를 `react-hooks/immutability` 규칙이 오탐한다 — `useFrameCallback`(워클릿) 안의 같은 종류 대입은 안 걸리는 것으로 봐서 워클릿 바깥에서의 SharedValue 대입을 인식 못 하는 도구 한계로 보인다. 이 세션에서 이미 허용 중인 `react-hooks/refs` 오탐과 같은 종류
 
+### 기본 드로잉·구간 점등도 UI 스레드로 — light-runner처럼 (2026-09-02)
+
+재생 버튼으로 바꾼 뒤에도 "재생이 뚝뚝 끊겨 보인다"는 피드백. light-runner만 2026-09-01에 Reanimated(UI 스레드)로 옮겨져 있었고, 나머지 둘(기본 드로잉·구간 점등)은 여전히 진행률(`elapsed`)을 React state로 두고 매 프레임 `setState` → 리렌더 → Skia가 새 트리를 받는 왕복을 거치고 있었다. "왜 기본 드로잉이 더 느리다고 느꼈는지"는 코드상 셋 중 가장 가벼운데도(블러조차 없음) 이상했는데, 이 JS 왕복 자체의 프레임 드랍이 블러 없는 얇은 선에서 오히려 더 도드라져 보였을 가능성이 크다 — 재생 버튼을 눌러 놓고 계속 지켜보는 상황이 되면서 이 자잘한 끊김이 더 잘 보이게 된 것도 있을 것.
+
+- `useUIThreadProgress(isInteracting, playing, onProgressSample)` 훅을 새로 뽑아 light-runner가 쓰던 것과 같은 패턴(`useSharedValue` + `useFrameCallback` + `useDerivedValue`)을 `DefaultDrawingLayer`·`SegmentLayer`가 공통으로 쓰게 했다(light-runner 자신은 targetDistance·잔광 등 자기만의 파생값이 많아 손대지 않고 그대로 둠). 재생을 다시 누르면(`playing`이 `false→true`) 이 훅이 직접 `elapsed.value`를 0으로 되돌린다 — light-runner처럼 `key`로 컴포넌트를 다시 마운트시키지 않아도 됨
+- `SegmentLayer`가 셋 중 제일 무거웠던 이유는 매 프레임 이 함수 자체가 다시 불려 구간(Path·Circle) 배열을 통째로 새로 만들었기 때문 — 구간 하나하나의 `end`/`opacity`/`strokeWidth`/`blur`를 각자의 `useDerivedValue`로 만들어서, 진행률이 바뀌어도 네이티브 쪽에서만 값이 갱신되고 이 컴포넌트 자체는 다시 렌더링될 필요가 없게 했다
+- **구간 개수는 경로마다 다른데 훅은 개수만큼 반복 호출할 수 없다**(React 훅 규칙 — 매 렌더 호출 수가 같아야 함, `.map` 안에서 훅을 부르면 안 됨). `MAX_SEGMENTS = 12`(FRD §6-3 목표 5~8회를 웃도는 여유값)만큼 항상 훅을 부르고, 실제 구간 수를 넘는 칸은 `active=false`로 표시만 안 되게 한다(끝쪽 몇 칸은 매 프레임 계산은 하지만 안 그려짐 — 안전과 성능의 절충)
+- 진행률(`elapsed`)이 세 프리셋 다 이제 UI 스레드에 있어서, `RoutePreview`의 옛 JS tick 루프(`elapsed`/`frameRef`/`lastTsRef`/`accumulatedRef`, requestAnimationFrame + 30fps 스로틀)는 완전히 죽은 코드가 됐다 — 통째로 지웠다. 각인 카운트업 숫자용 진행률만 `uiStampProgress` 하나로 남았고, 세 레이어 전부 같은 `onProgressSample` 콜백으로 이 값을 채운다(어차피 한 번에 하나만 마운트되니 공유해도 안전)
+
+### 프리셋을 고르면 한 번 자동 재생 (2026-09-02)
+
+재생이 기본 정지로 바뀐 뒤로 "프리셋을 눌러도 뭐가 달라지는지(불빛이 달리는지, 구간이 켜지는지) 안 보인다"는 지적 — 프리셋을 고르는 순간만큼은 한 번 자동으로 재생해서 보여주기로 했다. `handlePresetSelect`에서 `commitPreset` 다음에 `setIsPlaying(true)`만 부르면 끝 — 재생 버튼을 누른 것과 똑같이 한 사이클 후 자동으로 다시 정지한다. 방금 세 프리셋 다 네이티브(UI 스레드) 렌더링으로 옮겨서, 이 자동 재생도 최대한 부드럽게 나온다.
+
+### 재생·안내 버튼이 화면 맨 아래에 잘려 보이던 문제 (2026-09-02)
+
+`cardHint`(끌기 안내 문구)·`playToggle`(재생 버튼)이 `previewArea` 기준 `bottom: 14`/`bottom: 8`(고정값)로 떠 있었는데, `previewArea`를 감싼 `SafeAreaView`가 `edges={['top','left','right']}`라 bottom 세이프에어리어를 안 챙긴다 — 평소엔 바텀시트가 이 자리를 덮고 있어서 안 보였지만, 시트를 접거나 완전히 숨기면(위 "완전히 숨김"·"미리보기 탭하면 접기" 항목) 이 두 요소가 화면 맨 아래(홈 인디케이터 근처)에 그대로 노출돼 기종에 따라 잘려 보였다. `sheetReopenButton`이 이미 하던 대로 `insets.bottom`을 더해 안전 영역 위로 올렸다.
+
+### 직접 다듬기 슬라이더가 자꾸 0%로 튀던 문제 (2026-09-02)
+
+슬라이더를 끌고 있으면 값이 자꾸 0% 쪽으로 튀었다 왔다갔다 했다는 피드백. `Slider`(slider.tsx)가 `onPanResponderMove`마다 `evt.nativeEvent.locationX`(터치가 잡힌 뷰 기준 좌표)로 값을 계산했는데, 이 슬라이더가 들어있는 바텀시트가 애니메이션 `transform`(끌어서 접고 펴기 + 키보드가 뜨면 밀어올리기, 둘 다 `translateY`)이 걸린 조상 뷰라 `locationX`가 프레임마다 다시 계산되며 값이 튀는, RN에서 알려진 문제였다. 처음 눌렀을 때 그 자리로 "점프"하는 것만 `locationX`를 쓰고, 그 이후 끄는 동안은 `gestureState.dx`(제스처 시작점부터의 누적 이동 거리 — 조상 뷰의 transform과 무관하게 항상 안정적으로 계산됨, `edit.tsx`의 경로 드래그와 같은 방식)로만 값을 계산하도록 바꿨다.
+
 ### 각인 드래그도 프레임당 한 번으로 묶음 (2026-09-02)
 
 "각인(거리·정보) 옮기고 배치할 때 많이 느리다"는 별개의 피드백 — 위 재생 관련 항목과 원인이 다르다. 각인을 끌 때 손가락이 움직일 때마다(raw 터치 이벤트, 화면 프레임보다 훨씬 잦다) `updateStampConfig`를 그대로 불러서, `RoutePreview`가 매번 다시 렌더되며 `stampLayoutDescriptors`(포맷팅 함수들 + 8개 레이아웃 분기 계산)를 그때마다 다시 돌고 있었다 — §5 "직접 다듬기" 슬라이더 때(위 항목) 겪은 것과 같은 종류의 문제라 같은 해법을 그대로 적용: ref에 최신값은 즉시 반영해 다음 프레임에 쓰고, 실제 state 반영(`updateStampConfig` 호출)은 `requestAnimationFrame`으로 프레임당 한 번만 묶는다(`scheduleStampConfigUpdate`/`flushPendingStampConfig`). 손을 뗄 때는 예약된 값까지 확실히 반영한 뒤 커밋해 마지막 프레임 분이 씹히지 않게 한다.
