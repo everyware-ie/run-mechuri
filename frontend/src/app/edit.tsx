@@ -326,7 +326,7 @@ export default function EditScreen() {
           });
         }
       },
-      onPanResponderRelease: () => {
+      onPanResponderRelease: (_evt, gestureState) => {
         setIsInteracting(false);
         setStampTargeted(false);
         gestureStart.current = null;
@@ -334,6 +334,14 @@ export default function EditScreen() {
           commitStampConfig(stampConfigRef.current);
         } else {
           commitTransform(transformRef.current);
+        }
+        // 실기기 피드백(2026-09-02): 바텀시트 바깥(미리보기) 아무 데나 누르면
+        // 시트를 접어달라는 요청 — 실제로 끌거나 확대·회전한 게 아니라 그냥
+        // 짧게 탭한 경우에만(움직인 거리가 거의 0) 반응한다. 이 responder는
+        // previewArea에만 붙어 있어서(§ 아래 JSX) "시트 바깥"의 뜻 그대로다.
+        const isTap = Math.abs(gestureState.dx) < 6 && Math.abs(gestureState.dy) < 6;
+        if (isTap && sheetExpandedRef.current) {
+          animateSheetTo(false);
         }
       },
     })
