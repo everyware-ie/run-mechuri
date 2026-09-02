@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +17,8 @@ import type { Point } from '@/lib/route-projection';
 //
 // 시안엔 "GPX 파일 직접 넣기" 버튼이 있지만 GPX 임포트는 2026-08-25에 제외
 // 확정됐다(run-record-selection FRD §1, PRD §6). 그 버튼은 넣지 않는다 — MVP의
-// 출처는 HealthKit 하나뿐이라 "러닝 앱 연결하기" 하나가 유일한 경로다.
+// 출처는 HealthKit 하나뿐이라 "메추리 런 시작하기"(2026-09-02 문구 변경, 원래
+// "러닝 앱 연결하기") 하나가 유일한 경로다.
 //
 // [확인 필요] 이 화면 자체는 승인된 FRD 문서 어디에도 화면 단위로 정의돼 있지 않다.
 // run-record-selection FRD §3은 "권한은 목록을 열려 할 때 묻는다"만 정하고, 그 직전에
@@ -71,10 +71,8 @@ export default function ConnectScreen() {
         </Text>
 
         <View style={styles.actions}>
-          <ThemedButton title="러닝 앱 연결하기" onPress={handleConnect} />
+          <ThemedButton title="메추리 런 시작하기" onPress={handleConnect} />
         </View>
-
-        <Text style={styles.footnote}>위치 권한은 필요하지 않다</Text>
       </View>
     </SafeAreaView>
   );
@@ -100,11 +98,4 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   actions: { gap: Spacing.sm, marginTop: Spacing.sm },
-  footnote: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 10,
-    letterSpacing: 1,
-    color: Colors.textMuted,
-    textAlign: 'center',
-  },
 });

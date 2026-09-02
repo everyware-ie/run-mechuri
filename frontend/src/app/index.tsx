@@ -1,4 +1,4 @@
-import { Link, router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -170,11 +170,6 @@ export default function HomeScreen() {
             </View>
           </Pressable>
         )}
-        ListFooterComponent={
-          <Link href="/dev-test" style={styles.devLink}>
-            개발용 확인 화면
-          </Link>
-        }
       />
     </SafeAreaView>
   );
@@ -285,12 +280,5 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 10,
     color: Colors.text,
-  },
-  devLink: {
-    marginTop: Spacing.xl,
-    fontFamily: 'JetBrainsMono_500Medium',
-    color: Colors.textMuted,
-    fontSize: 11,
-    textAlign: 'center',
   },
 });
