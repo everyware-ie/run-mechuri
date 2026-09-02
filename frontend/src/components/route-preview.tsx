@@ -5,6 +5,7 @@ import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue 
 import { scheduleOnRN } from 'react-native-worklets';
 import {
   Circle as SvgCircle,
+  G,
   Rect as SvgRect,
   Line,
   Svg,
@@ -325,17 +326,17 @@ export function RoutePreview({
         </Group>
       </Canvas>
 
-      {/* 각인 텍스트와 안전 영역 가이드는 SVG 오버레이 — 로드된 폰트로 또렷하게. */}
-      <Svg
-        style={{ position: 'absolute', top: 0, left: 0 }}
-        width={viewWidth}
-        height={usableHeight}
-        viewBox={
-          fit === 'cover-safe'
-            ? `0 ${safeTop} ${CANVAS_WIDTH} ${safeHeight}`
-            : `0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`
-        }
-        preserveAspectRatio={fit === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'}>
+      {/* 각인 텍스트와 안전 영역 가이드는 SVG 오버레이 — 로드된 폰트로 또렷하게.
+          실기기 피드백(2026-09-02): 예전엔 viewBox+preserveAspectRatio로 SVG
+          자체 크기(width/height)를 안전 영역 높이(usableHeight)만큼 줄여서
+          맞췄는데, 그러면 SVG 엘리먼트 자기 자신의 경계 밖은 그냥 잘려 나간다
+          — 각인을 손으로 끌어 안전 영역 아래로 옮기면 어느 지점부터 잘려 보이는
+          원인이었다. Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), 대신
+          Canvas Group과 똑같은 offsetX/offsetY/fitScale을 <G transform>으로
+          적용해서 좌표만 맞춘다 — 드래그 범위가 뷰 밖으로 나가는 것과, SVG 자기
+          경계에 잘리는 것은 서로 다른 문제라 분리했다(뷰 밖으로 나가는 것 자체는
+          previewArea의 overflow:hidden이 처리, 이건 의도된 동작). */}
+      <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={viewWidth} height={viewHeight}>
         <Defs>
           <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
             <FeGaussianBlur stdDeviation="6" result="b" />
@@ -345,8 +346,10 @@ export function RoutePreview({
             </FeMerge>
           </Filter>
         </Defs>
-        {showSafeAreaGuide && <SafeAreaGuide />}
-        <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
+        <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+          {showSafeAreaGuide && <SafeAreaGuide />}
+          <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
+        </G>
       </Svg>
     </View>
   );
