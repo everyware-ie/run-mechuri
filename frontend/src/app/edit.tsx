@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   computeFitTransform,
   computeStampBounds,
+  CYCLE_SECONDS,
   IDENTITY_TRANSFORM,
   RoutePreview,
   STAMP_LAYOUTS,
@@ -89,6 +90,18 @@ export default function EditScreen() {
   // §7-1 안전 영역 가이드 — 실기기 피드백(2026-09): 항상 떠 있으면 거슬린다는
   // 지적으로 기본 숨김·버튼으로 토글하는 방식으로 바꿨다.
   const [showSafeGuide, setShowSafeGuide] = useState(false);
+  // 실기기 피드백(2026-09-02): "재생 중엔 경로·각인 조작이 계속 느리다" — 재생과
+  // 편집이 동시에 안 겹치도록, 기본은 정지(완성된 모습)로 두고 재생 버튼을 눌러야만
+  // 그려지는 과정을 보여준다. 한 번 누르면 한 사이클(그리기+정지 유지, CYCLE_SECONDS)
+  // 만 재생하고 자동으로 다시 정지 상태로 돌아온다 — RoutePreview 내부에서 정확히
+  // 재는 대신 여기서 타이머로 넉넉히(+0.3초) 맞춘다. 몇 ms 어긋나도 티가 안 나는
+  // 용도라 이 정도 근사로 충분하고, RoutePreview 쪽에 별도 콜백을 안 늘려도 된다.
+  const [isPlaying, setIsPlaying] = useState(false);
+  useEffect(() => {
+    if (!isPlaying) return;
+    const t = setTimeout(() => setIsPlaying(false), (CYCLE_SECONDS + 0.3) * 1000);
+    return () => clearTimeout(t);
+  }, [isPlaying]);
   const insets = useSafeAreaInsets();
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
@@ -196,6 +209,35 @@ export default function EditScreen() {
   const baseStampPosition = useRef(stampConfig.position);
   const baseStampScale = useRef(stampConfig.scale ?? 1);
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
+  // 실기기 피드백(2026-09-02): 각인을 끌 때 손가락 이동마다(raw 터치 이벤트, 화면
+  // 프레임보다 훨씬 잦다) updateStampConfig를 그대로 부르면 RoutePreview가 매번
+  // 다시 렌더되며 stampLayoutDescriptors(포맷팅 함수들 + 8개 레이아웃 분기 계산)를
+  // 다시 돈다 — smoothOptions 슬라이더 때와 같은 종류의 버벅임. 같은 방식(ref에
+  // 최신값 반영은 즉시, 실제 state 반영은 화면 프레임당 한 번)으로 묶는다.
+  const pendingStampConfigRef = useRef<StampConfig | null>(null);
+  const stampConfigRafRef = useRef<number | null>(null);
+  const flushPendingStampConfig = () => {
+    if (stampConfigRafRef.current !== null) {
+      cancelAnimationFrame(stampConfigRafRef.current);
+      stampConfigRafRef.current = null;
+    }
+    if (pendingStampConfigRef.current) {
+      updateStampConfig(pendingStampConfigRef.current);
+      pendingStampConfigRef.current = null;
+    }
+  };
+  const scheduleStampConfigUpdate = (next: StampConfig) => {
+    pendingStampConfigRef.current = next;
+    if (stampConfigRafRef.current === null) {
+      stampConfigRafRef.current = requestAnimationFrame(() => {
+        stampConfigRafRef.current = null;
+        if (pendingStampConfigRef.current) {
+          updateStampConfig(pendingStampConfigRef.current);
+          pendingStampConfigRef.current = null;
+        }
+      });
+    }
+  };
   // draft.selectedRun은 이 화면에 들어오기 전에 이미 정해져 안 바뀌지만, panResponder는
   // useRef라 첫 렌더 클로저를 그대로 들고 있으므로(아래) ref로 최신값을 보장한다.
   const selectedRunRef = useRef(draft.selectedRun);
@@ -282,7 +324,7 @@ export default function EditScreen() {
             }
             const newDistance = touchDistance(touches[0], touches[1]);
             const scaleDelta = newDistance / (gestureStart.current.distance || 1);
-            updateStampConfig({
+            scheduleStampConfigUpdate({
               ...stampConfigRef.current,
               position: {
                 x: baseStampPosition.current.x + gestureState.dx,
@@ -291,7 +333,7 @@ export default function EditScreen() {
               scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
             });
           } else {
-            updateStampConfig({
+            scheduleStampConfigUpdate({
               ...stampConfigRef.current,
               position: {
                 x: baseStampPosition.current.x + gestureState.dx,
@@ -331,6 +373,9 @@ export default function EditScreen() {
         setStampTargeted(false);
         gestureStart.current = null;
         if (editTargetRef.current === 'stamp') {
+          // 마지막으로 예약된(아직 화면엔 안 반영된) 값까지 확실히 반영한 다음 커밋 —
+          // 안 그러면 손을 뗀 마지막 프레임 분의 미세한 위치·크기 변화가 씹힐 수 있다.
+          flushPendingStampConfig();
           commitStampConfig(stampConfigRef.current);
         } else {
           commitTransform(transformRef.current);
@@ -560,6 +605,7 @@ export default function EditScreen() {
                 // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다. cover-safe에서만 쓰임.
                 bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
                 stampSelected={stampTargeted}
+                playing={isPlaying}
               />
             </View>
             {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
@@ -567,6 +613,16 @@ export default function EditScreen() {
               onPress={() => setShowSafeGuide((v) => !v)}
               style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
               <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
+            </Pressable>
+            {/* 실기기 피드백(2026-09-02): 재생 중엔 편집 조작이 느려진다 — 기본은
+                정지(완성된 모습)로 두고, 재생 과정 자체를 보고 싶을 때만 눌러서
+                본다(한 사이클 후 자동으로 다시 정지). panResponder 위에 겹치는
+                형제 Pressable이라(guideToggle과 같은 자리) 탭이 그쪽으로 새지
+                않는다. */}
+            <Pressable
+              onPress={() => setIsPlaying((v) => !v)}
+              style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
+              <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
             </Pressable>
             <Text style={styles.cardHint}>
               {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
@@ -792,6 +848,22 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: Colors.textMuted,
   },
+  // 재생/정지 토글 — cardHint(왼쪽 아래)와 짝을 이루는 오른쪽 아래 자리.
+  playToggle: {
+    position: 'absolute',
+    right: 16,
+    bottom: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,13,16,0.55)',
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+  },
+  playToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
+  playToggleIcon: { fontSize: 12, color: Colors.text },
   sectionLabel: {
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 10,

@@ -133,7 +133,8 @@ export type RoutePreset = 'default-drawing' | 'light-runner' | 'segment-lighting
 
 const DRAW_SECONDS = 9;
 const HOLD_SECONDS = 3;
-const CYCLE_SECONDS = DRAW_SECONDS + HOLD_SECONDS;
+// 재생 버튼(2026-09-02)이 "한 번 재생하고 자동으로 멈춘다"의 길이를 재려고 밖에서도 씀.
+export const CYCLE_SECONDS = DRAW_SECONDS + HOLD_SECONDS;
 
 // 시안 neon 테마 팔레트.
 const LINE_WARM = '#FFF3EC';
@@ -183,6 +184,13 @@ type Props = {
   /** 실기기 피드백(2026-09-02): 각인을 화면에서 직접 탭해 고를 때, 지금 각인이
    * "선택된" 대상임을 점선 박스로 보여준다(edit.tsx가 탭 히트테스트 결과로 켬). */
   stampSelected?: boolean;
+  /** 실기기 피드백(2026-09-02): "재생 중엔 편집(경로·각인 이동)이 계속 느리다" —
+   * 재생과 조작이 동시에 일어나지 않게 edit.tsx는 기본 정지(완성된 모습)로 두고
+   * 명시적으로 재생 버튼을 눌렀을 때만 이 값을 true로 준다. false면
+   * progressFraction을 강제로 1(완성 상태)로 취급 — elapsed 타이머 자체가 안
+   * 돈다. 기본값은 true라 안 넘기는 기존 화면(background-selection.tsx 등)은
+   * 원래 동작(항상 재생) 그대로 유지된다. */
+  playing?: boolean;
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -213,6 +221,7 @@ export function RoutePreview({
   fit = 'contain',
   bottomInset = 0,
   stampSelected = false,
+  playing = true,
 }: Props) {
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
@@ -246,11 +255,32 @@ export function RoutePreview({
     setLightRunnerStampProgress(0);
   }
 
+  // 재생 버튼(2026-09-02): 정지(playing=false) → 재생(true)으로 바뀔 때마다
+  // 처음부터 다시 재생한다. light-runner는 elapsed(JS state)가 아니라
+  // LightRunnerLayer 내부의 Reanimated SharedValue가 진행률을 들고 있어서
+  // (UI 스레드), 여기서 elapsed만 0으로 되돌려서는 그쪽까지 리셋이 안 된다 —
+  // playToken을 바꿔 LightRunnerLayer를 강제로 다시 마운트시킨다(프리셋이
+  // 바뀔 때 자연히 새로 마운트되며 리셋되는 것과 같은 방식).
+  const [playToken, setPlayToken] = useState(0);
+  const [seenPlaying, setSeenPlaying] = useState(playing);
+  if (seenPlaying !== playing) {
+    setSeenPlaying(playing);
+    if (playing) {
+      setElapsed(0);
+      setLightRunnerStampProgress(0);
+      setPlayToken((t) => t + 1);
+    }
+  }
+
   // light-runner는 이 JS state 루프를 아예 안 쓴다 — 아래 LightRunnerLayer가
   // Reanimated로 UI 스레드에서 직접 돌린다(2026-09-01, "html처럼 안 부드럽다"는
   // 실기기 피드백). 여기서 계속 돌리면 안 보이는 애니메이션에 리소스만 낭비된다.
+  //
+  // 실기기 피드백(2026-09-02): "재생 중엔 편집(경로·각인 이동)이 계속 느리다" —
+  // 재생과 조작이 겹치는 걸 원천적으로 줄이려고, 명시적으로 재생 버튼을
+  // 누르지 않으면(playing=false, edit.tsx 기본값) 이 루프 자체를 안 돌린다.
   useEffect(() => {
-    if (isInteracting || preset === 'light-runner') {
+    if (isInteracting || preset === 'light-runner' || !playing) {
       lastTsRef.current = null;
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       return;
@@ -279,12 +309,14 @@ export function RoutePreview({
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
-  }, [isInteracting, preset]);
+  }, [isInteracting, preset, playing]);
 
   if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
-  const progressFraction = Math.min(elapsed / DRAW_SECONDS, 1);
-  const stampProgressFraction = preset === 'light-runner' ? lightRunnerStampProgress : progressFraction;
+  // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
+  // 썸네일이 "완성된 순간"만 보여주는 것과 같은 원칙.
+  const progressFraction = playing ? Math.min(elapsed / DRAW_SECONDS, 1) : 1;
+  const stampProgressFraction = !playing ? 1 : preset === 'light-runner' ? lightRunnerStampProgress : progressFraction;
   // 실기기 피드백(2026-09): 드래그(이동·확대·회전) 중엔 Group 변형이 프레임마다
   // 바뀌어서 블러(Shadow)가 매 프레임 다시 계산된다 — 반경이 클수록(30~80px) 그
   // 비용이 커서 조작 중 끊김의 큰 원인이었다. 조작 중엔 블러 반경을 줄여 GPU 비용을
@@ -334,12 +366,16 @@ export function RoutePreview({
           )}
           {preset === 'light-runner' && (
             <LightRunnerLayer
+              // 재생 버튼을 다시 누를 때마다(playToken 증가) 새로 마운트돼
+              // 내부 Reanimated SharedValue(elapsed)가 0부터 다시 시작한다.
+              key={playToken}
               projected={projected}
               cumulative={cumulative}
               totalDistance={totalDistance}
               fullPath={fullPath}
               rawFullPath={rawFullPath}
               isInteracting={isInteracting}
+              playing={playing}
               blurScale={blurScale}
               onProgressSample={setLightRunnerStampProgress}
             />
@@ -439,6 +475,7 @@ function LightRunnerLayer({
   fullPath,
   rawFullPath,
   isInteracting,
+  playing,
   blurScale,
   onProgressSample,
 }: {
@@ -448,6 +485,7 @@ function LightRunnerLayer({
   fullPath: ReturnType<typeof skPath>;
   rawFullPath: ReturnType<typeof skPath>;
   isInteracting: boolean;
+  playing: boolean;
   blurScale: number;
   onProgressSample: (progress: number) => void;
 }) {
@@ -478,8 +516,19 @@ function LightRunnerLayer({
   });
 
   useEffect(() => {
-    frameCallback.setActive(!isInteracting);
-  }, [isInteracting, frameCallback]);
+    frameCallback.setActive(!isInteracting && playing);
+  }, [isInteracting, playing, frameCallback]);
+
+  // 재생 버튼(2026-09-02): 정지 상태에선 완성된 모습(정지 글로우)을 보여준다 —
+  // key={playToken}로 재생을 다시 누를 때마다 이 컴포넌트가 통째로 새로
+  // 마운트되어 elapsed가 0부터 시작하지만, "정지"로 바뀌는 순간에는 마운트가
+  // 그대로 유지되므로(멈춘 자리에 얼어붙지 않고) elapsed를 완주 지점으로
+  // 직접 옮겨 다른 두 프리셋과 같은 "정지=완성" 원칙을 지킨다.
+  useEffect(() => {
+    if (!playing) {
+      elapsed.value = DRAW_SECONDS;
+    }
+  }, [playing, elapsed]);
 
   // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
   // 30단계(진행률 0→1 구간을 30칸으로 나눈 정도)로만 낮춰서 JS 쪽에 넘긴다. Skia
