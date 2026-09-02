@@ -62,7 +62,6 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
 ];
 
 const SHEET_EXPANDED_HEIGHT = 372;
-const SHEET_PEEK_HEIGHT = 44;
 
 function touchDistance(t1: { pageX: number; pageY: number }, t2: { pageX: number; pageY: number }) {
   return Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
@@ -344,19 +343,30 @@ export default function EditScreen() {
   // PanResponder는 useRef로 한 번만 만들어져서 그 콜백들이 첫 렌더의 클로저를
   // 계속 들고 있다 — useState로 두면 갱신이 반영 안 되는 stale closure가 되므로 ref로 둔다.
   const sheetExpandedRef = useRef(true);
+  // 실기기 피드백(2026-09-02): "손잡이만 남기고 살짝 접기"로는 편집 화면을
+  // 제대로 볼 수 없다 — 아예 화면 밖으로 완전히 숨겼다가 버튼으로 다시 부를 수
+  // 있게 해달라는 요청. sheetExpanded는 그 "완전히 숨겨졌나"를 JSX(숨김 버튼
+  // 표시 여부)에서 읽으려고 ref와 같이 둔 state 버전이다.
+  const [sheetExpanded, setSheetExpanded] = useState(true);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetDragStart = useRef(0);
   // 시트를 끌 때도 미리보기 애니메이션을 멈춘다 — 안 멈추면 계속 도는 Skia 글로우
   // 렌더링(RAF)과 시트 드래그의 JS 스레드 작업이 같이 돌면서 드래그가 버벅였다.
   const [isSheetDragging, setIsSheetDragging] = useState(false);
-  // 실기기 피드백(2026-09): 다 내렸을 때 손잡이가 홈 인디케이터 스와이프 제스처
-  // 영역이랑 겹쳐서 잡기 힘들었다 — 접힌 상태에서 그만큼(insets.bottom)은 더 안
-  // 내려가게 한다. insets는 화면이 떠 있는 동안 안 바뀌므로 여기서 한 번만
-  // 읽어도 안전하다(sheetPanResponder도 useRef라 마운트 시점 클로저를 쓴다).
-  const sheetCollapseDistance = SHEET_EXPANDED_HEIGHT - SHEET_PEEK_HEIGHT - insets.bottom;
+  // 접었을 때 시트 전체(손잡이 포함)가 화면 밖으로 완전히 나가도록 내린다 —
+  // 예전엔 손잡이만 남기고 살짝 접었는데(SHEET_PEEK_HEIGHT), 그래도 편집
+  // 화면을 가린다는 피드백으로 아예 다 감추는 쪽으로 바꿨다. 시트의 실제
+  // 렌더 높이는 내용(각인 프리셋 8개가 줄바꿈되는 등)에 따라 달라져서
+  // SHEET_EXPANDED_HEIGHT는 못 믿는다 — 화면에서 이 시트보다 확실히 클
+  // 값(여기서는 previewArea 높이 전체 + 여유)만큼 내려서 내용이 얼마나
+  // 길어지든 항상 화면 밖으로 나가게 한다. insets는 화면이 떠 있는 동안 안
+  // 바뀌므로 여기서 한 번만 읽어도 안전하다(sheetPanResponder도 useRef라
+  // 마운트 시점 클로저를 쓴다).
+  const sheetCollapseDistance = Math.max(SHEET_EXPANDED_HEIGHT, previewSize.height) + insets.bottom + 60;
 
   const animateSheetTo = (expanded: boolean) => {
     sheetExpandedRef.current = expanded;
+    setSheetExpanded(expanded);
     Animated.spring(sheetTranslateY, {
       toValue: expanded ? 0 : sheetCollapseDistance,
       useNativeDriver: true,
@@ -678,6 +688,17 @@ export default function EditScreen() {
           </View>
         </Animated.View>
       )}
+
+      {/* 실기기 피드백(2026-09-02): 시트를 접어도 손잡이가 편집 화면을 가린다는
+          지적 — 접힌 동안(sheetExpanded===false)은 시트를 화면 밖으로 완전히
+          숨기고, 이 버튼 하나만 남겨 다시 부를 수 있게 한다. */}
+      {!sheetExpanded && (
+        <Pressable
+          onPress={() => animateSheetTo(true)}
+          style={[styles.sheetReopenButton, { bottom: 16 + insets.bottom }]}>
+          <Text style={styles.sheetReopenText}>편집 도구 열기</Text>
+        </Pressable>
+      )}
     </SafeAreaView>
   );
 }
@@ -712,6 +733,18 @@ const styles = StyleSheet.create({
   guideToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
   guideToggleText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
   guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
+  // 시트를 완전히 숨겼을 때만 뜨는 버튼 — 화면 맨 아래 가운데.
+  sheetReopenButton: {
+    position: 'absolute',
+    bottom: 16,
+    alignSelf: 'center',
+    height: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    backgroundColor: Colors.accent,
+  },
+  sheetReopenText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
   cardHint: {
     position: 'absolute',
     left: 16,
