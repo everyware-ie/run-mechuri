@@ -228,6 +228,21 @@ phs00의 Claude Design 프로젝트("런 기록 카드 프리셋", `DesignSync` 
 
 "끌기·이동/두 손가락" 안내 문구와 재생 버튼이 `previewArea` 기준 `bottom` 근처에 있었는데, 바텀시트(`position:absolute, bottom:0`)가 시트가 펼쳐진 대부분의 시간 동안 그 자리를 그대로 덮고 있어서 "다른 레이어랑 겹쳐서 잘 안 보인다"는 문제가 있었다 — 시트를 접어야만 보이는 상태였던 것. `guideToggle`(인스타 스토리 영역 버튼)과 같은 높이(top:14)로 올리되, 안전 영역 가이드를 켰을 때 오른쪽 위에 뜨는 "X 닫기" 자리(`SafeAreaGuide`의 `closeCx/closeCy`)와 안 겹치도록 왼쪽에 몰아 한 줄(`topLeftGroup`)로 묶었다. 가운데(guideToggle)·오른쪽 위(가이드 X 자리)는 비워 둔 채로, 시트 상태와 무관하게 항상 보인다
 
+### 가이드를 content의 fit과 완전히 분리 — 가이드 자체가 위로 밀려 보이던 문제 (2026-09-02)
+
+위 수정(usableHeight 통일) 직후 실기기 재확인: "경로·각인은 안 내려가서 좋은데, 이번엔 가이드(아바타·닫기·답장창)가 위로 밀려 보인다. 가이드는 그냥 고정된 자리에 뜨기만 하면 되는데 왜 올리고 내리고 할 게 있냐"는 정확한 지적. usableHeight를 맞추면서 `'cover'`도 `bottomInset`(바텀시트가 가리는 높이)만큼 화면이 좁아진 걸로 계산하게 됐고, 그만큼 확대·상향 이동이 생겨 이번엔 가이드가 위로 밀렸다.
+
+근본적으로 가이드(인스타 자체 UI가 실제 스토리에서 어디 놓이는지 보여주는 것)와 content(경로·각인, 우리 편집 화면에서 바텀시트를 피해야 하는 것)는 애초에 같은 fit을 공유할 이유가 없었다 — 바텀시트는 우리 편집 화면에만 있는 UI고, 실제로 올린 스토리에는 없다. 완전히 분리했다:
+
+- **content(경로·각인)**: `edit.tsx`가 가이드 on/off와 무관하게 항상 `fit="cover-safe"`만 넘긴다. 이제 다시는 안 바뀐다
+- **가이드**: `route-preview.tsx` 안에서 `computeFitTransform(viewWidth, viewHeight, 'cover', 0)`(bottomInset 없이, content의 `fit` prop과 무관)을 따로 계산한 `guideFit`으로 그린다 — "화면 전체를 캔버스로 꽉 채우면 실제 어떻게 보일지"만 반영하는, 그 자체로 고정된 계산이라 시트 상태·가이드 on/off 무엇에도 안 흔들린다
+- `computeFitTransform`은 훅이 아니라 순수 함수라 이렇게 같은 컴포넌트 안에서 두 번(용도별로) 불러도 문제없다
+- 각인 탭 히트테스트(`edit.tsx`의 `onPanResponderGrant`)도 더는 가이드 상태를 볼 필요가 없어져 `showSafeGuideRef`를 통째로 지웠다 — content가 항상 cover-safe이니 히트테스트도 항상 그 fit만 쓰면 됨
+
+### guideToggle과 안내 문구 줄이 겹치던 문제 (2026-09-02)
+
+재생 버튼·안내 문구(`topLeftGroup`)를 위로 올리며 `guideToggle`("인스타 스토리 영역", 가운데 위)과 같은 줄(top:14)에 뒀더니 화면 폭이 좁은 기기에서 둘이 겹쳤다. `topLeftGroup`을 `guideToggle` 바로 아래 줄(top:54 — guideToggle 높이 32 + 여백 8)로 내려 세로로 완전히 분리했다.
+
 ## 어긋남 기록
 
 - **각인 표시 모드(§7-3 "완성 후만" 포함) 선택 UI가 없어졌다** (2026-09-01). 시안 S6에 그 UI가 없어서 뺐다. `StampConfig.mode`는 데이터에 남아 'always' 고정으로 동작. FRD §7-3을 지키려면 UI를 다시 넣거나(시안의 "자리·없음"이 hidden을 겸하는 구조로 재해석) FRD를 시안에 맞춰 개정해야 함

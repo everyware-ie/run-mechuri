@@ -338,6 +338,17 @@ export function RoutePreview({
   // 훅(useDerivedValue)이라 early return 앞에 있어야 해서다.
   const { fitScale, offsetX, offsetY } = computeFitTransform(viewWidth, viewHeight, fit, bottomInset);
 
+  // 안전 영역 가이드(아바타·닫기·답장창)는 실제로 스토리에 올라갔을 때 화면
+  // 전체를 기준으로 인스타 자체 UI가 어디 놓이는지 보여주는 것이라, 미리보기
+  // 크롭(fit·bottomInset — 바텀시트를 피하려고 우리 편집 화면에서만 쓰는 값)과는
+  // 완전히 무관하게 항상 같은 자리(화면 전체에 꽉 채운 캔버스 기준)에 고정
+  // 되어야 한다. 실기기 피드백(2026-09-02): 가이드를 예전처럼 content의 fit에
+  // 얹어 'cover'로 같이 바꿨더니 이번엔 가이드 쪽이 위로 밀려 보였다(bottomInset
+  // 만큼 화면이 좁아진 걸로 계산해서) — content의 fit·bottomInset과 완전히
+  // 분리한 별도 계산(computeFitTransform은 훅이 아닌 순수 함수라 아무 데서나
+  // 불러도 된다)으로 고쳤다.
+  const guideFit = computeFitTransform(viewWidth, viewHeight, 'cover', 0);
+
   // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy). tx/ty/
   // tScale/tRotation(SharedValue)의 .value만 갱신되면 이 배열 전체가 네이티브
   // 쪽에서 다시 계산된다 — edit.tsx가 드래그 중 React state를 안 거치고 이
@@ -421,13 +432,14 @@ export function RoutePreview({
       </Canvas>
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
-          설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), 대신 Canvas
-          Group과 똑같은 offsetX/offsetY/fitScale을 <G transform>으로 적용해서
-          좌표만 맞춘다(뷰 밖으로 나가는 것 자체는 previewArea의 overflow:hidden이
-          처리, 이건 의도된 동작). */}
+          설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), content와는
+          별개인 guideFit(위 설명 — 화면 전체 기준 고정)을 <G transform>으로
+          적용한다 — content의 offsetX/offsetY/fitScale(fit·bottomInset에 따라
+          바뀔 수 있음)과는 항상 다를 수 있다(뷰 밖으로 나가는 것 자체는
+          previewArea의 overflow:hidden이 처리, 이건 의도된 동작). */}
       {showSafeAreaGuide && (
         <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={viewWidth} height={viewHeight}>
-          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+          <G transform={`translate(${guideFit.offsetX} ${guideFit.offsetY}) scale(${guideFit.fitScale})`}>
             <SafeAreaGuide />
           </G>
         </Svg>

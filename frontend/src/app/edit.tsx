@@ -274,10 +274,6 @@ export default function EditScreen() {
   // previewArea의 실측 크기 — 아래 panResponder 클로저 안에서 각인 탭 히트테스트에 쓴다.
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewSizeRef = useRef(previewSize);
-  // 가이드가 켜져 있는 동안은 미리보기 fit이 'cover'로 바뀐다(아래 JSX) — 히트테스트도
-  // 같은 fit을 써야 탭 좌표가 어긋나지 않는다.
-  const showSafeGuideRef = useRef(showSafeGuide);
-  showSafeGuideRef.current = showSafeGuide;
 
   // 실기기 피드백(2026-09-02): "각인 시트가 열려 있을 때만 각인을 옮길 수 있다"는
   // 기존 규칙 대신, 드로잉처럼 화면을 직접 탭한 지점으로 대상을 고른다 — §4-1이
@@ -304,12 +300,13 @@ export default function EditScreen() {
 
         // 뷰 픽셀 ↔ 캔버스 좌표 변환에 쓰는 fitScale — 히트테스트뿐 아니라 이번
         // 제스처 동안의 모든 dx/dy 변환(아래 move·release)에서 재사용한다.
-        // previewSize·showSafeGuide는 드래그 도중 안 바뀌므로 grant에서 한 번만
-        // 계산해 ref에 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음).
+        // previewSize는 드래그 도중 안 바뀌므로 grant에서 한 번만 계산해 ref에
+        // 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음). 미리보기는
+        // 가이드 on/off와 무관하게 항상 'cover-safe'라(아래 JSX) fit도 고정.
         const { fitScale, offsetX, offsetY } = computeFitTransform(
           previewSizeRef.current.width,
           previewSizeRef.current.height,
-          showSafeGuideRef.current ? 'cover' : 'cover-safe',
+          'cover-safe',
           SHEET_EXPANDED_HEIGHT + insets.bottom
         );
         gestureFitScaleRef.current = fitScale;
@@ -709,14 +706,14 @@ export default function EditScreen() {
                 isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
-                // 실기기 피드백(2026-09-02): 가이드(SafeAreaGuide)는 캔버스 전체
-                // 기준으로 인스타 UI가 덮는 위·아래 자리(아바타·답장창 모양)까지
-                // 보여주는 건데, cover-safe는 애초에 그 부분을 화면 밖으로
-                // 잘라내 버려서 가이드를 켜도 경계선만 화면 끝에 걸치고 아바타·
-                // 답장창 모양은 아예 안 보였다("이상하게 나온다"의 원인). 가이드를
-                // 볼 때만 캔버스 전체가 다 보이는 'cover'로 잠깐 바꿔서, 인스타
-                // UI가 실제로 어디를 덮는지 제대로 비교할 수 있게 한다.
-                fit={showSafeGuide ? 'cover' : 'cover-safe'}
+                // 실기기 피드백(2026-09-02): 가이드 on/off로 fit을 바꿨더니(이전엔
+                // 'cover'로 전환) 그때마다 경로·각인까지 화면에서 훅 움직여
+                // 보였다("기존 배치가 내려간다") — 미리보기는 가이드 상태와
+                // 무관하게 항상 'cover-safe'로 고정한다. 가이드 자체(아바타·닫기·
+                // 답장창)는 route-preview.tsx 안에서 이 fit과 별개의, 화면
+                // 전체 기준 고정 좌표로 그린다(아래 showSafeAreaGuide 참고) —
+                // 그래야 미리보기 크롭과 무관하게 항상 같은 자리에 뜬다.
+                fit="cover-safe"
                 // previewArea가 flex:1이라 바텀시트(펼친 상태 기준, 접으면 더
                 // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
                 // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다. cover-safe에서만 쓰임.
@@ -951,9 +948,12 @@ const styles = StyleSheet.create({
   guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
   // 재생 버튼 + 안내 문구를 왼쪽 위에 묶어 둔다 — guideToggle(가운데 위)과
   // 안전 영역 가이드의 "X 닫기" 자리(오른쪽 위)를 둘 다 피한 자리.
+  // 실기기 피드백(2026-09-02): guideToggle("인스타 스토리 영역", 가운데 위)과
+  // 같은 줄(top:14)에 뒀더니 가운데로 뻗어 나오면서 글씨가 겹쳤다 — guideToggle
+  // 바로 아래 줄(높이 32 + 여백 8)로 내려 세로로 분리했다.
   topLeftGroup: {
     position: 'absolute',
-    top: 14,
+    top: 54,
     left: 16,
     flexDirection: 'row',
     alignItems: 'center',
