@@ -125,9 +125,13 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   swatchRow: { flexDirection: 'row', gap: 9 },
+  // 실기기 피드백(2026-09-02): 배경 사진은 9:16 세로 사진인데 스와치는 가로로
+  // 납작한 64px 높이라, cover로 채우면 사진의 아주 좁은 가로 띠만 보이고 대부분이
+  // 잘려 나갔다. 스와치 자체를 사진과 같은 9:16 비율로 만들면 cover를 유지해도
+  // 사진 전체가 실제 구도 그대로 보인다.
   swatch: {
     flex: 1,
-    height: 64,
+    aspectRatio: 9 / 16,
     borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,

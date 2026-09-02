@@ -118,12 +118,17 @@ type Props = {
   /**
    * 'contain'(기본) — 9:16 전체가 다 보이게 맞춘다. 화면 비율이 9:16과 다르면
    * 위아래(또는 좌우)에 여백이 남는다(배경 이미지로 채워짐).
-   * 'cover' — 화면을 꽉 채우고 넘치는 만큼 잘라낸다. 실제 내보내기는 이 화면
-   * 크롭과 무관하게 항상 정확한 9:16 전체를 그린다(RouteRendererModule.swift가
-   * 화면 크기가 아니라 CANVAS_WIDTH/HEIGHT 기준으로 따로 계산) — 편집 중
-   * 미리보기에서만 화면을 꽉 채워 보여주는 표시 방식 차이일 뿐이다.
+   * 'cover' — 화면을 꽉 채우고 넘치는 만큼 잘라낸다. 9:16 캔버스 전체를 기준으로
+   * 자르기 때문에, 편집 화면처럼 실제 뷰 비율이 9:16보다 납작하면 위아래가 꽤
+   * 잘려 나가 보인다는 실기기 피드백(2026-09-02)이 있었다.
+   * 'cover-safe' — 캔버스 전체가 아니라 인스타 스토리 안전 영역(SAFE_AREA_TOP/BOTTOM_RATIO,
+   * 어차피 스토리에 올리면 UI에 가려지는 부분)만 기준으로 꽉 채운다. 잘려 나가는
+   * 부분이 "어차피 안 보이는 영역"이라 체감상 원본 그대로에 가깝다.
+   * 실제 내보내기는 이 화면 크롭과 무관하게 항상 정확한 9:16 전체를 그린다
+   * (RouteRendererModule.swift가 화면 크기가 아니라 CANVAS_WIDTH/HEIGHT 기준으로
+   * 따로 계산) — 편집 중 미리보기에서만 화면을 꽉 채워 보여주는 표시 방식 차이일 뿐이다.
    */
-  fit?: 'contain' | 'cover';
+  fit?: 'contain' | 'cover' | 'cover-safe';
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -237,14 +242,26 @@ export function RoutePreview({
   // 말한 게 아니라 "손을 뗐다"는 뜻이었을 뿐, 재생 자체의 비용은 그대로였다).
   const blurScale = isInteracting ? 0.4 : 0.7;
 
+  // 안전 영역(캔버스 좌표) — cover-safe 계산에 쓴다. 캔버스 전체가 아니라 이
+  // 구간만 꽉 채우면, 어차피 스토리에서 가려질 위아래만 잘려 나간다.
+  const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
+  const safeHeight = CANVAS_HEIGHT * (1 - SAFE_AREA_TOP_RATIO - SAFE_AREA_BOTTOM_RATIO);
+
   // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
-  // contain=min(다 보이게, 여백 남음) / cover=max(꽉 채우고 넘치는 만큼 자름).
+  // contain=min(다 보이게, 여백 남음) / cover=max(캔버스 전체 기준 꽉 채움) /
+  // cover-safe=max(안전 영역 기준 꽉 채움).
   const fitScale =
     fit === 'cover'
       ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
-      : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
+      : fit === 'cover-safe'
+        ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / safeHeight)
+        : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
   const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
-  const offsetY = (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
+  // cover-safe는 캔버스 중앙이 아니라 안전 영역 중앙을 뷰 중앙에 맞춘다.
+  const offsetY =
+    fit === 'cover-safe'
+      ? (viewHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
+      : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
 
   // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy)
   const groupTransform = [
@@ -296,8 +313,12 @@ export function RoutePreview({
         style={{ position: 'absolute', top: 0, left: 0 }}
         width={viewWidth}
         height={viewHeight}
-        viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-        preserveAspectRatio={fit === 'cover' ? 'xMidYMid slice' : 'xMidYMid meet'}>
+        viewBox={
+          fit === 'cover-safe'
+            ? `0 ${safeTop} ${CANVAS_WIDTH} ${safeHeight}`
+            : `0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`
+        }
+        preserveAspectRatio={fit === 'contain' ? 'xMidYMid meet' : 'xMidYMid slice'}>
         <Defs>
           <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
             <FeGaussianBlur stdDeviation="6" result="b" />
@@ -541,10 +562,20 @@ function SegmentLayer({
 function SafeAreaGuide() {
   const topY = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
   const bottomY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO);
-  const stroke = 'rgba(255,90,43,0.6)';
-  const strokeWidth = 3;
+  const stroke = 'rgba(255,140,90,0.95)';
+  const strokeWidth = 4;
   const dash = '10,8';
   const commonProps = { stroke, strokeWidth, strokeDasharray: dash, fill: 'none' as const };
+
+  // 실기기 피드백(2026-09-02): 밝은 배경 사진 위에서 점선이 흐려 보였다 — 각인
+  // 텍스트(glowText)와 같은 방식으로, 굵은 검정 아웃라인을 먼저 깔고 그 위에 밝은
+  // 점선을 겹쳐서 배경 밝기와 무관하게 항상 또렷하게 보이도록 했다.
+  const backerProps = {
+    stroke: 'rgba(11,13,16,0.85)',
+    strokeWidth: strokeWidth + 3,
+    strokeDasharray: dash,
+    fill: 'none' as const,
+  };
 
   const avatarCx = 70;
   const avatarCy = 68;
@@ -562,11 +593,22 @@ function SafeAreaGuide() {
   return (
     <>
       {/* 경계선 — 정확한 안전 영역 기준선 */}
+      <Line x1={0} y1={topY} x2={CANVAS_WIDTH} y2={topY} {...backerProps} />
       <Line x1={0} y1={topY} x2={CANVAS_WIDTH} y2={topY} {...commonProps} />
+      <Line x1={0} y1={bottomY} x2={CANVAS_WIDTH} y2={bottomY} {...backerProps} />
       <Line x1={0} y1={bottomY} x2={CANVAS_WIDTH} y2={bottomY} {...commonProps} />
 
       {/* 상단 — 프로필(아바타+이름 바)과 닫기 버튼 자리 */}
+      <SvgCircle cx={avatarCx} cy={avatarCy} r={avatarR} {...backerProps} />
       <SvgCircle cx={avatarCx} cy={avatarCy} r={avatarR} {...commonProps} />
+      <SvgRect
+        x={avatarCx + avatarR + 18}
+        y={avatarCy - 15}
+        width={240}
+        height={30}
+        rx={15}
+        {...backerProps}
+      />
       <SvgRect
         x={avatarCx + avatarR + 18}
         y={avatarCy - 15}
@@ -575,7 +617,16 @@ function SafeAreaGuide() {
         rx={15}
         {...commonProps}
       />
+      <SvgCircle cx={closeCx} cy={closeCy} r={closeR} {...backerProps} />
       <SvgCircle cx={closeCx} cy={closeCy} r={closeR} {...commonProps} />
+      <Line
+        x1={closeCx - 8}
+        y1={closeCy - 8}
+        x2={closeCx + 8}
+        y2={closeCy + 8}
+        stroke={backerProps.stroke}
+        strokeWidth={backerProps.strokeWidth}
+      />
       <Line
         x1={closeCx - 8}
         y1={closeCy - 8}
@@ -589,11 +640,20 @@ function SafeAreaGuide() {
         y1={closeCy - 8}
         x2={closeCx - 8}
         y2={closeCy + 8}
+        stroke={backerProps.stroke}
+        strokeWidth={backerProps.strokeWidth}
+      />
+      <Line
+        x1={closeCx + 8}
+        y1={closeCy - 8}
+        x2={closeCx - 8}
+        y2={closeCy + 8}
         stroke={stroke}
         strokeWidth={strokeWidth}
       />
 
       {/* 하단 — 답장 입력창 자리 */}
+      <SvgRect x={replyX} y={replyY} width={replyWidth} height={replyHeight} rx={replyHeight / 2} {...backerProps} />
       <SvgRect x={replyX} y={replyY} width={replyWidth} height={replyHeight} rx={replyHeight / 2} {...commonProps} />
     </>
   );

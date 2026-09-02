@@ -432,7 +432,7 @@ export default function EditScreen() {
                 isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
-                fit="cover"
+                fit="cover-safe"
               />
             </View>
             {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
@@ -520,62 +520,79 @@ export default function EditScreen() {
 
       {/* §7 각인 시트(S6) — 미리보기를 가리지 않도록 하단 패널로 둔다. 열려 있는 동안만
           미리보기에서 각인 묶음을 끌어 옮길 수 있다(editTarget='stamp'). 컨트롤
-          바텀시트와 자리를 다투지 않도록, 열려 있는 동안엔 그 시트를 안 그린다(위). */}
+          바텀시트와 자리를 다투지 않도록, 열려 있는 동안엔 그 시트를 안 그린다(위).
+          실기기 피드백(2026-09-02): 예전엔 이 시트가 손잡이 없는 고정 View라 접을
+          수 없었다 — "화면의 반을 차지해서 각인 프리셋을 눌러도 바뀌는 게 안 보인다"는
+          불만의 원인. 컨트롤 시트와 똑같이 sheetTranslateY/sheetPanResponder를 그대로
+          공유해 끌어서 접을 수 있게 했다(두 시트가 동시에 그려지지 않으니 상태를
+          공유해도 안전하다). 내용도 sheetContent로 감싸 프리셋 시트와 같은
+          padding·gap 리듬을 쓴다 — 이전엔 항목들이 감싸는 뷰 없이 나란히 있어서
+          "글씨가 다닥다닥 붙어있다"는 불만이 있었다. */}
       {stampSheetOpen && (
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 12 }]}>
-          <View style={styles.sheetHead}>
-            <Text style={styles.sheetTitle}>각인</Text>
-            <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
-              완료
-            </Text>
+        <Animated.View
+          style={[
+            styles.sheet,
+            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetTranslateY }] },
+          ]}>
+          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
+            <View style={styles.sheetHandleBar} />
           </View>
 
-          {/* "배치"라는 이름 아래 묻혀 있던 걸 드로잉 프리셋과 같은 라벨 패턴으로 —
-              실기기 피드백(2026-09): 이건 단순 위치 배치가 아니라 각인을 어떤 스타일로
-              표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
-              나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
-          <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
-          <View style={styles.chipRow}>
-            {STAMP_LAYOUTS.map((l) => {
-              const on = (stampConfig.layout ?? 'row') === l.id;
-              return (
-                <Pressable
-                  key={l.id}
-                  onPress={() => handleLayoutSelect(l.id)}
-                  style={[styles.presetChip, on && styles.presetChipOn]}>
-                  <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
-                </Pressable>
-              );
-            })}
+          <View style={styles.sheetContent}>
+            <View style={styles.sheetHead}>
+              <Text style={styles.sheetTitle}>각인</Text>
+              <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
+                완료
+              </Text>
+            </View>
+
+            {/* "배치"라는 이름 아래 묻혀 있던 걸 드로잉 프리셋과 같은 라벨 패턴으로 —
+                실기기 피드백(2026-09): 이건 단순 위치 배치가 아니라 각인을 어떤 스타일로
+                표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
+                나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
+            <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
+            <View style={styles.chipRow}>
+              {STAMP_LAYOUTS.map((l) => {
+                const on = (stampConfig.layout ?? 'row') === l.id;
+                return (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => handleLayoutSelect(l.id)}
+                    style={[styles.presetChip, on && styles.presetChipOn]}>
+                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sectionLabel}>넣을 것</Text>
+            <View style={styles.chipRowWrap}>
+              {stampItems.map((item) => {
+                const on = stampConfig.enabled?.[item] ?? false;
+                return (
+                  <Pressable
+                    key={item}
+                    onPress={() => handleStampItemToggle(item)}
+                    style={[styles.itemChip, on && styles.itemChipOn]}>
+                    <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sectionLabel}>한 줄 문구</Text>
+            <TextInput
+              value={stampConfig.caption ?? ''}
+              onChangeText={handleCaptionChange}
+              placeholder="예) 비 오는 날의 한강"
+              placeholderTextColor={Colors.textMuted}
+              maxLength={40}
+              style={styles.captionInput}
+            />
+
+            <Text style={styles.note}>끌어서 접으면 미리보기를 보면서 고를 수 있어요.</Text>
           </View>
-
-          <Text style={styles.sectionLabel}>넣을 것</Text>
-          <View style={styles.chipRowWrap}>
-            {stampItems.map((item) => {
-              const on = stampConfig.enabled?.[item] ?? false;
-              return (
-                <Pressable
-                  key={item}
-                  onPress={() => handleStampItemToggle(item)}
-                  style={[styles.itemChip, on && styles.itemChipOn]}>
-                  <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          <Text style={styles.sectionLabel}>한 줄 문구</Text>
-          <TextInput
-            value={stampConfig.caption ?? ''}
-            onChangeText={handleCaptionChange}
-            placeholder="예) 비 오는 날의 한강"
-            placeholderTextColor={Colors.textMuted}
-            maxLength={40}
-            style={styles.captionInput}
-          />
-
-          <Text style={styles.note}>미리보기에서 각인을 끌어 위치를 옮길 수 있어요.</Text>
-        </View>
+        </Animated.View>
       )}
     </SafeAreaView>
   );
@@ -599,10 +616,11 @@ const styles = StyleSheet.create({
   guideToggle: {
     position: 'absolute',
     top: 14,
-    right: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 14,
+    alignSelf: 'center',
+    height: 32,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: Colors.borderStrong,
     backgroundColor: 'rgba(11,13,16,0.55)',
@@ -706,13 +724,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.borderStrong,
   },
   sheetContent: { paddingHorizontal: 24, gap: 12 },
+  // 각인 시트에서 sheetContent(패딩·gap 포함)의 첫 자식으로 쓴다 — 가로 패딩·위
+  // 여백은 부모(sheetContent·sheetHandleArea)가 이미 주므로 여기서는 두지 않는다.
   sheetHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
-    paddingHorizontal: 24,
-    paddingTop: 20,
   },
   sheetTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: Colors.text },
 });
