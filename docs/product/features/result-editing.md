@@ -138,6 +138,12 @@
 
 슬라이더를 끌고 있으면 값이 자꾸 0% 쪽으로 튀었다 왔다갔다 했다는 피드백. `Slider`(slider.tsx)가 `onPanResponderMove`마다 `evt.nativeEvent.locationX`(터치가 잡힌 뷰 기준 좌표)로 값을 계산했는데, 이 슬라이더가 들어있는 바텀시트가 애니메이션 `transform`(끌어서 접고 펴기 + 키보드가 뜨면 밀어올리기, 둘 다 `translateY`)이 걸린 조상 뷰라 `locationX`가 프레임마다 다시 계산되며 값이 튀는, RN에서 알려진 문제였다. 처음 눌렀을 때 그 자리로 "점프"하는 것만 `locationX`를 쓰고, 그 이후 끄는 동안은 `gestureState.dx`(제스처 시작점부터의 누적 이동 거리 — 조상 뷰의 transform과 무관하게 항상 안정적으로 계산됨, `edit.tsx`의 경로 드래그와 같은 방식)로만 값을 계산하도록 바꿨다.
 
+### 경로 이동·확대·회전도 네이티브(Skia Group transform)로 (2026-09-02)
+
+"이동하는 게 뚝뚝 끊기는 건 어쩔 수 없냐"는 질문 — 그림 재생 애니메이션(위 항목들)과 달리 경로를 끌기·핀치로 움직이는 건 여전히 손가락이 움직일 때마다 `updateTransform`(React state) → `RoutePreview` 전체 리렌더 → Skia가 새 `transform` 값을 받는 왕복을 거치고 있었다. `RoutePreview`에 `transformShared?: RouteTransformShared`(x/y/scale/rotationDeg 각각 Reanimated `SharedValue`) prop을 추가해서, `edit.tsx`가 드래그 중엔 `updateTransform`을 아예 안 부르고 이 `SharedValue`들에 직접 쓴다. `RoutePreview`는 Skia `Group`의 `transform` 배열 전체를 `useDerivedValue`로 감싸 이 `SharedValue`들의 `.value`만 읽게 했다(원래 있던 pivot 보존 수식 `translate(cx+tx,cy+ty) rotate scale translate(-cx,-cy)`은 그대로, 값의 출처만 React state에서 SharedValue로 바뀜) — 리렌더 없이 네이티브 쪽에서만 갱신된다(재생 애니메이션과 같은 경로). 손을 뗄 때 그 `SharedValue`들의 마지막 값을 `transform`(state)에 한 번만 커밋한다. `transformShared`를 안 넘기는 화면(background-selection.tsx 등, 드래그 없음)을 위해 `RoutePreview` 내부에도 SharedValue를 만들어 두고 `transform` prop이 바뀔 때 거기로 동기화 — 둘 중 뭘 쓰든 파생값 계산은 하나의 코드 경로.
+
+**알려진 린트 소음 추가분**: `transformXShared.value = ...`(JS 스레드 이벤트 핸들러에서 SharedValue에 값을 쓰는, 역시 정상 패턴)도 위 `elapsed.value = ...`와 같은 이유로 `react-hooks/immutability`가 오탐한다 — 이번 변경으로 8건 늘었다.
+
 ### 각인 드래그도 프레임당 한 번으로 묶음 (2026-09-02)
 
 "각인(거리·정보) 옮기고 배치할 때 많이 느리다"는 별개의 피드백 — 위 재생 관련 항목과 원인이 다르다. 각인을 끌 때 손가락이 움직일 때마다(raw 터치 이벤트, 화면 프레임보다 훨씬 잦다) `updateStampConfig`를 그대로 불러서, `RoutePreview`가 매번 다시 렌더되며 `stampLayoutDescriptors`(포맷팅 함수들 + 8개 레이아웃 분기 계산)를 그때마다 다시 돌고 있었다 — §5 "직접 다듬기" 슬라이더 때(위 항목) 겪은 것과 같은 종류의 문제라 같은 해법을 그대로 적용: ref에 최신값은 즉시 반영해 다음 프레임에 쓰고, 실제 state 반영(`updateStampConfig` 호출)은 `requestAnimationFrame`으로 프레임당 한 번만 묶는다(`scheduleStampConfigUpdate`/`flushPendingStampConfig`). 손을 뗄 때는 예약된 값까지 확실히 반영한 뒤 커밋해 마지막 프레임 분이 씹히지 않게 한다.

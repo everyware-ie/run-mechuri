@@ -1,6 +1,7 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
+import { useSharedValue } from 'react-native-reanimated';
 import {
   Animated,
   Image,
@@ -206,6 +207,25 @@ export default function EditScreen() {
 
   const [isInteracting, setIsInteracting] = useState(false);
   const baseTransform = useRef<RouteTransform>(transform);
+  // 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 예전엔 끌기·핀치 중에
+  // 매 터치 이벤트마다 updateTransform(React state)을 불러서 RoutePreview 전체가
+  // 다시 렌더됐다(그 렌더 자체·Skia로의 새 값 전달 왕복이 비용). 이제 이 네
+  // SharedValue에 직접 쓴다 — RoutePreview가 Skia Group transform을 이 값들의
+  // .value만 읽어 만들게 해뒀으므로(transformShared), 리렌더 없이 네이티브
+  // 쪽에서만 갱신된다(불빛 러너 진행률과 같은 경로). 손을 뗄 때만 이 값들을
+  // transform(state)에 한 번 커밋한다.
+  const transformXShared = useSharedValue(transform.x);
+  const transformYShared = useSharedValue(transform.y);
+  const transformScaleShared = useSharedValue(transform.scale);
+  const transformRotationShared = useSharedValue(transform.rotationDeg);
+  // transform(state)이 드래그가 아닌 다른 경로(초기화 버튼 등)로 바뀔 때도 이
+  // SharedValue들을 같이 맞춰 둔다 — 안 그러면 다음 드래그가 옛 값에서 이어진다.
+  useEffect(() => {
+    transformXShared.value = transform.x;
+    transformYShared.value = transform.y;
+    transformScaleShared.value = transform.scale;
+    transformRotationShared.value = transform.rotationDeg;
+  }, [transform, transformXShared, transformYShared, transformScaleShared, transformRotationShared]);
   const baseStampPosition = useRef(stampConfig.position);
   const baseStampScale = useRef(stampConfig.scale ?? 1);
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
@@ -301,6 +321,12 @@ export default function EditScreen() {
           baseStampScale.current = stampConfigRef.current.scale ?? 1;
         } else {
           baseTransform.current = transformRef.current;
+          // 방어적 동기화 — 보통은 위 useEffect가 이미 맞춰 놨겠지만, 만에 하나
+          // 어긋나 있어도 이번 드래그는 항상 최신 커밋 값에서 시작하게 한다.
+          transformXShared.value = baseTransform.current.x;
+          transformYShared.value = baseTransform.current.y;
+          transformScaleShared.value = baseTransform.current.scale;
+          transformRotationShared.value = baseTransform.current.rotationDeg;
         }
         if (touches.length === 2) {
           gestureStart.current = {
@@ -354,18 +380,13 @@ export default function EditScreen() {
           const newAngle = touchAngleDeg(touches[0], touches[1]);
           const scaleDelta = newDistance / (gestureStart.current.distance || 1);
           const rotationDelta = newAngle - gestureStart.current.angle;
-          updateTransform({
-            x: baseTransform.current.x + gestureState.dx,
-            y: baseTransform.current.y + gestureState.dy,
-            scale: Math.max(0.3, baseTransform.current.scale * scaleDelta),
-            rotationDeg: baseTransform.current.rotationDeg + rotationDelta,
-          });
+          transformXShared.value = baseTransform.current.x + gestureState.dx;
+          transformYShared.value = baseTransform.current.y + gestureState.dy;
+          transformScaleShared.value = Math.max(0.3, baseTransform.current.scale * scaleDelta);
+          transformRotationShared.value = baseTransform.current.rotationDeg + rotationDelta;
         } else {
-          updateTransform({
-            ...baseTransform.current,
-            x: baseTransform.current.x + gestureState.dx,
-            y: baseTransform.current.y + gestureState.dy,
-          });
+          transformXShared.value = baseTransform.current.x + gestureState.dx;
+          transformYShared.value = baseTransform.current.y + gestureState.dy;
         }
       },
       onPanResponderRelease: (_evt, gestureState) => {
@@ -378,7 +399,16 @@ export default function EditScreen() {
           flushPendingStampConfig();
           commitStampConfig(stampConfigRef.current);
         } else {
-          commitTransform(transformRef.current);
+          // 드래그 중엔 transform(state)을 안 건드렸다 — SharedValue에 마지막으로
+          // 쓰인 값(위 onPanResponderMove)이 곧 최종값이니 그걸 그대로 커밋한다.
+          const finalTransform: RouteTransform = {
+            x: transformXShared.value,
+            y: transformYShared.value,
+            scale: transformScaleShared.value,
+            rotationDeg: transformRotationShared.value,
+          };
+          updateTransform(finalTransform);
+          commitTransform(finalTransform);
         }
         // 실기기 피드백(2026-09-02): 바텀시트 바깥(미리보기) 아무 데나 누르면
         // 시트를 접어달라는 요청 — 실제로 끌거나 확대·회전한 게 아니라 그냥
@@ -590,6 +620,12 @@ export default function EditScreen() {
                 points={draft.track.coordinates}
                 preset={draft.preset}
                 transform={transform}
+                transformShared={{
+                  x: transformXShared,
+                  y: transformYShared,
+                  scale: transformScaleShared,
+                  rotationDeg: transformRotationShared,
+                }}
                 smoothOptions={smoothOptions}
                 run={draft.selectedRun}
                 stampConfig={stampConfig}

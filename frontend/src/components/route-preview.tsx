@@ -146,10 +146,27 @@ const TRAVELED = 'rgba(255,243,236,0.60)';
 export type RouteTransform = { x: number; y: number; scale: number; rotationDeg: number };
 export const IDENTITY_TRANSFORM: RouteTransform = { x: 0, y: 0, scale: 1, rotationDeg: 0 };
 
+/** RouteTransform의 각 값을 Reanimated SharedValue로 들고 있는 버전 — edit.tsx가
+ * 드래그 중 이 값들에 직접 쓰면(React state를 안 거침) Skia Group transform이
+ * 네이티브 쪽에서만 갱신된다. transformShared 참고. */
+export type RouteTransformShared = {
+  x: ReturnType<typeof useSharedValue<number>>;
+  y: ReturnType<typeof useSharedValue<number>>;
+  scale: ReturnType<typeof useSharedValue<number>>;
+  rotationDeg: ReturnType<typeof useSharedValue<number>>;
+};
+
 type Props = {
   points: Point[];
   preset: RoutePreset;
   transform: RouteTransform;
+  /** 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끌기·핀치 중엔
+   * transform(React state, 매 프레임 리렌더)을 직접 안 바꾸고, edit.tsx가 이
+   * SharedValue들에 바로 쓴다(터치를 처리하는 JS 스레드에서 쓰긴 하지만, 그
+   * 갱신 자체는 React 리렌더를 안 거쳐 네이티브 쪽으로 바로 전달된다 — light-
+   * runner의 진행률과 같은 경로). 손을 떼면 그 값을 transform(state)에 한 번만
+   * 커밋해 지속되게 한다. 안 넘기면(다른 화면들) transform prop을 그대로 쓴다. */
+  transformShared?: RouteTransformShared;
   smoothOptions: SmoothOptions;
   run: RunRecord;
   stampConfig: StampConfig;
@@ -211,6 +228,7 @@ export function RoutePreview({
   points,
   preset,
   transform,
+  transformShared,
   smoothOptions,
   run,
   stampConfig,
@@ -268,6 +286,56 @@ export function RoutePreview({
     }
   }
 
+  // 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — transformShared를 안
+  // 넘기는 화면(background-selection.tsx 등, 드래그 없음)을 위해 내부에도
+  // SharedValue를 만들어 두고 transform prop이 바뀔 때 거기로 동기화한다.
+  // transformShared가 있으면(edit.tsx) 그쪽을 대신 쓴다 — 둘 중 뭘 쓰든 아래
+  // 파생값들은 항상 SharedValue만 읽으므로(참조는 매 렌더 ??로 고르지만 그
+  // 안쪽 값 자체는 바뀌지 않음) 갈라치기 없이 하나의 코드 경로로 그린다.
+  const internalX = useSharedValue(transform.x);
+  const internalY = useSharedValue(transform.y);
+  const internalScale = useSharedValue(transform.scale);
+  const internalRotation = useSharedValue(transform.rotationDeg);
+  useEffect(() => {
+    if (!transformShared) {
+      internalX.value = transform.x;
+      internalY.value = transform.y;
+      internalScale.value = transform.scale;
+      internalRotation.value = transform.rotationDeg;
+    }
+  }, [transform, transformShared, internalX, internalY, internalScale, internalRotation]);
+  const tx = transformShared?.x ?? internalX;
+  const ty = transformShared?.y ?? internalY;
+  const tScale = transformShared?.scale ?? internalScale;
+  const tRotation = transformShared?.rotationDeg ?? internalRotation;
+
+  // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
+  // contain=min(다 보이게, 여백 남음) / cover=max(캔버스 전체 기준 꽉 채움) /
+  // cover-safe=max(안전 영역 기준, 시트에 안 가려진 높이만 채움). edit.tsx의 각인
+  // 탭 히트테스트도 같은 computeFitTransform을 쓴다 — 계산이 어긋나면 안 된다.
+  // early return(아래) 전에 계산해 두는 이유는 이 값들을 쓰는 groupTransform이
+  // 훅(useDerivedValue)이라 early return 앞에 있어야 해서다.
+  const { fitScale, offsetX, offsetY } = computeFitTransform(viewWidth, viewHeight, fit, bottomInset);
+
+  // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy). tx/ty/
+  // tScale/tRotation(SharedValue)의 .value만 갱신되면 이 배열 전체가 네이티브
+  // 쪽에서 다시 계산된다 — edit.tsx가 드래그 중 React state를 안 거치고 이
+  // 값들에 바로 쓰면(transformShared), Group 변형이 리렌더 없이 프레임마다
+  // 갱신된다(진행률 애니메이션과 같은 경로). offsetX/offsetY/fitScale처럼
+  // 참조하는 일반 값이 바뀌면(예: 화면 회전) Reanimated가 자동으로 감지해
+  // 다시 계산한다(위 hotStartFraction 등과 같은 패턴, 별도 deps 배열 불필요).
+  const groupTransform = useDerivedValue(() => [
+    { translateX: offsetX },
+    { translateY: offsetY },
+    { scale: fitScale },
+    { translateX: CANVAS_WIDTH / 2 + tx.value },
+    { translateY: CANVAS_HEIGHT / 2 + ty.value },
+    { rotate: (tRotation.value * Math.PI) / 180 },
+    { scale: tScale.value },
+    { translateX: -CANVAS_WIDTH / 2 },
+    { translateY: -CANVAS_HEIGHT / 2 },
+  ]);
+
   if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
@@ -286,25 +354,7 @@ export function RoutePreview({
   // 말한 게 아니라 "손을 뗐다"는 뜻이었을 뿐, 재생 자체의 비용은 그대로였다).
   const blurScale = isInteracting ? 0.4 : 0.7;
 
-  // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
-  // contain=min(다 보이게, 여백 남음) / cover=max(캔버스 전체 기준 꽉 채움) /
-  // cover-safe=max(안전 영역 기준, 시트에 안 가려진 높이만 채움). edit.tsx의 각인
-  // 탭 히트테스트도 같은 computeFitTransform을 쓴다 — 계산이 어긋나면 안 된다.
-  const { fitScale, offsetX, offsetY } = computeFitTransform(viewWidth, viewHeight, fit, bottomInset);
   const stampBounds = stampSelected ? computeStampBounds(run, stampConfig) : null;
-
-  // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy)
-  const groupTransform = [
-    { translateX: offsetX },
-    { translateY: offsetY },
-    { scale: fitScale },
-    { translateX: CANVAS_WIDTH / 2 + transform.x },
-    { translateY: CANVAS_HEIGHT / 2 + transform.y },
-    { rotate: (transform.rotationDeg * Math.PI) / 180 },
-    { scale: transform.scale },
-    { translateX: -CANVAS_WIDTH / 2 },
-    { translateY: -CANVAS_HEIGHT / 2 },
-  ];
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
