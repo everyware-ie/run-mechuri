@@ -107,10 +107,22 @@
 
 "각인 시트를 열어야만 위치를 옮길 수 있다"가 불편하다는 피드백과, 드로잉처럼 각인도 화면에서 직접 탭해 고르고 끌기·핀치로 위치·크기를 바꿀 수 있게 해달라는 요청.
 
-- **탭 히트테스트**: `route-preview.tsx`에 `computeStampBounds(run, config)`를 새로 뒀다 — 각인 텍스트 레이아웃 계산(`stampTextDescriptors`, 그리기·바운즈 계산이 따로 놀면 어긋나서 하나로 합침)에서 대략적인 바운딩 박스를 뽑는다. `computeFitTransform(viewWidth, viewHeight, fit, bottomInset)`도 함께 분리해 `edit.tsx`가 RoutePreview와 똑같은 좌표 변환으로 탭 지점(뷰 픽셀) → 캔버스 좌표를 계산한다. `edit.tsx`의 `panResponder`가 `onPanResponderGrant`에서 이 바운즈 안인지로 그 제스처의 대상(`editTargetRef`)을 정한다 — 예전처럼 `stampSheetOpen`으로 정하지 않는다. 각인 시트는 이제 프리셋·넣을 것·한 줄 문구 같은 "값"만 편집하는 곳으로 역할이 좁혀졌다
+- **탭 히트테스트**: `route-preview.tsx`에 `computeStampBounds(run, config)`를 새로 뒀다 — 각인 텍스트 레이아웃 계산(`stampLayoutDescriptors`, 그리기·바운즈 계산이 따로 놀면 어긋나서 하나로 합침)에서 대략적인 바운딩 박스를 뽑는다. `computeFitTransform(viewWidth, viewHeight, fit, bottomInset)`도 함께 분리해 `edit.tsx`가 RoutePreview와 똑같은 좌표 변환으로 탭 지점(뷰 픽셀) → 캔버스 좌표를 계산한다. `edit.tsx`의 `panResponder`가 `onPanResponderGrant`에서 이 바운즈 안인지로 그 제스처의 대상(`editTargetRef`)을 정한다 — 예전처럼 `stampSheetOpen`으로 정하지 않는다. 각인 시트는 이제 프리셋·넣을 것·한 줄 문구 같은 "값"만 편집하는 곳으로 역할이 좁혀졌다
 - **선택 표시**: 탭한 지점이 각인이면 `stampTargeted` state를 켜서 `RoutePreview`의 `stampSelected` prop으로 넘긴다 — 점선 박스(주황, `computeStampBounds` 그대로)를 각인 둘레에 그려 "지금 이걸 쥐고 있다"를 보여준다. 손을 떼면 꺼짐(계속 선택 상태를 유지하는 게 아니라, 쥐고 있는 동안만)
 - **크기 조정**: `StampConfig.scale`(기본 1) 추가 — 자리(`position`)는 그대로 두고 글자 크기·내부 간격에만 곱한다. 두 손가락 핀치의 거리 비율로 계산, 범위 0.5~3. **회전은 없음** — §4-2가 원래 "각인은 끌기만, 크기·회전 없음"이었는데 크기는 이번에 풀었고 회전은 그대로 안 풂(요청에 없었음) — 아래 "어긋남 기록"에 남김
-- **결과물(Swift) 반영**: `RouteRendererModule.swift`의 `RenderClipOptionsInput.stampScale`(기본 1)을 추가해 `drawStamps`가 TS `stampTextDescriptors`와 같은 배율 수식을 쓴다. `share.tsx`가 `draft.stampConfig.scale ?? 1`을 넘김 — 미리보기에서 키운 크기가 결과물에도 그대로 나옴
+- **결과물(Swift) 반영**: `RouteRendererModule.swift`의 `RenderClipOptionsInput.stampScale`(기본 1)을 추가해 `drawStamps`가 TS와 같은 배율 수식을 쓴다. `share.tsx`가 `draft.stampConfig.scale ?? 1`을 넘김 — 미리보기에서 키운 크기가 결과물에도 그대로 나옴
+
+### 각인 프리셋 6종 추가 — 디자인 프로젝트 2a~2f 포팅 (2026-09-02)
+
+phs00의 Claude Design 프로젝트("런 기록 카드 프리셋", `DesignSync` MCP로 읽음) TURN 02 "PHOTO OVERLAY ELEMENTS" 2a~2f를 그대로 옮겼다. row/hero는 기존 자체 제작 그대로 두고, `StampLayout`에 6개를 더해 총 8개: `stack`(2a 좌하단 스택) · `bar`(2b 하단 스탯 바) · `corner`(2c 코너 분산) · `glass`(2d 글래스 플레이트) · `rail`(2e 사이드 레일) · `line`(2f 원 라인).
+
+- **좌표 변환**: 디자인 목업은 300x533 캔버스(9:16과 정확히 같은 비율)로 그려져 있어, 우리 캔버스(1080x1920)로 옮길 때 배율 `M = 3.6`(=1080/300)을 곱한다. 여백·자리처럼 "고정 길이"는 M만, 글자 크기·내부 간격처럼 "커지고 작아져야 하는 값"은 `M * StampConfig.scale`을 곱했다 — TS(`stampLayoutDescriptors`)·Swift(`drawStamps`) 양쪽 동일
+- **세로 앵커는 시안과 다르게**: 디자인 목업은 범용 컨셉 보드라 인스타 UI가 뭘 가리는지 고려하지 않았다(예: 2a는 캔버스 맨 밑에서 26px). 우리는 §7-1 안전 영역 기준으로 다시 앵커했다(캔버스 맨 아래/맨 위 기준이 아니라 `SAFE_AREA_TOP/BOTTOM_RATIO` 선 기준) — 내부 비율·타이포는 시안 그대로, 세로 위치만 우리 쪽 제약에 맞게 조정
+- **정확한 폰트 메트릭이 아니라 근사치**: 각 줄의 baseline 간격을 실제 폰트 ascent/descent 대신 근사 배수(0.85/0.92/1.05 등)로 쌓았다 — 실기기에서 보고 미세 조정이 필요할 수 있다
+- **도형 추가**: `StampRectDescriptor`에 `stroke`·`fill` 옵션을 더해 `glass`의 반투명 유리판(테두리 포함, backdrop-filter blur는 SVG/CoreGraphics 둘 다 못 써서 반투명 채우기로 근사), `bar`/`line`의 구분선, `rail`의 네온 세로선을 표현
+- **로고 색은 앱 팔레트로**: 시안의 라임그린(`#c9f27a`) 포인트 대신 앱 고유 accent(`GLOW`, `#FF5A2B`)를 `rail`의 세로선에 썼다 — 시안은 그 도구의 기본 팔레트일 뿐, 우리 "1a 야간 네온" 컨셉과는 별개라 브랜드 색을 그대로 유지
+- **라벨 톤 구분**(`muted`): "TIME"·"DATE" 같은 라벨/날짜는 값보다 흐리게 — `StampTextDescriptor.muted`로 구분(row/hero/stack엔 없음, 이 6개 프리셋에만 있음)
+- **칩 UI**: 프리셋이 2개→8개로 늘어 `edit.tsx`의 각인 프리셋 칩 줄을 `flex:1` 균등분할(`presetChip`)에서 내용만큼만 차지하고 줄바꿈되는 칩(`layoutChip`)으로 바꿨다
 
 ## 어긋남 기록
 

@@ -632,14 +632,17 @@ export default function EditScreen() {
                 표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
                 나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
             <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
-            <View style={styles.chipRow}>
+            {/* 실물 사진 참고(2026-09-02)로 프리셋이 2개→6개로 늘어서, flex:1로 한
+                줄에 욱여넣던 presetChip 대신 내용만큼만 너비를 차지하고 줄바꿈되는
+                칩으로 바꿨다("넣을 것" 칩과 같은 패턴). */}
+            <View style={styles.layoutChipRow}>
               {STAMP_LAYOUTS.map((l) => {
                 const on = (stampConfig.layout ?? 'row') === l.id;
                 return (
                   <Pressable
                     key={l.id}
                     onPress={() => handleLayoutSelect(l.id)}
-                    style={[styles.presetChip, on && styles.presetChipOn]}>
+                    style={[styles.layoutChip, on && styles.presetChipOn]}>
                     <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
                   </Pressable>
                 );
@@ -746,6 +749,17 @@ const styles = StyleSheet.create({
   presetChipOn: { backgroundColor: Colors.accent },
   presetChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
   presetChipTextOn: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.accentText },
+  // 각인 프리셋(6개, 2026-09-02)용 — presetChip과 달리 flex:1로 한 줄에 욱여넣지
+  // 않고 내용만큼만 차지하며 줄바꿈된다.
+  layoutChipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  layoutChip: {
+    height: 40,
+    paddingHorizontal: 18,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.border,
+  },
   sliderHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',

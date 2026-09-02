@@ -39,12 +39,20 @@ export const IDENTITY_SMOOTH: SmoothOptions = { smooth: 0, corner: 0 };
 // 추가 — route-rendering §7은 원래 넷이었다(확인 노트 기록).
 export type StampItem = 'distance' | 'time' | 'pace' | 'heartRate' | 'date' | 'place';
 export type StampMode = 'always' | 'after' | 'hidden';
-/** 각인 배치. 'row' = 가운데 한 줄(간결), 'hero' = 왼쪽 아래 큰 거리 + 문구 + 메타(시안 S8b). */
-export type StampLayout = 'row' | 'hero';
+/** 각인 배치 프리셋. row/hero는 자체 제작, 나머지 6개(stack~line)는 디자인
+ * 프로젝트("런 기록 카드 프리셋" 2a~2f, 2026-09-02) 그대로 포팅했다. 각각
+ * 어떻게 생겼는지는 stampLayoutDescriptors 함수 본문의 분기 주석 참고. */
+export type StampLayout = 'row' | 'hero' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
 export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
   { id: 'row', label: '간결' },
   { id: 'hero', label: '크게' },
+  { id: 'stack', label: '스택' }, // 2a 좌하단 스택
+  { id: 'bar', label: '스탯바' }, // 2b 하단 스탯 바
+  { id: 'corner', label: '코너' }, // 2c 코너 분산
+  { id: 'glass', label: '글래스' }, // 2d 글래스 플레이트
+  { id: 'rail', label: '레일' }, // 2e 사이드 레일
+  { id: 'line', label: '원라인' }, // 2f 원 라인
 ];
 
 export type StampConfig = {
@@ -721,9 +729,37 @@ type StampTextDescriptor = {
   family: string;
   /** 순수 텍스트(바운즈 폭 추정 폴백용) — parts가 있으면 부분 텍스트를 이어붙인 것과 같다. */
   text: string;
-  anchor: 'start' | 'middle';
+  anchor: 'start' | 'middle' | 'end';
   /** 있으면 이 부분들을 각각 다른 크기로 한 줄에 이어 그린다(숫자+단위 등). 없으면 text 전체를 size로. */
   parts?: StampTextPart[];
+  /** 실물 사진 참고(2026-09-02): "TIME"·"08.21" 같은 라벨/날짜는 값보다 흐리게 — 카드·분할·
+   * 격자 프리셋에서 라벨과 값을 구분하는 데 쓴다. row/hero/stack엔 없음(전부 밝은 톤). */
+  muted?: boolean;
+};
+
+/** 카드·격자 프리셋의 통계 칸 위 라벨. */
+const STAT_LABEL: Record<StampItem, string> = {
+  distance: 'DIST',
+  time: 'TIME',
+  pace: 'PACE',
+  heartRate: 'BPM',
+  date: 'DATE',
+  place: 'PLACE',
+};
+
+/** 카드 프리셋의 배경, 격자 프리셋의 구분선처럼 텍스트가 아닌 도형. */
+type StampRectDescriptor = {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rx: number;
+  /** 'glass' 프리셋의 옅은 테두리 등 — 없으면 안 그린다. */
+  stroke?: string;
+  /** 기본은 어두운 카드 채움(card/glass 배경). 구분선(bar/line)·레일 선(rail)처럼
+   * 다른 색이 필요하면 지정한다. */
+  fill?: string;
 };
 
 // "5.23km" → "5.23"(큰 숫자) + " km"(작은 단위), "5'42\"/km" → "5'42\"" + " /km"처럼
@@ -745,14 +781,14 @@ function splitHeroValue(text: string, size: number): StampTextPart[] {
 // StampLayerSvg(그리기)와 computeStampBounds(탭 히트테스트·선택 박스)가 같은 좌표
 // 계산을 나눠 갖고 있으면 둘이 조용히 어긋나기 쉬워서, 실제 위치·크기 계산은 여기
 // 한 곳에만 두고 둘 다 이 함수를 부른다(2026-09-02, 각인 탭-선택 기능 추가하며 분리).
-function stampTextDescriptors(
+function stampLayoutDescriptors(
   run: RunRecord,
   config: StampConfig,
   progressFraction: number
-): StampTextDescriptor[] {
+): { texts: StampTextDescriptor[]; rects: StampRectDescriptor[] } {
   const isComplete = progressFraction >= 1;
-  if (config.mode === 'hidden') return [];
-  if (config.mode === 'after' && !isComplete) return [];
+  if (config.mode === 'hidden') return { texts: [], rects: [] };
+  if (config.mode === 'after' && !isComplete) return { texts: [], rects: [] };
 
   const enabled = config.enabled ?? ({} as StampConfig['enabled']);
   const has = (k: StampItem) => {
@@ -781,13 +817,14 @@ function stampTextDescriptors(
   const layout: StampLayout = config.layout ?? 'row';
   const ALL_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
   const activeItems = ALL_ITEMS.filter(has);
-  if (activeItems.length === 0 && !caption) return [];
+  if (activeItems.length === 0 && !caption) return { texts: [], rects: [] };
 
   // 각인 묶음 크기 배율(§ StampConfig.scale) — 기본 자리(앵커 x/y)는 그대로 두고
   // 글자 크기·내부 간격에만 곱한다. 앵커 자체가 배율을 타면 크기를 키울 때마다
   // 자리가 같이 밀려서 "고정된 자리에서 커진다"는 감각이 깨진다.
   const s = config.scale ?? 1;
   const nodes: StampTextDescriptor[] = [];
+  const rects: StampRectDescriptor[] = [];
 
   if (layout === 'hero') {
     // 가운데 정렬. 문구(작게) → 히어로 숫자(아주 크게, 단위는 작게) → 메타 줄.
@@ -837,7 +874,323 @@ function stampTextDescriptors(
         anchor: 'middle',
       });
     }
-    return nodes;
+    return { texts: nodes, rects };
+  }
+
+  // 아래 6개(stack~line)는 디자인 프로젝트 "런 기록 카드 프리셋"의 2a~2f를 그대로
+  // 옮긴 것이다(2026-09-02). 목업은 300x533 캔버스라 실제 캔버스(1080x1920)로
+  // 옮길 때 M=3.6을 곱한다 — 여백·자리처럼 "고정 길이"는 M만, 글자 크기·내부
+  // 간격처럼 "커지고 작아져야 하는 값"은 M*scale(u)을 곱했다. 세로 위치는 시안
+  // 그대로(캔버스 맨 위/맨 아래 기준)가 아니라 안전 영역(§7-1) 기준으로 다시
+  // 앵커했다 — 시안은 인스타 UI가 뭘 가리는지 고려 안 한 범용 목업이라, 그대로
+  // 쓰면 상단/하단 UI에 가려질 수 있어서다. 정확한 폰트 메트릭이 아니라 근사
+  // 배수(0.85/0.92/1.05 등)로 줄 간격을 쌓아서, 실기기에서 보고 미세 조정이
+  // 필요할 수 있다.
+  const M = 3.6;
+
+  if (layout === 'stack') {
+    // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄,
+    // 전부 왼쪽 아래 정렬.
+    const u = M * s;
+    const leftX = 24 * M + config.position.x;
+    const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y;
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    const metaItems = activeItems.filter((item) => item !== heroKey);
+
+    const metaFont = 12 * u;
+    const heroSize = 58 * u;
+    const titleFont = 13 * u;
+    const rowGap = 10 * u;
+
+    const metaBaseline = bottomAnchor;
+    const heroBaseline = metaBaseline - rowGap - heroSize * 0.85;
+    const captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85;
+
+    if (metaItems.length > 0) {
+      const metaGap = 14 * u;
+      const charW = metaFont * 0.62;
+      let cursorX = leftX;
+      metaItems.forEach((item, i) => {
+        const text = item === 'heartRate' ? `${value(item)}BPM` : value(item);
+        nodes.push({ key: `meta-${i}`, x: cursorX, y: metaBaseline, size: metaFont, family: 'JetBrainsMono_500Medium', text, anchor: 'start' });
+        cursorX += text.length * charW + metaGap;
+      });
+    }
+    if (heroKey) {
+      const heroText = value(heroKey);
+      nodes.push({ key: 'hero', x: leftX, y: heroBaseline, size: heroSize, family: 'SpaceGrotesk_700Bold', text: heroText, anchor: 'start', parts: splitHeroValue(heroText, heroSize) });
+    }
+    if (caption) {
+      nodes.push({ key: 'caption', x: leftX, y: captionBaseline, size: titleFont, family: 'SpaceGrotesk_500Medium', text: caption, anchor: 'start' });
+    }
+    return { texts: nodes, rects };
+  }
+
+  if (layout === 'bar') {
+    // 2b "하단 스탯 바" — 문구+날짜 머리글, 구분선, 그 아래 4칸 통계(거리 칸이
+    // 좀 더 넓다).
+    const u = M * s;
+    const leftX = 20 * M + config.position.x;
+    const rightX = CANVAS_WIDTH - 20 * M + config.position.x;
+    const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y;
+    const dateText = has('date') ? value('date') : '';
+    const statOrder = (['distance', 'time', 'pace', 'heartRate'] as StampItem[]).filter(has);
+    const statWeight: Partial<Record<StampItem, number>> = { distance: 1.3, time: 1, pace: 1, heartRate: 0.9 };
+
+    const headerFont = 15 * u;
+    const dateFont = 11 * u;
+    const labelFont = 9 * u;
+    const dividerGap = 16 * u;
+    const rowPadTop = 12 * u;
+
+    const valueBaseline = bottomAnchor;
+    const labelBaseline = valueBaseline - 22 * u * 1.15;
+    const dividerY = labelBaseline - labelFont * 0.9 - rowPadTop;
+    const headerBaseline = dividerY - dividerGap - headerFont * 0.3;
+
+    if (caption) {
+      nodes.push({ key: 'caption', x: leftX, y: headerBaseline, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+    }
+    if (dateText) {
+      nodes.push({ key: 'date', x: rightX, y: headerBaseline, size: dateFont, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
+    }
+    if (caption || dateText) {
+      rects.push({ key: 'divider', x: leftX, y: dividerY, width: rightX - leftX, height: Math.max(1, 1 * u), rx: 0, fill: 'rgba(255,255,255,0.28)' });
+    }
+    if (statOrder.length > 0) {
+      const totalWeight = statOrder.reduce((sum, item) => sum + (statWeight[item] ?? 1), 0);
+      const totalWidth = rightX - leftX;
+      let cursorX = leftX;
+      statOrder.forEach((item) => {
+        const colWidth = ((statWeight[item] ?? 1) / totalWeight) * totalWidth;
+        const isDist = item === 'distance';
+        nodes.push({ key: `label-${item}`, x: cursorX, y: labelBaseline, size: labelFont, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
+        nodes.push({
+          key: `value-${item}`,
+          x: cursorX,
+          y: valueBaseline,
+          size: (isDist ? 22 : 18) * u,
+          family: 'SpaceGrotesk_700Bold',
+          text: value(item),
+          anchor: 'start',
+        });
+        cursorX += colWidth;
+      });
+    }
+    return { texts: nodes, rects };
+  }
+
+  if (layout === 'corner') {
+    // 2c "코너 분산" — 위쪽 문구·날짜, 오른쪽에 시간·페이스·평균심박 스택,
+    // 왼쪽 아래에 큰 숫자. 네 군데에 정보를 흩어놓는 구성.
+    const u = M * s;
+    const topLeftX = 24 * M + config.position.x;
+    const topRightX = CANVAS_WIDTH - 24 * M + config.position.x;
+    const headerFont = 13 * u;
+    const headerBaseline = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO + 24 * M + headerFont * 0.85 + config.position.y;
+
+    if (caption) {
+      nodes.push({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+    }
+    const dateText = has('date') ? value('date') : '';
+    if (dateText) {
+      nodes.push({ key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
+    }
+
+    const statItems = (['time', 'pace', 'heartRate'] as StampItem[]).filter(has);
+    if (statItems.length > 0) {
+      const labelFont = 9 * u;
+      const valueFont = 19 * u;
+      const rowGap = 14 * u;
+      let cursorY = headerBaseline + 72 * M; // 시안 top:96 - top:24
+      statItems.forEach((item, i) => {
+        const labelY = cursorY + labelFont * 0.85;
+        const valueY = labelY + valueFont * 1.05;
+        const label = item === 'heartRate' ? 'AVG BPM' : STAT_LABEL[item];
+        nodes.push({ key: `stat-label-${i}`, x: topRightX, y: labelY, size: labelFont, family: 'JetBrainsMono_500Medium', text: label, anchor: 'end', muted: true });
+        nodes.push({ key: `stat-value-${i}`, x: topRightX, y: valueY, size: valueFont, family: 'SpaceGrotesk_700Bold', text: value(item), anchor: 'end' });
+        cursorY = valueY + rowGap;
+      });
+    }
+
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    if (heroKey) {
+      const heroSize = 66 * u;
+      const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y;
+      const heroText = value(heroKey);
+      nodes.push({
+        key: 'hero',
+        x: 22 * M + config.position.x,
+        y: heroBaseline,
+        size: heroSize,
+        family: 'SpaceGrotesk_700Bold',
+        text: heroText,
+        anchor: 'start',
+        parts: splitHeroValue(heroText, heroSize),
+      });
+    }
+    return { texts: nodes, rects };
+  }
+
+  if (layout === 'glass') {
+    // 2d "글래스 플레이트" — 반투명 유리판 카드. SVG엔 backdrop-filter blur가
+    // 없어 반투명 채우기 + 옅은 테두리로 근사한다.
+    const u = M * s;
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    const statItems = activeItems.filter((item) => item !== heroKey && item !== 'date');
+    const dateText = has('date') ? value('date') : '';
+    const hasHeader = !!caption || !!dateText;
+
+    const padX = 20 * u;
+    const padY = 20 * u;
+    const gap = 14 * u;
+    const headerFont = 13 * u;
+    const heroSize = 46 * u;
+    const labelFont = 9 * u;
+    const valueFont = 16 * u;
+
+    const headerLineH = hasHeader ? headerFont * 1.3 : 0;
+    const heroLineH = heroKey ? heroSize * 1.05 : 0;
+    const statLineH = statItems.length > 0 ? labelFont * 1.3 + valueFont * 1.15 : 0;
+    let inner = headerLineH;
+    if (heroKey) inner += (hasHeader ? gap : 0) + heroLineH;
+    if (statItems.length > 0) inner += (heroKey ? gap : hasHeader ? gap : 0) + statLineH;
+    const panelHeight = inner + padY * 2;
+
+    const panelLeft = 16 * M + config.position.x;
+    const panelRight = CANVAS_WIDTH - 16 * M + config.position.x;
+    const panelBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 4 + config.position.y;
+    const panelTop = panelBottom - panelHeight;
+
+    rects.push({
+      key: 'glass-bg',
+      x: panelLeft,
+      y: panelTop,
+      width: panelRight - panelLeft,
+      height: panelHeight,
+      rx: 18 * u,
+      stroke: 'rgba(255,255,255,0.14)',
+    });
+
+    let cursor = panelTop + padY;
+    if (hasHeader) {
+      cursor += headerFont * 0.85;
+      if (caption) {
+        nodes.push({ key: 'caption', x: panelLeft + padX, y: cursor, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+      }
+      if (dateText) {
+        nodes.push({ key: 'date', x: panelRight - padX, y: cursor, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
+      }
+    }
+    if (heroKey) {
+      cursor += (hasHeader ? gap : 0) + heroSize * 0.92;
+      const heroText = value(heroKey);
+      nodes.push({
+        key: 'hero',
+        x: panelLeft + padX,
+        y: cursor,
+        size: heroSize,
+        family: 'SpaceGrotesk_700Bold',
+        text: heroText,
+        anchor: 'start',
+        parts: splitHeroValue(heroText, heroSize),
+      });
+    }
+    if (statItems.length > 0) {
+      cursor += (heroKey ? gap : hasHeader ? gap : 0) + labelFont * 0.85;
+      const colWidth = (panelRight - panelLeft - padX * 2) / statItems.length;
+      const valueY = cursor + valueFont * 1.05;
+      statItems.forEach((item, i) => {
+        const colX = panelLeft + padX + colWidth * i;
+        nodes.push({ key: `stat-label-${item}`, x: colX, y: cursor, size: labelFont, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
+        nodes.push({ key: `stat-value-${item}`, x: colX, y: valueY, size: valueFont, family: 'SpaceGrotesk_700Bold', text: value(item), anchor: 'start' });
+      });
+    }
+    return { texts: nodes, rects };
+  }
+
+  if (layout === 'rail') {
+    // 2e "사이드 레일" — 왼쪽 끝에 세로 네온 선, 그 옆에 거리·시간·페이스·평균심박·
+    // 날짜를 위아래로 쌓는다(거리만 크게). 문구는 오른쪽 아래.
+    const u = M * s;
+    const railPadLeft = 22 * M;
+    const labelFont = 9 * u;
+    const distValueFont = 34 * u;
+    const otherValueFont = 20 * u;
+    const rowGap = 18 * u;
+
+    const rows: { label: string; text: string; big?: boolean }[] = [];
+    if (has('distance')) rows.push({ label: 'DISTANCE', text: value('distance'), big: true });
+    if (has('time')) rows.push({ label: 'TIME', text: value('time') });
+    if (has('pace')) rows.push({ label: 'PACE', text: value('pace') });
+    if (has('heartRate')) rows.push({ label: 'AVG BPM', text: value('heartRate') });
+    if (has('date')) rows.push({ label: 'DATE', text: value('date') });
+
+    if (rows.length > 0) {
+      const rowHeights = rows.map((r) => labelFont * 1.2 + (r.big ? distValueFont : otherValueFont) * 1.05);
+      const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + rowGap * (rows.length - 1);
+      const railTop = CANVAS_HEIGHT / 2 - totalHeight / 2 + config.position.y;
+      const railX = config.position.x;
+      rects.push({ key: 'rail-line', x: railX, y: railTop, width: 3 * u, height: totalHeight, rx: 0, fill: GLOW });
+
+      let cursorY = railTop;
+      rows.forEach((r, i) => {
+        const valueFont = r.big ? distValueFont : otherValueFont;
+        const labelY = cursorY + labelFont * 0.85;
+        const valueY = labelY + valueFont * 0.95;
+        nodes.push({ key: `rail-label-${i}`, x: railX + railPadLeft, y: labelY, size: labelFont, family: 'JetBrainsMono_500Medium', text: r.label, anchor: 'start', muted: true });
+        nodes.push({ key: `rail-value-${i}`, x: railX + railPadLeft, y: valueY, size: valueFont, family: 'SpaceGrotesk_700Bold', text: r.text, anchor: 'start' });
+        cursorY += rowHeights[i] + rowGap;
+      });
+    }
+    if (caption) {
+      nodes.push({
+        key: 'caption',
+        x: CANVAS_WIDTH - 22 * M + config.position.x,
+        y: CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y,
+        size: 13 * u,
+        family: 'SpaceGrotesk_700Bold',
+        text: caption,
+        anchor: 'end',
+      });
+    }
+    return { texts: nodes, rects };
+  }
+
+  if (layout === 'line') {
+    // 2f "원 라인" — 문구(크게) 아래 짧은 구분선, 그 아래 통계를 한 줄 문자열로
+    // 이어붙인다. 전부 가운데 정렬.
+    const u = M * s;
+    const centerX = CANVAS_WIDTH / 2 + config.position.x;
+    const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 30 * M + config.position.y;
+    const gap = 12 * u;
+    const oneLineFont = 11 * u;
+    const titleFont = 26 * u;
+    const dividerW = 28 * u;
+
+    // 시안의 oneLine 템플릿("{{d}} KM · {{t}} · {{pc}}/KM · {{b}} BPM · {{dt}}")을
+    // 근사 — 정확한 대소문자·구분자 재조합 대신 이미 포맷된 값을 그대로 이어붙인다.
+    const parts = ([] as string[]).concat(
+      has('distance') ? [value('distance').toUpperCase()] : [],
+      has('time') ? [value('time')] : [],
+      has('pace') ? [value('pace').toUpperCase()] : [],
+      has('heartRate') ? [value('heartRate').toUpperCase()] : [],
+      has('date') ? [value('date')] : []
+    );
+    const oneLine = parts.join(' · ');
+
+    const oneLineBaseline = bottomAnchor;
+    const dividerY = oneLineBaseline - oneLineFont * 1.3 - gap;
+    const titleBaseline = dividerY - gap - titleFont * 0.85;
+
+    if (oneLine) {
+      nodes.push({ key: 'oneLine', x: centerX, y: oneLineBaseline, size: oneLineFont, family: 'JetBrainsMono_500Medium', text: oneLine, anchor: 'middle' });
+      rects.push({ key: 'divider', x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: Math.max(1, 2 * u), rx: 0, fill: 'rgba(255,255,255,0.5)' });
+    }
+    if (caption) {
+      nodes.push({ key: 'caption', x: centerX, y: titleBaseline, size: titleFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'middle' });
+    }
+    return { texts: nodes, rects };
   }
 
   // 'row' — 가운데 한 줄 + 문구는 그 위에.
@@ -877,7 +1230,7 @@ function stampTextDescriptors(
     });
   }
 
-  return nodes;
+  return { texts: nodes, rects };
 }
 
 export function StampLayerSvg({
@@ -889,14 +1242,29 @@ export function StampLayerSvg({
   config: StampConfig;
   progressFraction: number;
 }) {
-  const nodes = stampTextDescriptors(run, config, progressFraction);
-  if (nodes.length === 0) return null;
+  const { texts, rects } = stampLayoutDescriptors(run, config, progressFraction);
+  if (texts.length === 0 && rects.length === 0) return null;
 
   // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
-  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
+  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다. 라벨(muted)은 덜
+  // 밝은 톤으로 값과 구분한다(카드·분할·격자 프리셋, 2026-09-02).
   return (
     <>
-      {nodes.map((n) => {
+      {/* 도형(카드 배경·구분선)이 글씨보다 먼저 — 뒤에 깔린다. */}
+      {rects.map((r) => (
+        <SvgRect
+          key={r.key}
+          x={r.x}
+          y={r.y}
+          width={r.width}
+          height={r.height}
+          rx={r.rx}
+          fill={r.fill ?? 'rgba(10,12,15,0.72)'}
+          stroke={r.stroke}
+          strokeWidth={r.stroke ? 1 : undefined}
+        />
+      ))}
+      {texts.map((n) => {
         // parts가 있으면(예: 히어로 숫자 "5.23"+" km") 한 줄 안에서 TSpan으로 크기를
         // 나눠 그린다 — textAnchor는 SvgText(부모)에서 이어붙인 전체 줄 기준으로 적용된다.
         const content = n.parts
@@ -906,6 +1274,7 @@ export function StampLayerSvg({
               </TSpan>
             ))
           : n.text;
+        const fill = n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM;
         return (
           <Fragment key={n.key}>
             <SvgText
@@ -919,7 +1288,7 @@ export function StampLayerSvg({
               strokeWidth={n.size * 0.24}>
               {content}
             </SvgText>
-            <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={LINE_WARM} filter="url(#stampGlow)">
+            <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={fill} filter="url(#stampGlow)">
               {content}
             </SvgText>
           </Fragment>
@@ -939,19 +1308,19 @@ export type CanvasRect = { x: number; y: number; width: number; height: number }
 // 시점(progressFraction=1) 값으로 고정 계산해도 충분하다 — 매 프레임 재계산할
 // 필요가 없다.
 export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasRect | null {
-  const nodes = stampTextDescriptors(run, config, 1);
-  if (nodes.length === 0) return null;
+  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
+  if (texts.length === 0 && rects.length === 0) return null;
 
   // 글자폭 추정치라 정확하진 않지만, 탭 히트박스는 넉넉한 편이 오히려 쓰기 좋다.
   let left = Infinity;
   let right = -Infinity;
   let top = Infinity;
   let bottom = -Infinity;
-  for (const n of nodes) {
+  for (const n of texts) {
     const width = n.parts
       ? n.parts.reduce((sum, p) => sum + p.text.length * p.size * 0.62, 0)
       : n.text.length * n.size * 0.62;
-    const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.x;
+    const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
     const nodeRight = nodeLeft + width;
     const nodeTop = n.y - n.size * 0.85; // 대략적인 ascent
     const nodeBottom = n.y + n.size * 0.3; // 대략적인 descent
@@ -959,6 +1328,14 @@ export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasR
     right = Math.max(right, nodeRight);
     top = Math.min(top, nodeTop);
     bottom = Math.max(bottom, nodeBottom);
+  }
+  // 카드 배경처럼 텍스트보다 더 넓게 퍼진 도형은 그 경계도 같이 반영한다 — 카드
+  // 프리셋은 이 rects만으로도 사실상 정확한 바운즈가 나온다.
+  for (const r of rects) {
+    left = Math.min(left, r.x);
+    right = Math.max(right, r.x + r.width);
+    top = Math.min(top, r.y);
+    bottom = Math.max(bottom, r.y + r.height);
   }
   const padding = 28;
   return {

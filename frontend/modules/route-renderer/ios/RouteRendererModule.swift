@@ -637,20 +637,24 @@ public class RouteRendererModule: Module {
     let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
     if keyed.isEmpty && caption.isEmpty { return }
 
-    // route-preview.tsx SAFE_AREA_BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
+    // route-preview.tsx SAFE_AREA_TOP/BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
+    let safeAreaTopRatio: CGFloat = 0.17
     let safeAreaBottomRatio: CGFloat = 0.17
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
     // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
-    let draw: (String, CGPoint, UIFont, NSTextAlignment) -> Void = { text, origin, font, align in
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+    // color 생략 시 기본 밝은 톤. 라벨류(muted)는 호출부에서 mutedColor를 넘긴다
+    // (route-preview.tsx StampTextDescriptor.muted와 같은 개념, 2026-09-02).
+    func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
       let w = (text as NSString).size(withAttributes: attrs).width
-      let x = align == .center ? origin.x - w / 2 : origin.x
+      let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
       (text as NSString).draw(at: CGPoint(x: x, y: origin.y), withAttributes: attrs)
       ctx.restoreGState()
     }
+    let mutedColor = self.lineWarm.withAlphaComponent(0.5)
 
     // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(stampX/Y)는 그대로 두고
     // 글자 크기·내부 간격에만 곱한다.
@@ -658,18 +662,18 @@ public class RouteRendererModule: Module {
 
     // route-preview.tsx splitHeroValue와 같은 규칙 — "5.23km"처럼 끝의 단위 글자(있으면,
     // "/km"처럼 슬래시 포함)를 떼어 작게 그린다. "28:14"처럼 단위가 없으면 nil.
-    let splitHeroValue: (String) -> (main: String, unit: String)? = { text in
+    func splitHeroValue(_ text: String) -> (main: String, unit: String)? {
       guard let range = text.range(of: "/?[a-zA-Z%]+$", options: .regularExpression) else { return nil }
       let main = String(text[..<range.lowerBound])
       if main.isEmpty { return nil }
       return (main, String(text[range]))
     }
-    // 숫자(크게) + 단위(작게)를 한 줄로 이어 가운데 정렬해 그린다. UIKit의 NSString.draw(at:)는
+    // 숫자(크게) + 단위(작게)를 한 줄로 이어 align 기준으로 그린다. UIKit의 NSString.draw(at:)는
     // 원점을 텍스트 위쪽 기준으로 잡아서(SVG의 baseline 기준과 다름) 두 크기의 baseline이
     // 완전히 일치하진 않는다 — 각인 폰트 불일치와 같은 종류의 근사치로 허용한다.
-    let drawHeroValue: (String, CGPoint, CGFloat) -> Void = { text, origin, size in
+    func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
       guard let split = splitHeroValue(text) else {
-        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), .center)
+        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), align)
         return
       }
       let mainFont = UIFont.systemFont(ofSize: size, weight: .bold)
@@ -679,12 +683,286 @@ public class RouteRendererModule: Module {
       let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
       let unitText = " \(split.unit)"
       let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
-      let startX = origin.x - (mainW + unitW) / 2
+      let totalW = mainW + unitW
+      let startX: CGFloat
+      switch align {
+      case .center: startX = origin.x - totalW / 2
+      case .right: startX = origin.x - totalW
+      default: startX = origin.x
+      }
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
       (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y), withAttributes: mainAttrs)
       (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y + (size - size * 0.42)), withAttributes: unitAttrs)
       ctx.restoreGState()
+    }
+    // route-preview.tsx STAT_LABEL과 같음 — 통계 칸 라벨.
+    let statLabel: [String: String] = [
+      "distance": "DIST", "time": "TIME", "pace": "PACE", "heartRate": "BPM", "date": "DATE", "place": "PLACE",
+    ]
+    let heroKeys = ["distance", "time", "pace"]
+    func hasKey(_ k: String) -> Bool { keyed.contains { $0.0 == k } }
+    func valueFor(_ k: String) -> String { keyed.first { $0.0 == k }?.1 ?? "" }
+    // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
+    func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
+      let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+      ctx.saveGState()
+      color.setFill()
+      path.fill()
+      if let strokeColor {
+        strokeColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+      }
+      ctx.restoreGState()
+    }
+
+    // 아래 6개(stack~line)는 디자인 프로젝트 "런 기록 카드 프리셋"의 2a~2f를 그대로
+    // 옮긴 것이다(2026-09-02, route-preview.tsx stampLayoutDescriptors와 같은 수식).
+    // 목업은 300x533 캔버스라 M=3.6을 곱해 1080x1920으로 옮긴다.
+    let M: CGFloat = 3.6
+
+    if stamp.stampLayout == "stack" {
+      // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
+      let u = M * s
+      let leftX = 24 * M + CGFloat(stamp.stampX)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+      let hero = keyed.first { heroKeys.contains($0.0) }
+      let metaItems = keyed.filter { $0.0 != hero?.0 }
+
+      let metaFont = 12 * u
+      let heroSize = 58 * u
+      let titleFont = 13 * u
+      let rowGap = 10 * u
+
+      let metaBaseline = bottomAnchor
+      let heroBaseline = metaBaseline - rowGap - heroSize * 0.85
+      let captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+
+      if !metaItems.isEmpty {
+        let font = UIFont.monospacedSystemFont(ofSize: metaFont, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        var cursorX = leftX
+        for (key, val) in metaItems {
+          let text = key == "heartRate" ? "\(val)BPM" : val
+          draw(text, CGPoint(x: cursorX, y: metaBaseline), font, .left)
+          cursorX += (text as NSString).size(withAttributes: attrs).width + 14 * u
+        }
+      }
+      if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
+      if !caption.isEmpty {
+        draw(caption, CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "bar" {
+      // 2b "하단 스탯 바" — 문구+날짜 머리글, 구분선, 그 아래 4칸 통계(거리 칸이 더 넓다).
+      let u = M * s
+      let leftX = 20 * M + CGFloat(stamp.stampX)
+      let rightX = canvasSize.width - 20 * M + CGFloat(stamp.stampX)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+      let dateText = valueFor("date")
+      let statOrder = ["distance", "time", "pace", "heartRate"].filter(hasKey)
+      let statWeight: [String: CGFloat] = ["distance": 1.3, "time": 1, "pace": 1, "heartRate": 0.9]
+
+      let headerFont = 15 * u
+      let labelFont = 9 * u
+      let dividerGap = 16 * u
+      let rowPadTop = 12 * u
+
+      let valueBaseline = bottomAnchor
+      let labelBaseline = valueBaseline - 22 * u * 1.15
+      let dividerY = labelBaseline - labelFont * 0.9 - rowPadTop
+      let headerBaseline = dividerY - dividerGap - headerFont * 0.3
+
+      if !caption.isEmpty { draw(caption, CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !caption.isEmpty || !dateText.isEmpty {
+        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
+      }
+      if !statOrder.isEmpty {
+        let totalWeight = statOrder.reduce(0) { $0 + (statWeight[$1] ?? 1) }
+        let totalWidth = rightX - leftX
+        var cursorX = leftX
+        for key in statOrder {
+          let colWidth = (statWeight[key] ?? 1) / totalWeight * totalWidth
+          let isDist = key == "distance"
+          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u, weight: .bold), .left)
+          cursorX += colWidth
+        }
+      }
+      return
+    }
+
+    if stamp.stampLayout == "corner" {
+      // 2c "코너 분산" — 위쪽 문구·날짜, 오른쪽에 시간·페이스·평균심박 스택, 왼쪽 아래에 큰 숫자.
+      let u = M * s
+      let topLeftX = 24 * M + CGFloat(stamp.stampX)
+      let topRightX = canvasSize.width - 24 * M + CGFloat(stamp.stampX)
+      let headerFont = 13 * u
+      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
+
+      if !caption.isEmpty { draw(caption, CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      let dateText = valueFor("date")
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+
+      let statItems = ["time", "pace", "heartRate"].filter(hasKey)
+      if !statItems.isEmpty {
+        let labelFont = 9 * u
+        let valueFont = 19 * u
+        let rowGap = 14 * u
+        var cursorY = headerBaseline + 72 * M
+        for key in statItems {
+          let labelY = cursorY + labelFont * 0.85
+          let valueY = labelY + valueFont * 1.05
+          let label = key == "heartRate" ? "AVG BPM" : (statLabel[key] ?? "")
+          draw(label, CGPoint(x: topRightX, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .right, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .right)
+          cursorY = valueY + rowGap
+        }
+      }
+
+      if let hero = keyed.first(where: { heroKeys.contains($0.0) }) {
+        let heroSize = 66 * u
+        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+        drawHeroValue(hero.1, CGPoint(x: 22 * M + CGFloat(stamp.stampX), y: heroBaseline), heroSize, align: .left)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "glass" {
+      // 2d "글래스 플레이트" — 반투명 유리판 카드(블러는 CoreGraphics로 흉내 못 내
+      // 반투명 채우기 + 옅은 테두리로 근사).
+      let u = M * s
+      let hero = keyed.first { heroKeys.contains($0.0) }
+      let statItems = keyed.filter { $0.0 != hero?.0 && $0.0 != "date" }
+      let dateText = valueFor("date")
+      let hasHeader = !caption.isEmpty || !dateText.isEmpty
+
+      let padX = 20 * u
+      let padY = 20 * u
+      let gap = 14 * u
+      let headerFont = 13 * u
+      let heroSize = 46 * u
+      let labelFont = 9 * u
+      let valueFont = 16 * u
+
+      let headerLineH = hasHeader ? headerFont * 1.3 : 0
+      let heroLineH = hero != nil ? heroSize * 1.05 : 0
+      let statLineH = !statItems.isEmpty ? labelFont * 1.3 + valueFont * 1.15 : 0
+      var inner = headerLineH
+      if hero != nil { inner += (hasHeader ? gap : 0) + heroLineH }
+      if !statItems.isEmpty { inner += (hero != nil ? gap : hasHeader ? gap : 0) + statLineH }
+      let panelHeight = inner + padY * 2
+
+      let panelLeft = 16 * M + CGFloat(stamp.stampX)
+      let panelRight = canvasSize.width - 16 * M + CGFloat(stamp.stampX)
+      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 4 + CGFloat(stamp.stampY)
+      let panelTop = panelBottom - panelHeight
+
+      fillRect(
+        CGRect(x: panelLeft, y: panelTop, width: panelRight - panelLeft, height: panelHeight),
+        radius: 18 * u,
+        color: UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
+        strokeColor: UIColor(white: 1, alpha: 0.14)
+      )
+
+      var cursor = panelTop + padY
+      if hasHeader {
+        cursor += headerFont * 0.85
+        if !caption.isEmpty { draw(caption, CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      }
+      if let hero {
+        cursor += (hasHeader ? gap : 0) + heroSize * 0.92
+        drawHeroValue(hero.1, CGPoint(x: panelLeft + padX, y: cursor), heroSize, align: .left)
+      }
+      if !statItems.isEmpty {
+        cursor += (hero != nil ? gap : hasHeader ? gap : 0) + labelFont * 0.85
+        let colWidth = (panelRight - panelLeft - padX * 2) / CGFloat(statItems.count)
+        let valueY = cursor + valueFont * 1.05
+        for (i, item) in statItems.enumerated() {
+          let colX = panelLeft + padX + colWidth * CGFloat(i)
+          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+        }
+      }
+      return
+    }
+
+    if stamp.stampLayout == "rail" {
+      // 2e "사이드 레일" — 왼쪽 끝 세로 네온 선 + 거리·시간·페이스·평균심박·날짜를
+      // 위아래로 쌓는다(거리만 크게). 문구는 오른쪽 아래.
+      let u = M * s
+      let railPadLeft = 22 * M
+      let labelFont = 9 * u
+      let distValueFont = 34 * u
+      let otherValueFont = 20 * u
+      let rowGap = 18 * u
+
+      var rows: [(label: String, text: String, big: Bool)] = []
+      if hasKey("distance") { rows.append(("DISTANCE", valueFor("distance"), true)) }
+      if hasKey("time") { rows.append(("TIME", valueFor("time"), false)) }
+      if hasKey("pace") { rows.append(("PACE", valueFor("pace"), false)) }
+      if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
+      if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
+
+      if !rows.isEmpty {
+        let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
+        let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(rows.count - 1)
+        let railTop = canvasSize.height / 2 - totalHeight / 2 + CGFloat(stamp.stampY)
+        let railX = CGFloat(stamp.stampX)
+        fillRect(CGRect(x: railX, y: railTop, width: 3 * u, height: totalHeight), radius: 0, color: self.glowColor)
+
+        var cursorY = railTop
+        for (i, row) in rows.enumerated() {
+          let valueFont = row.big ? distValueFont : otherValueFont
+          let labelY = cursorY + labelFont * 0.85
+          let valueY = labelY + valueFont * 0.95
+          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          cursorY += rowHeights[i] + rowGap
+        }
+      }
+      if !caption.isEmpty {
+        let y = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+        draw(caption, CGPoint(x: canvasSize.width - 22 * M + CGFloat(stamp.stampX), y: y), UIFont.systemFont(ofSize: 13 * u, weight: .bold), .right)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "line" {
+      // 2f "원 라인" — 문구(크게) 아래 짧은 구분선, 그 아래 통계를 한 줄로 이어붙인다.
+      let u = M * s
+      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + CGFloat(stamp.stampY)
+      let gap = 12 * u
+      let oneLineFont = 11 * u
+      let titleFont = 26 * u
+      let dividerW = 28 * u
+
+      var parts: [String] = []
+      if hasKey("distance") { parts.append(valueFor("distance").uppercased()) }
+      if hasKey("time") { parts.append(valueFor("time")) }
+      if hasKey("pace") { parts.append(valueFor("pace").uppercased()) }
+      if hasKey("heartRate") { parts.append(valueFor("heartRate").uppercased()) }
+      if hasKey("date") { parts.append(valueFor("date")) }
+      let oneLine = parts.joined(separator: " · ")
+
+      let oneLineBaseline = bottomAnchor
+      let dividerY = oneLineBaseline - oneLineFont * 1.3 - gap
+      let titleBaseline = dividerY - gap - titleFont * 0.85
+
+      if !oneLine.isEmpty {
+        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), UIFont.monospacedSystemFont(ofSize: oneLineFont, weight: .medium), .center)
+        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
+      }
+      if !caption.isEmpty {
+        draw(caption, CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
+      }
+      return
     }
 
     if stamp.stampLayout == "hero" {
@@ -692,7 +970,6 @@ public class RouteRendererModule: Module {
       // 원래 시안 S8b는 왼쪽 아래 정렬이었는데, 실물 사진 참고(2026-09-02)로 바꿨다.
       let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
       let metaY = canvasSize.height * (1 - safeAreaBottomRatio) - 40 + CGFloat(stamp.stampY)
-      let heroKeys = ["distance", "time", "pace"]
       let hero = keyed.first { heroKeys.contains($0.0) }
       let metaItems = keyed.filter { $0.0 != hero?.0 }.map { $0.1 }
       let heroSize: CGFloat = 132 * s

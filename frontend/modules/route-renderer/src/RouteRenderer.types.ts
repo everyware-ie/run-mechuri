@@ -16,7 +16,7 @@ export type RouteTransform = {
 };
 
 export type StampMode = 'always' | 'after' | 'hidden';
-export type StampLayout = 'row' | 'hero';
+export type StampLayout = 'row' | 'hero' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
 export type RenderClipOptions = {
   points: RoutePoint[];
