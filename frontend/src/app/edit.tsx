@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
+  Keyboard,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
+  type KeyboardEvent,
   type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
@@ -350,6 +352,29 @@ export default function EditScreen() {
   const [sheetExpanded, setSheetExpanded] = useState(true);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetDragStart = useRef(0);
+  // 실기기 피드백(2026-09-02): 각인 시트의 "한 줄 문구" 입력창에 키보드가 뜨면
+  // 입력창을 그대로 가려서 뭘 쓰는지 안 보였다 — 키보드 높이만큼 시트를 더
+  // 밀어 올린다(끌기로 접고 펴는 sheetTranslateY와는 별개 축, 최종 위치는
+  // 두 값을 합쳐서 계산). keyboardWillShow/Hide(iOS 전용)는 키보드 자체
+  // 애니메이션 시작 전에 미리 알려줘서, 같은 duration으로 동시에 움직이면
+  // 자연스럽게 같이 올라가는 느낌이 난다. keyboardDidShow/Hide는 키보드가
+  // 다 뜬 다음에야 불려서 한 박자 늦게 따라가는 느낌이 났을 것이다.
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animateKeyboard = (e: KeyboardEvent, toValue: number) => {
+      Animated.timing(keyboardOffset, {
+        toValue,
+        duration: e.duration || 250,
+        useNativeDriver: true,
+      }).start();
+    };
+    const showSub = Keyboard.addListener('keyboardWillShow', (e) => animateKeyboard(e, e.endCoordinates.height));
+    const hideSub = Keyboard.addListener('keyboardWillHide', (e) => animateKeyboard(e, 0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
   // 시트를 끌 때도 미리보기 애니메이션을 멈춘다 — 안 멈추면 계속 도는 Skia 글로우
   // 렌더링(RAF)과 시트 드래그의 JS 스레드 작업이 같이 돌면서 드래그가 버벅였다.
   const [isSheetDragging, setIsSheetDragging] = useState(false);
@@ -480,6 +505,11 @@ export default function EditScreen() {
     }
   };
 
+  // 끌기로 접고 펴는 위치(sheetTranslateY, 아래로 갈수록 +)에서 키보드가 뜬
+  // 만큼(keyboardOffset)을 뺀다 — 두 값이 각자 애니메이션되다가 최종
+  // translateY에서 합쳐진다.
+  const sheetY = Animated.subtract(sheetTranslateY, keyboardOffset);
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <ScreenHeader
@@ -542,7 +572,7 @@ export default function EditScreen() {
         <Animated.View
           style={[
             styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetTranslateY }] },
+            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
           ]}>
           <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
             <View style={styles.sheetHandleBar} />
@@ -623,7 +653,7 @@ export default function EditScreen() {
         <Animated.View
           style={[
             styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetTranslateY }] },
+            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
           ]}>
           <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
             <View style={styles.sheetHandleBar} />

@@ -98,6 +98,10 @@
 - `sheetExpandedRef`(제스처 핸들러용 ref)와 별개로 `sheetExpanded` state를 새로 둬서 이 버튼의 표시 여부를 리렌더에 반영한다 — ref는 렌더 중에 읽으면 안 되므로(react-hooks/refs) JSX 조건은 항상 state로 판단
 - 끌어서 접고 펴는 기존 제스처(40px 임계값)는 그대로 — "접는다"의 의미만 "손잡이만 남기고 살짝"에서 "완전히 숨김"으로 바뀐 것
 
+### 각인 시트에 키보드가 뜨면 그만큼 같이 밀어올림 (2026-09-02)
+
+"한 줄 문구" `TextInput`에 키보드가 뜨면 입력창 자체를 가려서 뭘 쓰는지 안 보인다는 피드백. `Keyboard.addListener('keyboardWillShow'/'keyboardWillHide', ...)`(iOS 전용 — 키보드가 실제로 뜨기 *전에* 미리 알려줘서 같은 duration으로 동시에 움직일 수 있다. `keyboardDidShow`/`Did Hide`는 다 뜬 뒤에야 불려서 한 박자 늦게 따라가는 느낌이 났을 것)로 키보드 높이를 `keyboardOffset`(별도 `Animated.Value`)에 반영한다. 최종 `translateY`는 `Animated.subtract(sheetTranslateY, keyboardOffset)`(`sheetY`) — 끌기로 접고 펴는 축과 키보드로 밀어올리는 축을 분리해 두면 서로 간섭하지 않는다(끌던 도중 키보드가 뜨거나, 반대 순서로 일어나도 두 값이 각자 애니메이션되다 합쳐질 뿐이다).
+
 ### 편집 중 미리보기 크롭을 안전 영역 기준으로 (2026-09-02)
 
 편집 화면 미리보기(`fit="cover"`)가 9:16 캔버스 전체를 기준으로 화면을 채우다 보니, 편집 화면 뷰 비율이 9:16보다 납작해서 위아래가 꽤 잘려 나가 보인다는 피드백이 있었다. 캔버스 전체 대신 인스타 안전 영역(`SAFE_AREA_TOP/BOTTOM_RATIO` — 어차피 스토리에 올리면 프로필·답장창에 가려지는 부분)만 기준으로 화면을 채우는 `fit="cover-safe"`를 추가해 `edit.tsx`에서 씀. 잘려 나가는 부분이 "어차피 안 보이는 영역"이라 체감상 원본 그대로에 가깝다. `route-preview.tsx`의 Skia `Group transform`과 SVG `viewBox` 양쪽 다 안전 영역 기준으로 맞춰야 각인·경로가 어긋나지 않는다. 결과물(mp4)은 이 크롭과 무관하게 항상 캔버스 전체를 그린다(화면 표시 방식일 뿐).
