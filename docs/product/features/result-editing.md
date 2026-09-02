@@ -199,6 +199,19 @@ phs00의 Claude Design 프로젝트("런 기록 카드 프리셋", `DesignSync` 
 
 `StampLayerSvg`에서 `config.layout`이 row/hero가 아니면(`softShadow`) 굵은 외곽선 없이, 흐릿한 검정 그림자 사본(`stampGlow` 필터를 그대로 재사용하되 `fill="rgba(0,0,0,0.55)"`로 색만 바꿈) + 또렷한 글씨 두 겹만 그리도록 나눴다 — 원본의 가벼운 그림자 느낌에 더 가깝다. row/hero는 기존 강한 처리 그대로 유지(그쪽은 애초에 그 처리가 필요해서 넣은 거라).
 
+### 드래그가 손가락 이동량보다 짧게 반영되던 문제 — 뷰 픽셀 vs 캔버스 좌표 (2026-09-02)
+
+네이티브 드래그(경로 Skia Group transform, 각인 Animated.Value 둘 다) 실기기 피드백: "빨라지긴 했는데 내가 놓은 위치에 정확히 안 놓인다." 드래그 중 미리보기는 `gestureState.dx`/`dy`(PanResponder가 주는, **뷰 픽셀** 단위의 제스처 시작점 대비 이동량)를 그대로 오프셋으로 썼는데, 커밋 대상인 `RouteTransform.x/y`·`StampConfig.position`은 **캔버스 좌표**(1080x1920)다. 화면(뷰)이 캔버스보다 작은 비율(`fitScale`, `computeFitTransform`이 계산 — 보통 1보다 많이 작다, 화면은 point 단위인데 캔버스는 내보내기 해상도라)만큼, 뷰 픽셀을 그대로 더하면 실제로 필요한 캔버스 상 이동량보다 훨씬 적게 반영돼 손가락이 간 만큼 못 미치는 자리에 놓였다.
+
+미리보기 자체(네이티브 오프셋)는 뷰 좌표계에서 1:1로 손가락을 따라가므로 드래그 "느낌"은 문제없었고, 그래서 손을 떼는 순간의 **최종 커밋값 계산**에서만 단위 변환이 빠져 있던 게 원인 — 아래 네 지점 모두 `gestureState.dx / fitScale`(캔버스 좌표로 환산)로 고쳤다:
+
+- 각인 한 손가락 드래그 release 커밋
+- 각인 두 손가락(핀치) 드래그 중 위치 계산(`scheduleStampConfigUpdate`)
+- 경로 한 손가락 드래그 중 SharedValue 쓰기
+- 경로 두 손가락(핀치+회전) 드래그 중 SharedValue 쓰기
+
+`fitScale`은 제스처 시작(`onPanResponderGrant`)에서 각인 탭 히트테스트용으로 이미 한 번 계산하던 값이라, 같은 제스처 동안(`gestureFitScaleRef`) 재사용하도록 했다 — `previewSize`·`showSafeGuide`는 드래그 도중 안 바뀌므로 매 `move`마다 다시 계산할 필요가 없다.
+
 ## 어긋남 기록
 
 - **각인 표시 모드(§7-3 "완성 후만" 포함) 선택 UI가 없어졌다** (2026-09-01). 시안 S6에 그 UI가 없어서 뺐다. `StampConfig.mode`는 데이터에 남아 'always' 고정으로 동작. FRD §7-3을 지키려면 UI를 다시 넣거나(시안의 "자리·없음"이 hidden을 겸하는 구조로 재해석) FRD를 시안에 맞춰 개정해야 함

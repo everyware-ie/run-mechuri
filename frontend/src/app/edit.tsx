@@ -288,6 +288,9 @@ export default function EditScreen() {
   // RoutePreview의 선택 점선 박스에 전달하는 용도라 state로 따로 둔다.
   const editTargetRef = useRef<'drawing' | 'stamp'>('drawing');
   const [stampTargeted, setStampTargeted] = useState(false);
+  // 이번 제스처(grant~release) 동안의 fitScale — 뷰 픽셀 dx/dy를 캔버스 좌표로
+  // 바꿀 때 쓴다(아래 move·release). grant에서 한 번만 계산해 담아 둔다.
+  const gestureFitScaleRef = useRef(1);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -299,19 +302,23 @@ export default function EditScreen() {
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         setIsInteracting(true);
 
+        // 뷰 픽셀 ↔ 캔버스 좌표 변환에 쓰는 fitScale — 히트테스트뿐 아니라 이번
+        // 제스처 동안의 모든 dx/dy 변환(아래 move·release)에서 재사용한다.
+        // previewSize·showSafeGuide는 드래그 도중 안 바뀌므로 grant에서 한 번만
+        // 계산해 ref에 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음).
+        const { fitScale, offsetX, offsetY } = computeFitTransform(
+          previewSizeRef.current.width,
+          previewSizeRef.current.height,
+          showSafeGuideRef.current ? 'cover' : 'cover-safe',
+          SHEET_EXPANDED_HEIGHT + insets.bottom
+        );
+        gestureFitScaleRef.current = fitScale;
+
         // 탭 지점(뷰 픽셀) → 캔버스 좌표로 역변환해 각인 영역 히트테스트.
-        // RoutePreview가 실제로 쓰는 것과 같은 fit·bottomInset이어야 좌표가 어긋나지
-        // 않는다(아래 JSX의 RoutePreview 호출과 값이 같아야 함).
         const run = selectedRunRef.current;
         const bounds = run ? computeStampBounds(run, stampConfigRef.current) : null;
         let isStamp = false;
         if (bounds) {
-          const { fitScale, offsetX, offsetY } = computeFitTransform(
-            previewSizeRef.current.width,
-            previewSizeRef.current.height,
-            showSafeGuideRef.current ? 'cover' : 'cover-safe',
-            SHEET_EXPANDED_HEIGHT + insets.bottom
-          );
           const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
           const canvasX = (touch.locationX - offsetX) / fitScale;
           const canvasY = (touch.locationY - offsetY) / fitScale;
@@ -369,11 +376,13 @@ export default function EditScreen() {
             }
             const newDistance = touchDistance(touches[0], touches[1]);
             const scaleDelta = newDistance / (gestureStart.current.distance || 1);
+            // 한 손가락 release 커밋과 같은 이유로 dx/dy(뷰 픽셀)를 fitScale로
+            // 나눠 캔버스 좌표로 바꾼다 — 안 그러면 핀치 중 위치도 짧게 움직인다.
             scheduleStampConfigUpdate({
               ...stampConfigRef.current,
               position: {
-                x: baseStampPosition.current.x + gestureState.dx,
-                y: baseStampPosition.current.y + gestureState.dy,
+                x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
+                y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
               },
               scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
             });
@@ -398,13 +407,16 @@ export default function EditScreen() {
           const newAngle = touchAngleDeg(touches[0], touches[1]);
           const scaleDelta = newDistance / (gestureStart.current.distance || 1);
           const rotationDelta = newAngle - gestureStart.current.angle;
-          transformXShared.value = baseTransform.current.x + gestureState.dx;
-          transformYShared.value = baseTransform.current.y + gestureState.dy;
+          // 각인과 같은 이유(위 grant 주석) — dx/dy는 뷰 픽셀, transform.x/y는
+          // 캔버스 좌표(Skia Group transform이 fitScale 적용 "전" 단계에서 이
+          // 값을 쓴다)라 fitScale로 나눠야 미리보기와 커밋 위치가 일치한다.
+          transformXShared.value = baseTransform.current.x + gestureState.dx / gestureFitScaleRef.current;
+          transformYShared.value = baseTransform.current.y + gestureState.dy / gestureFitScaleRef.current;
           transformScaleShared.value = Math.max(0.3, baseTransform.current.scale * scaleDelta);
           transformRotationShared.value = baseTransform.current.rotationDeg + rotationDelta;
         } else {
-          transformXShared.value = baseTransform.current.x + gestureState.dx;
-          transformYShared.value = baseTransform.current.y + gestureState.dy;
+          transformXShared.value = baseTransform.current.x + gestureState.dx / gestureFitScaleRef.current;
+          transformYShared.value = baseTransform.current.y + gestureState.dy / gestureFitScaleRef.current;
         }
       },
       onPanResponderRelease: (_evt, gestureState) => {
@@ -427,9 +439,18 @@ export default function EditScreen() {
             // 건드렸다(stampDragX/Y로만 네이티브에서 움직였다). 최종 위치를 여기서
             // 계산해 커밋하고, 오프셋은 0으로 되돌린다(안 그러면 다음 렌더에서
             // 실제 위치 + 남은 오프셋이 겹쳐 보인다).
+            //
+            // 실기기 피드백(2026-09-02): "놓은 자리에 정확히 안 놓인다" — 드래그
+            // 중 미리보기는 gestureState.dx/dy(뷰 픽셀)를 그대로 오프셋으로 썼는데,
+            // stampConfig.position은 캔버스 좌표(1080x1920)라 단위가 다르다. 뷰
+            // 픽셀을 그대로 더하면 화면이 캔버스보다 작은 만큼(fitScale<1) 실제
+            // 캔버스 상 이동량보다 훨씬 작게 반영돼 미리보기보다 짧게 움직인
+            // 자리에 놓였다 — 탭 히트테스트(위 grant)와 같은 fitScale(이번 제스처
+            // 시작 시점에 계산해 둔 값)로 나눠 캔버스 좌표로 변환해야 미리보기와
+            // 정확히 같은 자리에 커밋된다.
             const finalPosition = {
-              x: baseStampPosition.current.x + gestureState.dx,
-              y: baseStampPosition.current.y + gestureState.dy,
+              x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
+              y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
             };
             const next = { ...stampConfigRef.current, position: finalPosition };
             updateStampConfig(next);
