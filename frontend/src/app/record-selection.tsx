@@ -95,7 +95,18 @@ export default function RecordSelectionScreen() {
     }
   };
 
-  const header = <ScreenHeader title="러닝 기록" right={<Text onPress={refresh} style={styles.refresh}>↻</Text>} />;
+  // 배경 선택·편집 화면과 같은 이유(2026-09-02) — Text onPress 대신 Pressable
+  // hitSlop으로 탭 영역을 넓힌다.
+  const header = (
+    <ScreenHeader
+      title="러닝 기록"
+      right={
+        <Pressable onPress={refresh} hitSlop={12}>
+          <Text style={styles.refresh}>↻</Text>
+        </Pressable>
+      }
+    />
+  );
 
   if (state === 'loading') {
     return (

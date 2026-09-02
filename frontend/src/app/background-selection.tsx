@@ -44,9 +44,13 @@ export default function BackgroundSelectionScreen() {
         title="배경"
         right={
           localUri ? (
-            <Text onPress={handleConfirm} style={styles.headerAction}>
-              다음
-            </Text>
+            // 실기기 피드백(2026-09-02): "다음 버튼 인식이 잘 안 된다" — Text에
+            // onPress를 바로 건 예전 방식은 실제 렌더된 글자 크기(12px)만큼만
+            // 탭 영역이 잡힌다. 헤더의 뒤로가기(Pressable hitSlop)와 같은
+            // 방식으로 맞춘다.
+            <Pressable onPress={handleConfirm} hitSlop={12}>
+              <Text style={styles.headerAction}>다음</Text>
+            </Pressable>
           ) : undefined
         }
       />

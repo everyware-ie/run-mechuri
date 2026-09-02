@@ -455,8 +455,22 @@ export default function EditScreen() {
             const next = { ...stampConfigRef.current, position: finalPosition };
             updateStampConfig(next);
             commitStampConfig(next);
-            stampDragX.setValue(0);
-            stampDragY.setValue(0);
+            // 실기기 피드백(2026-09-02): "놓고 나서 원래 자리로 갔다가 다시 놓은
+            // 자리로 이동한다" — updateStampConfig(React state)는 렌더를 거쳐야
+            // 새 position이 각인 Svg에 실제로 반영되는데, 바로 다음 줄에서 오프셋을
+            // 0으로 되돌리면(Animated.Value, 네이티브로 즉시 반영) 그게 더 빠르다.
+            // 그 사이 한두 프레임 동안 "오프셋 0 + 아직 안 바뀐 옛 position" =
+            // 드래그 시작 전 자리로 보였다가, 그다음 프레임에 새 position이 반영돼
+            // 다시 최종 자리로 튀어 보인다. 오프셋 리셋을 다음 프레임 이후로
+            // 미뤄서(requestAnimationFrame 두 번 — 한 번만으로는 커밋이 실제
+            // 페인트까지 안 끝난 기기가 있을 수 있어 여유를 둠) state 쪽 렌더가
+            // 먼저 자리 잡은 뒤에 오프셋을 지운다.
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                stampDragX.setValue(0);
+                stampDragY.setValue(0);
+              });
+            });
           }
         } else {
           // 드래그 중엔 transform(state)을 안 건드렸다 — SharedValue에 마지막으로
@@ -663,9 +677,11 @@ export default function EditScreen() {
       <ScreenHeader
         title="편집"
         right={
-          <Text onPress={handleNext} style={styles.headerAction}>
-            완료
-          </Text>
+          // 배경 선택 화면과 같은 이유(2026-09-02) — Text onPress 대신 Pressable
+          // hitSlop으로 탭 영역을 넓힌다.
+          <Pressable onPress={handleNext} hitSlop={12}>
+            <Text style={styles.headerAction}>완료</Text>
+          </Pressable>
         }
       />
 

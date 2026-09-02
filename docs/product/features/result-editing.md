@@ -212,6 +212,12 @@ phs00의 Claude Design 프로젝트("런 기록 카드 프리셋", `DesignSync` 
 
 `fitScale`은 제스처 시작(`onPanResponderGrant`)에서 각인 탭 히트테스트용으로 이미 한 번 계산하던 값이라, 같은 제스처 동안(`gestureFitScaleRef`) 재사용하도록 했다 — `previewSize`·`showSafeGuide`는 드래그 도중 안 바뀌므로 매 `move`마다 다시 계산할 필요가 없다.
 
+### 각인을 놓은 뒤 원래 자리로 갔다가 다시 튀는 문제 (2026-09-02)
+
+위 좌표 변환 수정 직후 실기기 피드백: "이제 놓이는 위치는 잘 나오는데, 놓고 나서 한 번 원래 자리로 갔다가 다시 놓은 자리로 이동한다." 한 손가락 각인 드래그 release 커밋 순서가 `updateStampConfig(next)`(React state, 렌더를 거쳐야 각인 Svg의 position prop에 반영) → `stampDragX/Y.setValue(0)`(Animated.Value, `useNativeDriver`라 네이티브에 즉시 반영) 순이었는데, 뒤엣것이 훨씬 빨리 화면에 반영돼 앞엣것보다 먼저 끝나 버렸다. 그 사이 한두 프레임 동안 "오프셋 0 + 아직 렌더 전인 옛 position" 조합이 잠깐 보여(=드래그 시작 전 자리), 그다음 프레임에 새 position이 실제로 렌더되면서 다시 최종(드래그로 놓은) 자리로 튀는 순서로 보인 것.
+
+오프셋 리셋(`stampDragX/Y.setValue(0)`)을 `requestAnimationFrame`을 두 번 감싸 다음다음 프레임으로 미뤄, state 쪽 렌더가 먼저 자리 잡은 뒤에 오프셋을 지우도록 순서를 바꿨다. 한 번만 미루는 것으로도 대체로 충분하지만, 커밋이 실제 페인트까지 안 끝나는 기기가 있을 수 있어 여유를 뒀다.
+
 ## 어긋남 기록
 
 - **각인 표시 모드(§7-3 "완성 후만" 포함) 선택 UI가 없어졌다** (2026-09-01). 시안 S6에 그 UI가 없어서 뺐다. `StampConfig.mode`는 데이터에 남아 'always' 고정으로 동작. FRD §7-3을 지키려면 UI를 다시 넣거나(시안의 "자리·없음"이 hidden을 겸하는 구조로 재해석) FRD를 시안에 맞춰 개정해야 함
