@@ -1245,9 +1245,14 @@ export function StampLayerSvg({
   const { texts, rects } = stampLayoutDescriptors(run, config, progressFraction);
   if (texts.length === 0 && rects.length === 0) return null;
 
-  // 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기 피드백(2026-09) —
-  // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다. 라벨(muted)은 덜
-  // 밝은 톤으로 값과 구분한다(카드·분할·격자 프리셋, 2026-09-02).
+  // row/hero는 밝은 글씨만으로는 밝은 배경 사진 위에서 흐려 보인다는 실기기
+  // 피드백(2026-09)으로 어두운 아웃라인(두꺼운 stroke) + 별도 블러 사본을 겹치는
+  // 강한 처리를 쓴다. 반면 나머지 6개(디자인 2a~2f를 그대로 옮긴 것)는 원본이
+  // 옅은 text-shadow 하나뿐인데 그 강한 처리를 그대로 씌웠더니 "안쪽만 빛나고
+  // 겉은 새까맣다"는 피드백(2026-09-02) — 원본만큼 옅은, 흐릿한 그림자 하나만
+  // 깔고 굵은 외곽선 없이 또렷한 글씨를 올리는 쪽으로 나눴다.
+  const softShadow = !['row', 'hero'].includes(config.layout ?? 'row');
+
   return (
     <>
       {/* 도형(카드 배경·구분선)이 글씨보다 먼저 — 뒤에 깔린다. */}
@@ -1275,6 +1280,20 @@ export function StampLayerSvg({
             ))
           : n.text;
         const fill = n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM;
+        if (softShadow) {
+          // 원본의 옅은 text-shadow 근사 — 흐릿한 검정 사본(그림자) 하나 + 또렷한
+          // 글씨. 두꺼운 외곽선(stroke)은 안 쓴다.
+          return (
+            <Fragment key={n.key}>
+              <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill="rgba(0,0,0,0.55)" filter="url(#stampGlow)">
+                {content}
+              </SvgText>
+              <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={fill}>
+                {content}
+              </SvgText>
+            </Fragment>
+          );
+        }
         return (
           <Fragment key={n.key}>
             <SvgText

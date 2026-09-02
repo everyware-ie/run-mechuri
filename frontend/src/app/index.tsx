@@ -112,12 +112,17 @@ export default function HomeScreen() {
 
             {hero ? (
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
+                {/* 실기기 피드백(2026-09-02): run/stampConfig을 넘기면 RouteThumbnail이
+                    사용자가 고른 각인 프리셋을 원래 크기·자리 그대로 그려서, 바로
+                    아래 heroOverlay(이 화면 전용, 항상 같은 자리에 거리+날짜만
+                    보여주는 고정 표시)와 겹쳐 두 개의 서로 다른 스타일 텍스트가
+                    같이 보였다("위에껀 km+날짜인데 밑에껀 작은 글씨로 km만"도 이
+                    두 표시가 겹친 것). 각인은 편집·공유 화면에서 보여줄 대상이라
+                    홈 목록에서는 안 넘긴다 — 경로 선만 그려진다. */}
                 <RouteThumbnail
                   points={hero.track.coordinates}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
-                  run={hero.run}
-                  stampConfig={hero.stampConfig}
                   size={HERO_SIZE}
                 />
                 <View style={styles.heroOverlay}>
@@ -153,12 +158,12 @@ export default function HomeScreen() {
         renderItem={({ item }) => (
           <Pressable style={styles.cell} onPress={() => router.push(`/result/${item.id}`)}>
             <View style={styles.gridThumb}>
+              {/* 위 heroCard와 같은 이유로 run/stampConfig 안 넘김 — gridLabel(항상
+                  km만)과 각인이 겹쳐 보이지 않게. */}
               <RouteThumbnail
                 points={item.track.coordinates}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
-                run={item.run}
-                stampConfig={item.stampConfig}
                 size={GRID_SIZE}
               />
               <Text style={styles.gridLabel}>{(item.distanceMeters / 1000).toFixed(2)} km</Text>
