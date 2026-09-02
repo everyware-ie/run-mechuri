@@ -101,11 +101,19 @@ export function computeFitTransform(
 ): { fitScale: number; offsetX: number; offsetY: number; usableHeight: number } {
   const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
   const safeHeight = CANVAS_HEIGHT * (1 - SAFE_AREA_TOP_RATIO - SAFE_AREA_BOTTOM_RATIO);
-  const usableHeight = fit === 'cover-safe' ? Math.max(1, viewHeight - bottomInset) : viewHeight;
+  // 실기기 피드백(2026-09-02): "인스타 스토리 영역(가이드) 버튼을 누르면 경로·각인이
+  // 아래로 훅 이동한다" — bottomInset(바텀시트가 가리는 높이)을 'cover-safe'만
+  // 빼고 'cover'는 반영하지 않아서, 가이드를 켜서 fit이 cover-safe → cover로
+  // 바뀌는 순간 "시트를 뺀 화면"에서 "시트까지 포함한 전체 화면"으로 기준 높이
+  // 자체가 갑자기 커져 offsetY가 크게 튀었다(§ SAFE_AREA_TOP/BOTTOM_RATIO가
+  // 같은 값이라 그 차이만 없으면 두 fit의 offsetY 공식이 사실상 같다). 'contain'
+  // (다른 화면들, bottomInset 안 씀)은 그대로 두고 cover·cover-safe만 같은
+  // usableHeight를 쓰도록 맞췄다.
+  const usableHeight = fit === 'contain' ? viewHeight : Math.max(1, viewHeight - bottomInset);
 
   const fitScale =
     fit === 'cover'
-      ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
+      ? Math.max(viewWidth / CANVAS_WIDTH, usableHeight / CANVAS_HEIGHT)
       : fit === 'cover-safe'
         ? Math.max(viewWidth / CANVAS_WIDTH, usableHeight / safeHeight)
         : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
@@ -113,7 +121,9 @@ export function computeFitTransform(
   const offsetY =
     fit === 'cover-safe'
       ? (usableHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
-      : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
+      : fit === 'cover'
+        ? (usableHeight - CANVAS_HEIGHT * fitScale) / 2
+        : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
 
   return { fitScale, offsetX, offsetY, usableHeight };
 }

@@ -732,19 +732,23 @@ export default function EditScreen() {
               style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
               <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
             </Pressable>
-            {/* 실기기 피드백(2026-09-02): 재생 중엔 편집 조작이 느려진다 — 기본은
-                정지(완성된 모습)로 두고, 재생 과정 자체를 보고 싶을 때만 눌러서
-                본다(한 사이클 후 자동으로 다시 정지). panResponder 위에 겹치는
-                형제 Pressable이라(guideToggle과 같은 자리) 탭이 그쪽으로 새지
-                않는다. */}
-            <Pressable
-              onPress={() => setIsPlaying((v) => !v)}
-              style={[styles.playToggle, { bottom: 8 + insets.bottom }, isPlaying && styles.playToggleOn]}>
-              <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-            </Pressable>
-            <Text style={[styles.cardHint, { bottom: 14 + insets.bottom }]}>
-              {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
-            </Text>
+            {/* 실기기 피드백(2026-09-02): 재생 버튼·안내 문구가 화면 아래쪽(previewArea
+                기준 bottom)에 있다 보니, 바텀시트가 절대 위치 오버레이로 그 자리를
+                거의 항상 덮고 있어서 시트를 접었을 때가 아니면 잘 안 보였다("다른
+                레이어랑 겹쳐서 잘 안 보인다"). 시트 상태와 무관하게 항상 보이도록
+                위쪽(guideToggle과 같은 줄 높이)으로 옮겼다 — 인스타 스토리 안전
+                영역 가이드를 켰을 때 오른쪽 위에 뜨는 "X 닫기" 자리와 안 겹치도록
+                왼쪽에 몰아 두고, 가운데는 guideToggle 몫으로 비워 둔다. */}
+            <View style={styles.topLeftGroup}>
+              <Pressable
+                onPress={() => setIsPlaying((v) => !v)}
+                style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
+                <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+              </Pressable>
+              <Text style={styles.cardHint}>
+                {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
+              </Text>
+            </View>
           </>
         )}
       </View>
@@ -945,6 +949,17 @@ const styles = StyleSheet.create({
   guideToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
   guideToggleText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
   guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
+  // 재생 버튼 + 안내 문구를 왼쪽 위에 묶어 둔다 — guideToggle(가운데 위)과
+  // 안전 영역 가이드의 "X 닫기" 자리(오른쪽 위)를 둘 다 피한 자리.
+  topLeftGroup: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    maxWidth: '55%',
+  },
   // 시트를 완전히 숨겼을 때만 뜨는 버튼 — 화면 맨 아래 가운데.
   sheetReopenButton: {
     position: 'absolute',
@@ -958,22 +973,17 @@ const styles = StyleSheet.create({
   },
   sheetReopenText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
   cardHint: {
-    position: 'absolute',
-    left: 16,
-    bottom: 14,
+    flexShrink: 1,
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 9.5,
     letterSpacing: 1,
     color: Colors.textMuted,
   },
-  // 재생/정지 토글 — cardHint(왼쪽 아래)와 짝을 이루는 오른쪽 아래 자리.
+  // 재생/정지 토글 — topLeftGroup 안에서 cardHint 왼쪽에 나란히 놓인다.
   playToggle: {
-    position: 'absolute',
-    right: 16,
-    bottom: 8,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(11,13,16,0.55)',
