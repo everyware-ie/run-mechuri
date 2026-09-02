@@ -656,9 +656,41 @@ public class RouteRendererModule: Module {
     // 글자 크기·내부 간격에만 곱한다.
     let s = CGFloat(stamp.stampScale)
 
+    // route-preview.tsx splitHeroValue와 같은 규칙 — "5.23km"처럼 끝의 단위 글자(있으면,
+    // "/km"처럼 슬래시 포함)를 떼어 작게 그린다. "28:14"처럼 단위가 없으면 nil.
+    let splitHeroValue: (String) -> (main: String, unit: String)? = { text in
+      guard let range = text.range(of: "/?[a-zA-Z%]+$", options: .regularExpression) else { return nil }
+      let main = String(text[..<range.lowerBound])
+      if main.isEmpty { return nil }
+      return (main, String(text[range]))
+    }
+    // 숫자(크게) + 단위(작게)를 한 줄로 이어 가운데 정렬해 그린다. UIKit의 NSString.draw(at:)는
+    // 원점을 텍스트 위쪽 기준으로 잡아서(SVG의 baseline 기준과 다름) 두 크기의 baseline이
+    // 완전히 일치하진 않는다 — 각인 폰트 불일치와 같은 종류의 근사치로 허용한다.
+    let drawHeroValue: (String, CGPoint, CGFloat) -> Void = { text, origin, size in
+      guard let split = splitHeroValue(text) else {
+        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), .center)
+        return
+      }
+      let mainFont = UIFont.systemFont(ofSize: size, weight: .bold)
+      let unitFont = UIFont.systemFont(ofSize: size * 0.42, weight: .bold)
+      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: self.lineWarm]
+      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: self.lineWarm]
+      let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
+      let unitText = " \(split.unit)"
+      let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
+      let startX = origin.x - (mainW + unitW) / 2
+      ctx.saveGState()
+      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y), withAttributes: mainAttrs)
+      (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y + (size - size * 0.42)), withAttributes: unitAttrs)
+      ctx.restoreGState()
+    }
+
     if stamp.stampLayout == "hero" {
-      // 시안 S8b — 왼쪽 아래: 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
-      let leftX = 64 + CGFloat(stamp.stampX)
+      // 가운데 정렬: 문구(작게) → 히어로 숫자(아주 크게, 단위는 작게) → 메타 줄.
+      // 원래 시안 S8b는 왼쪽 아래 정렬이었는데, 실물 사진 참고(2026-09-02)로 바꿨다.
+      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
       let metaY = canvasSize.height * (1 - safeAreaBottomRatio) - 40 + CGFloat(stamp.stampY)
       let heroKeys = ["distance", "time", "pace"]
       let hero = keyed.first { heroKeys.contains($0.0) }
@@ -667,15 +699,15 @@ public class RouteRendererModule: Module {
       let heroY = hero != nil ? metaY - 44 * s : metaY
 
       if !metaItems.isEmpty {
-        draw(metaItems.joined(separator: "   "), CGPoint(x: leftX, y: metaY),
-             UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .medium), .left)
+        draw(metaItems.joined(separator: "   "), CGPoint(x: centerX, y: metaY),
+             UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .medium), .center)
       }
       if let hero {
-        draw(hero.1, CGPoint(x: leftX, y: heroY), UIFont.systemFont(ofSize: heroSize, weight: .bold), .left)
+        drawHeroValue(hero.1, CGPoint(x: centerX, y: heroY), heroSize)
       }
       if !caption.isEmpty {
         let capY = (hero != nil ? heroY - heroSize + 6 * s : metaY) - (!metaItems.isEmpty && hero == nil ? 46 * s : 34 * s)
-        draw(caption, CGPoint(x: leftX, y: capY), UIFont.systemFont(ofSize: 38 * s, weight: .medium), .left)
+        draw(caption, CGPoint(x: centerX, y: capY), UIFont.systemFont(ofSize: 38 * s, weight: .medium), .center)
       }
       return
     }

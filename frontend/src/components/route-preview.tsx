@@ -10,6 +10,7 @@ import {
   Line,
   Svg,
   Text as SvgText,
+  TSpan,
   Defs,
   Filter,
   FeGaussianBlur,
@@ -708,15 +709,35 @@ function SafeAreaGuide() {
   );
 }
 
+/** 숫자 크게 + 단위 작게(예: "5.23"+" km")처럼 한 줄을 서로 다른 크기로 이어 그릴 때 쓴다. */
+type StampTextPart = { text: string; size: number };
+
 type StampTextDescriptor = {
   key: string;
   x: number;
   y: number;
+  /** 대표 크기 — 윤곽선 두께·바운즈 추정에 쓴다. parts가 있으면 그중 가장 큰 값. */
   size: number;
   family: string;
+  /** 순수 텍스트(바운즈 폭 추정 폴백용) — parts가 있으면 부분 텍스트를 이어붙인 것과 같다. */
   text: string;
   anchor: 'start' | 'middle';
+  /** 있으면 이 부분들을 각각 다른 크기로 한 줄에 이어 그린다(숫자+단위 등). 없으면 text 전체를 size로. */
+  parts?: StampTextPart[];
 };
+
+// "5.23km" → "5.23"(큰 숫자) + " km"(작은 단위), "5'42\"/km" → "5'42\"" + " /km"처럼
+// 끝의 단위 글자를 작게 떼어 그린다 — "28:14"·"08.21"처럼 끝에 글자가 없으면 그대로 둔다.
+// 실물 사진 참고(2026-09-02): 히어로 숫자를 캡션 위 큰 숫자 + 옆에 작은 단위로 바꿔 달라는
+// 요청.
+function splitHeroValue(text: string, size: number): StampTextPart[] {
+  const m = text.match(/^(.*?)(\/?[a-zA-Z%]+)$/);
+  if (!m || !m[1]) return [{ text, size }];
+  return [
+    { text: m[1], size },
+    { text: ` ${m[2]}`, size: size * 0.42 },
+  ];
+}
 
 // route-rendering FRD §7: 넷을 다 새긴다, 심박은 데이터 있을 때만, 항목별로 끈다.
 // §7-3: "항상"은 진행률 카운트업, "완성 후만"은 정지 구간에만. 거리는 기록된 총 거리 기준.
@@ -769,10 +790,12 @@ function stampTextDescriptors(
   const nodes: StampTextDescriptor[] = [];
 
   if (layout === 'hero') {
-    // 시안 S8b — 왼쪽 아래 정렬. 문구(작게) → 히어로 숫자(아주 크게) → 메타 줄.
+    // 가운데 정렬. 문구(작게) → 히어로 숫자(아주 크게, 단위는 작게) → 메타 줄.
+    // 원래 시안 S8b는 왼쪽 아래 정렬이었는데, 실물 사진 참고(2026-09-02)로
+    // 가운데 정렬 + 숫자·단위 크기 분리로 바꿨다.
     const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
     const metaItems = activeItems.filter((k) => k !== heroKey);
-    const leftX = 64 + config.position.x;
+    const centerX = CANVAS_WIDTH / 2 + config.position.x;
     // 메타 줄 baseline을 하단 안전 영역 살짝 위에 두고 위로 쌓는다.
     const metaY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 40 + config.position.y;
     const heroSize = 132 * s;
@@ -781,35 +804,37 @@ function stampTextDescriptors(
     if (metaItems.length > 0) {
       nodes.push({
         key: 'meta',
-        x: leftX,
+        x: centerX,
         y: metaY,
         size: 30 * s,
         family: 'JetBrainsMono_500Medium',
         text: metaItems.map(value).join('   '),
-        anchor: 'start',
+        anchor: 'middle',
       });
     }
     if (heroKey) {
+      const heroText = value(heroKey);
       nodes.push({
         key: 'hero',
-        x: leftX,
+        x: centerX,
         y: heroY,
         size: heroSize,
         family: 'SpaceGrotesk_700Bold',
-        text: value(heroKey),
-        anchor: 'start',
+        text: heroText,
+        anchor: 'middle',
+        parts: splitHeroValue(heroText, heroSize),
       });
     }
     if (caption) {
       const capY = (heroKey ? heroY - heroSize + 6 * s : metaY) - (metaItems.length && !heroKey ? 46 * s : 34 * s);
       nodes.push({
         key: 'caption',
-        x: leftX,
+        x: centerX,
         y: capY,
         size: 38 * s,
         family: 'SpaceGrotesk_500Medium',
         text: caption,
-        anchor: 'start',
+        anchor: 'middle',
       });
     }
     return nodes;
@@ -871,24 +896,35 @@ export function StampLayerSvg({
   // 어두운 아웃라인 사본을 먼저 깔고 그 위에 밝은 글씨를 겹친다.
   return (
     <>
-      {nodes.map((n) => (
-        <Fragment key={n.key}>
-          <SvgText
-            x={n.x}
-            y={n.y}
-            textAnchor={n.anchor}
-            fontSize={n.size}
-            fontFamily={n.family}
-            fill="none"
-            stroke="rgba(11,13,16,0.85)"
-            strokeWidth={n.size * 0.24}>
-            {n.text}
-          </SvgText>
-          <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={LINE_WARM} filter="url(#stampGlow)">
-            {n.text}
-          </SvgText>
-        </Fragment>
-      ))}
+      {nodes.map((n) => {
+        // parts가 있으면(예: 히어로 숫자 "5.23"+" km") 한 줄 안에서 TSpan으로 크기를
+        // 나눠 그린다 — textAnchor는 SvgText(부모)에서 이어붙인 전체 줄 기준으로 적용된다.
+        const content = n.parts
+          ? n.parts.map((p, i) => (
+              <TSpan key={i} fontSize={p.size}>
+                {p.text}
+              </TSpan>
+            ))
+          : n.text;
+        return (
+          <Fragment key={n.key}>
+            <SvgText
+              x={n.x}
+              y={n.y}
+              textAnchor={n.anchor}
+              fontSize={n.size}
+              fontFamily={n.family}
+              fill="none"
+              stroke="rgba(11,13,16,0.85)"
+              strokeWidth={n.size * 0.24}>
+              {content}
+            </SvgText>
+            <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={LINE_WARM} filter="url(#stampGlow)">
+              {content}
+            </SvgText>
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -912,7 +948,9 @@ export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasR
   let top = Infinity;
   let bottom = -Infinity;
   for (const n of nodes) {
-    const width = n.text.length * n.size * 0.62;
+    const width = n.parts
+      ? n.parts.reduce((sum, p) => sum + p.text.length * p.size * 0.62, 0)
+      : n.text.length * n.size * 0.62;
     const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.x;
     const nodeRight = nodeLeft + width;
     const nodeTop = n.y - n.size * 0.85; // 대략적인 ascent
