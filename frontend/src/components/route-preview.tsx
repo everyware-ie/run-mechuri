@@ -42,11 +42,10 @@ export type StampMode = 'always' | 'after' | 'hidden';
 /** 각인 배치 프리셋. row/hero는 자체 제작, 나머지 6개(stack~line)는 디자인
  * 프로젝트("런 기록 카드 프리셋" 2a~2f, 2026-09-02) 그대로 포팅했다. 각각
  * 어떻게 생겼는지는 stampLayoutDescriptors 함수 본문의 분기 주석 참고. */
-export type StampLayout = 'row' | 'hero' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
+export type StampLayout = 'row' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
 export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
   { id: 'row', label: '간결' },
-  { id: 'hero', label: '크게' },
   { id: 'stack', label: '스택' }, // 2a 좌하단 스택
   { id: 'bar', label: '스탯바' }, // 2b 하단 스탯 바
   { id: 'corner', label: '코너' }, // 2c 코너 분산
@@ -75,7 +74,7 @@ export type StampConfig = {
 
 export const IDENTITY_STAMP: StampConfig = {
   mode: 'always',
-  layout: 'hero',
+  layout: 'row',
   enabled: { distance: true, time: true, pace: true, heartRate: true, date: true, place: true },
   caption: '',
   placeName: '',
@@ -826,57 +825,6 @@ function stampLayoutDescriptors(
   const nodes: StampTextDescriptor[] = [];
   const rects: StampRectDescriptor[] = [];
 
-  if (layout === 'hero') {
-    // 가운데 정렬. 문구(작게) → 히어로 숫자(아주 크게, 단위는 작게) → 메타 줄.
-    // 원래 시안 S8b는 왼쪽 아래 정렬이었는데, 실물 사진 참고(2026-09-02)로
-    // 가운데 정렬 + 숫자·단위 크기 분리로 바꿨다.
-    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
-    const metaItems = activeItems.filter((k) => k !== heroKey);
-    const centerX = CANVAS_WIDTH / 2 + config.position.x;
-    // 메타 줄 baseline을 하단 안전 영역 살짝 위에 두고 위로 쌓는다.
-    const metaY = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 40 + config.position.y;
-    const heroSize = 132 * s;
-    const heroY = heroKey ? metaY - 44 * s : metaY;
-
-    if (metaItems.length > 0) {
-      nodes.push({
-        key: 'meta',
-        x: centerX,
-        y: metaY,
-        size: 30 * s,
-        family: 'JetBrainsMono_500Medium',
-        text: metaItems.map(value).join('   '),
-        anchor: 'middle',
-      });
-    }
-    if (heroKey) {
-      const heroText = value(heroKey);
-      nodes.push({
-        key: 'hero',
-        x: centerX,
-        y: heroY,
-        size: heroSize,
-        family: 'SpaceGrotesk_700Bold',
-        text: heroText,
-        anchor: 'middle',
-        parts: splitHeroValue(heroText, heroSize),
-      });
-    }
-    if (caption) {
-      const capY = (heroKey ? heroY - heroSize + 6 * s : metaY) - (metaItems.length && !heroKey ? 46 * s : 34 * s);
-      nodes.push({
-        key: 'caption',
-        x: centerX,
-        y: capY,
-        size: 38 * s,
-        family: 'SpaceGrotesk_500Medium',
-        text: caption,
-        anchor: 'middle',
-      });
-    }
-    return { texts: nodes, rects };
-  }
-
   // 아래 6개(stack~line)는 디자인 프로젝트 "런 기록 카드 프리셋"의 2a~2f를 그대로
   // 옮긴 것이다(2026-09-02). 목업은 300x533 캔버스라 실제 캔버스(1080x1920)로
   // 옮길 때 M=3.6을 곱한다 — 여백·자리처럼 "고정 길이"는 M만, 글자 크기·내부
@@ -1048,6 +996,7 @@ function stampLayoutDescriptors(
     const heroSize = 46 * u;
     const labelFont = 9 * u;
     const valueFont = 16 * u;
+    const colGap = 20 * u; // 통계 칸 사이 최소 간격(겹침 방지)
 
     const headerLineH = hasHeader ? headerFont * 1.3 : 0;
     const heroLineH = heroKey ? heroSize * 1.05 : 0;
@@ -1057,8 +1006,24 @@ function stampLayoutDescriptors(
     if (statItems.length > 0) inner += (heroKey ? gap : hasHeader ? gap : 0) + statLineH;
     const panelHeight = inner + padY * 2;
 
+    // 실기기 피드백(2026-09-02): 통계 칸을 고정 폭으로 균등 분할했더니 "장소"처럼
+    // 값이 긴 항목이 옆 칸("페이스")과 겹쳐 보였다. 칸마다 실제 글자 폭(추정)만큼만
+    // 차지하고 그 뒤에 최소 간격을 두는 커서 방식으로 바꿔서 절대 안 겹치게 한다.
+    // 그 대신 항목이 많거나 값이 아주 길면 패널이 원래 여백보다 넓어질 수 있다 —
+    // 겹치는 것보다는 낫다는 판단.
+    const statWidths = statItems.map((item) => {
+      const labelW = STAT_LABEL[item].length * labelFont * 0.62;
+      const valueW = value(item).length * valueFont * 0.62;
+      return Math.max(labelW, valueW);
+    });
+    const statRowWidth = statWidths.reduce((a, b) => a + b, 0) + colGap * Math.max(0, statItems.length - 1);
+
+    const nominalContentWidth = CANVAS_WIDTH - 32 * M - padX * 2;
+    const contentWidth = Math.max(nominalContentWidth, statRowWidth);
+    const panelWidth = contentWidth + padX * 2;
+
     const panelLeft = 16 * M + config.position.x;
-    const panelRight = CANVAS_WIDTH - 16 * M + config.position.x;
+    const panelRight = panelLeft + panelWidth;
     const panelBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 4 + config.position.y;
     const panelTop = panelBottom - panelHeight;
 
@@ -1066,7 +1031,7 @@ function stampLayoutDescriptors(
       key: 'glass-bg',
       x: panelLeft,
       y: panelTop,
-      width: panelRight - panelLeft,
+      width: panelWidth,
       height: panelHeight,
       rx: 18 * u,
       stroke: 'rgba(255,255,255,0.14)',
@@ -1098,12 +1063,12 @@ function stampLayoutDescriptors(
     }
     if (statItems.length > 0) {
       cursor += (heroKey ? gap : hasHeader ? gap : 0) + labelFont * 0.85;
-      const colWidth = (panelRight - panelLeft - padX * 2) / statItems.length;
       const valueY = cursor + valueFont * 1.05;
+      let colX = panelLeft + padX;
       statItems.forEach((item, i) => {
-        const colX = panelLeft + padX + colWidth * i;
         nodes.push({ key: `stat-label-${item}`, x: colX, y: cursor, size: labelFont, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
         nodes.push({ key: `stat-value-${item}`, x: colX, y: valueY, size: valueFont, family: 'SpaceGrotesk_700Bold', text: value(item), anchor: 'start' });
+        colX += statWidths[i] + colGap;
       });
     }
     return { texts: nodes, rects };

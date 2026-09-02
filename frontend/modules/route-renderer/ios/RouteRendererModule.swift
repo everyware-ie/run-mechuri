@@ -848,6 +848,7 @@ public class RouteRendererModule: Module {
       let heroSize = 46 * u
       let labelFont = 9 * u
       let valueFont = 16 * u
+      let colGap = 20 * u // 통계 칸 사이 최소 간격(겹침 방지)
 
       let headerLineH = hasHeader ? headerFont * 1.3 : 0
       let heroLineH = hero != nil ? heroSize * 1.05 : 0
@@ -857,13 +858,26 @@ public class RouteRendererModule: Module {
       if !statItems.isEmpty { inner += (hero != nil ? gap : hasHeader ? gap : 0) + statLineH }
       let panelHeight = inner + padY * 2
 
+      // route-preview.tsx와 같은 이유 — 고정 균등폭 칸이 "장소"처럼 긴 값과
+      // "페이스"를 겹쳐 보이게 했다. 실제 글자 폭(추정)만큼만 차지하는 커서
+      // 방식으로 바꿔 절대 안 겹치게 하고, 필요하면 패널을 넓힌다.
+      let statWidths: [CGFloat] = statItems.map { (pair: (String, String)) -> CGFloat in
+        let labelW = CGFloat((statLabel[pair.0] ?? "").count) * labelFont * 0.62
+        let valueW = CGFloat(pair.1.count) * valueFont * 0.62
+        return max(labelW, valueW)
+      }
+      let statRowWidth = statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1))
+      let nominalContentWidth = canvasSize.width - 32 * M - padX * 2
+      let contentWidth = max(nominalContentWidth, statRowWidth)
+      let panelWidth = contentWidth + padX * 2
+
       let panelLeft = 16 * M + CGFloat(stamp.stampX)
-      let panelRight = canvasSize.width - 16 * M + CGFloat(stamp.stampX)
+      let panelRight = panelLeft + panelWidth
       let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 4 + CGFloat(stamp.stampY)
       let panelTop = panelBottom - panelHeight
 
       fillRect(
-        CGRect(x: panelLeft, y: panelTop, width: panelRight - panelLeft, height: panelHeight),
+        CGRect(x: panelLeft, y: panelTop, width: panelWidth, height: panelHeight),
         radius: 18 * u,
         color: UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
         strokeColor: UIColor(white: 1, alpha: 0.14)
@@ -881,12 +895,12 @@ public class RouteRendererModule: Module {
       }
       if !statItems.isEmpty {
         cursor += (hero != nil ? gap : hasHeader ? gap : 0) + labelFont * 0.85
-        let colWidth = (panelRight - panelLeft - padX * 2) / CGFloat(statItems.count)
         let valueY = cursor + valueFont * 1.05
+        var colX = panelLeft + padX
         for (i, item) in statItems.enumerated() {
-          let colX = panelLeft + padX + colWidth * CGFloat(i)
           draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
           draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          colX += statWidths[i] + colGap
         }
       }
       return
@@ -965,29 +979,8 @@ public class RouteRendererModule: Module {
       return
     }
 
-    if stamp.stampLayout == "hero" {
-      // 가운데 정렬: 문구(작게) → 히어로 숫자(아주 크게, 단위는 작게) → 메타 줄.
-      // 원래 시안 S8b는 왼쪽 아래 정렬이었는데, 실물 사진 참고(2026-09-02)로 바꿨다.
-      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-      let metaY = canvasSize.height * (1 - safeAreaBottomRatio) - 40 + CGFloat(stamp.stampY)
-      let hero = keyed.first { heroKeys.contains($0.0) }
-      let metaItems = keyed.filter { $0.0 != hero?.0 }.map { $0.1 }
-      let heroSize: CGFloat = 132 * s
-      let heroY = hero != nil ? metaY - 44 * s : metaY
-
-      if !metaItems.isEmpty {
-        draw(metaItems.joined(separator: "   "), CGPoint(x: centerX, y: metaY),
-             UIFont.monospacedSystemFont(ofSize: 30 * s, weight: .medium), .center)
-      }
-      if let hero {
-        drawHeroValue(hero.1, CGPoint(x: centerX, y: heroY), heroSize)
-      }
-      if !caption.isEmpty {
-        let capY = (hero != nil ? heroY - heroSize + 6 * s : metaY) - (!metaItems.isEmpty && hero == nil ? 46 * s : 34 * s)
-        draw(caption, CGPoint(x: centerX, y: capY), UIFont.systemFont(ofSize: 38 * s, weight: .medium), .center)
-      }
-      return
-    }
+    // "hero" 프리셋은 폐지됐다(2026-09-02, "크게" 삭제 요청) — 옛 저장분에 남아
+    // 있어도 아래 'row' 처리로 자연히 떨어진다(TS stampLayoutDescriptors와 동일).
 
     // 'row' — 가운데 한 줄 + 문구는 그 위.
     let items = keyed.map { $0.1 }
