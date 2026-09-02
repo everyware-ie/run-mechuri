@@ -1,6 +1,6 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Animated, View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
@@ -208,6 +208,16 @@ type Props = {
    * 돈다. 기본값은 true라 안 넘기는 기존 화면(background-selection.tsx 등)은
    * 원래 동작(항상 재생) 그대로 유지된다. */
   playing?: boolean;
+  /** 실기기 피드백(2026-09-02): "각인 옮기는 게 렉이 걸린다" — 각인은 SVG라
+   * Skia처럼 SharedValue를 프레임마다 바로 읽는 방식이 없다. 대신 각인 레이어를
+   * 별도 Svg로 떼어(안전 영역 가이드와는 분리) 이 클래식 Animated.Value 두
+   * 개(x/y)로 감싼 Animated.View에 넣는다 — 바텀시트 드래그 때 이미 쓰던
+   * 것과 같은 방식(useNativeDriver:true인 값에 onPanResponderMove에서
+   * .setValue()를 직접 호출)이라, edit.tsx가 드래그 중 stampConfig(React
+   * state)를 안 건드리고 이 값만 갱신하면 리렌더 없이 네이티브 쪽에서 위치가
+   * 움직인다. 손을 뗄 때만 실제 stampConfig.position을 커밋하고 이 오프셋을
+   * 0으로 되돌린다. 안 넘기면(다른 화면들) 각인은 원래 자리에 고정. */
+  stampDragOffset?: { x: Animated.Value; y: Animated.Value };
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -240,6 +250,7 @@ export function RoutePreview({
   bottomInset = 0,
   stampSelected = false,
   playing = true,
+  stampDragOffset,
 }: Props) {
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
@@ -399,44 +410,62 @@ export function RoutePreview({
         </Group>
       </Canvas>
 
-      {/* 각인 텍스트와 안전 영역 가이드는 SVG 오버레이 — 로드된 폰트로 또렷하게.
-          실기기 피드백(2026-09-02): 예전엔 viewBox+preserveAspectRatio로 SVG
-          자체 크기(width/height)를 안전 영역 높이(usableHeight)만큼 줄여서
-          맞췄는데, 그러면 SVG 엘리먼트 자기 자신의 경계 밖은 그냥 잘려 나간다
-          — 각인을 손으로 끌어 안전 영역 아래로 옮기면 어느 지점부터 잘려 보이는
-          원인이었다. Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), 대신
-          Canvas Group과 똑같은 offsetX/offsetY/fitScale을 <G transform>으로
-          적용해서 좌표만 맞춘다 — 드래그 범위가 뷰 밖으로 나가는 것과, SVG 자기
-          경계에 잘리는 것은 서로 다른 문제라 분리했다(뷰 밖으로 나가는 것 자체는
-          previewArea의 overflow:hidden이 처리, 이건 의도된 동작). */}
-      <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={viewWidth} height={viewHeight}>
-        <Defs>
-          <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
-            <FeGaussianBlur stdDeviation="6" result="b" />
-            <FeMerge>
-              <FeMergeNode in="b" />
-              <FeMergeNode in="SourceGraphic" />
-            </FeMerge>
-          </Filter>
-        </Defs>
-        <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-          {showSafeAreaGuide && <SafeAreaGuide />}
-          <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
-          {stampBounds && (
-            <SvgRect
-              x={stampBounds.x}
-              y={stampBounds.y}
-              width={stampBounds.width}
-              height={stampBounds.height}
-              rx={16}
-              stroke={GLOW}
-              strokeWidth={3}
-              strokeDasharray="10,8"
-              fill="none"
-            />
-          )}
-        </G>
-      </Svg>
+      {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
+          설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), 대신 Canvas
+          Group과 똑같은 offsetX/offsetY/fitScale을 <G transform>으로 적용해서
+          좌표만 맞춘다(뷰 밖으로 나가는 것 자체는 previewArea의 overflow:hidden이
+          처리, 이건 의도된 동작). */}
+      {showSafeAreaGuide && (
+        <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={viewWidth} height={viewHeight}>
+          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+            <SafeAreaGuide />
+          </G>
+        </Svg>
+      )}
+
+      {/* 각인 텍스트(+선택 박스)는 안전 영역 가이드와 별도의 Svg — 실기기
+          피드백(2026-09-02) "각인 옮기는 게 렉이 걸린다": 각인은 Skia가 아니라
+          SVG라 SharedValue를 프레임마다 바로 읽는 길이 없다. 대신 이 Svg 전체를
+          클래식 Animated.Value 두 개(stampDragOffset)로 감싼 Animated.View에
+          넣어서, edit.tsx가 드래그 중 stampConfig(React state)를 안 건드리고
+          이 값에 직접 쓰면(바텀시트 드래그와 같은 방식) 리렌더 없이 네이티브
+          쪽에서만 위치가 움직인다. 손을 뗄 때만 실제 자리를 커밋한다. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight },
+          stampDragOffset
+            ? { transform: [{ translateX: stampDragOffset.x }, { translateY: stampDragOffset.y }] }
+            : null,
+        ]}>
+        <Svg width={viewWidth} height={viewHeight}>
+          <Defs>
+            <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
+              <FeGaussianBlur stdDeviation="6" result="b" />
+              <FeMerge>
+                <FeMergeNode in="b" />
+                <FeMergeNode in="SourceGraphic" />
+              </FeMerge>
+            </Filter>
+          </Defs>
+          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+            <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
+            {stampBounds && (
+              <SvgRect
+                x={stampBounds.x}
+                y={stampBounds.y}
+                width={stampBounds.width}
+                height={stampBounds.height}
+                rx={16}
+                stroke={GLOW}
+                strokeWidth={3}
+                strokeDasharray="10,8"
+                fill="none"
+              />
+            )}
+          </G>
+        </Svg>
+      </Animated.View>
     </View>
   );
 }

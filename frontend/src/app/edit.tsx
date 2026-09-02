@@ -228,6 +228,15 @@ export default function EditScreen() {
   }, [transform, transformXShared, transformYShared, transformScaleShared, transformRotationShared]);
   const baseStampPosition = useRef(stampConfig.position);
   const baseStampScale = useRef(stampConfig.scale ?? 1);
+  // 실기기 피드백(2026-09-02): 각인을 한 손가락으로 끌 때(위치만 바뀌는 경우)도
+  // stampConfig(React state) RAF 스로틀만으로는 여전히 렉이 있었다 — 이 클래식
+  // Animated.Value 두 개(useNativeDriver:true)에 직접 .setValue()를 불러서
+  // 진짜로 리렌더 없이 네이티브 쪽에서 위치만 움직인다(바텀시트 드래그와 같은
+  // 방식). 두 손가락(핀치 크기 조정)은 계속 RAF 스로틀 경로를 쓴다 — 크기까지
+  // 이 값으로 감당하려면 폰트 재계산과 별개로 다뤄야 해서 복잡도가 커지고,
+  // 핀치는 위치 드래그보다 훨씬 짧고 드문 제스처라 우선순위가 낮다.
+  const stampDragX = useRef(new Animated.Value(0)).current;
+  const stampDragY = useRef(new Animated.Value(0)).current;
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
   // 실기기 피드백(2026-09-02): 각인을 끌 때 손가락 이동마다(raw 터치 이벤트, 화면
   // 프레임보다 훨씬 잦다) updateStampConfig를 그대로 부르면 RoutePreview가 매번
@@ -319,6 +328,10 @@ export default function EditScreen() {
         if (isStamp) {
           baseStampPosition.current = stampConfigRef.current.position;
           baseStampScale.current = stampConfigRef.current.scale ?? 1;
+          // 방어적 초기화 — 정상적으로는 이전 드래그의 release에서 이미
+          // 0으로 돌아가 있지만, 제스처가 중간에 끊기는 등의 경우를 대비한다.
+          stampDragX.setValue(0);
+          stampDragY.setValue(0);
         } else {
           baseTransform.current = transformRef.current;
           // 방어적 동기화 — 보통은 위 useEffect가 이미 맞춰 놨겠지만, 만에 하나
@@ -347,6 +360,12 @@ export default function EditScreen() {
                 distance: touchDistance(touches[0], touches[1]),
                 angle: touchAngleDeg(touches[0], touches[1]),
               };
+              // 한 손가락 드래그 중 두 번째 손가락이 닿아 핀치로 넘어가는 순간 —
+              // 그 지점부터는 위치도 stampConfig(RAF 스로틀) 쪽이 다시 맡으므로,
+              // 네이티브 오프셋(stampDragX/Y)은 지금 값만큼 남아있으면 이중으로
+              // 더해져 튄다. 0으로 되돌린다.
+              stampDragX.setValue(0);
+              stampDragY.setValue(0);
             }
             const newDistance = touchDistance(touches[0], touches[1]);
             const scaleDelta = newDistance / (gestureStart.current.distance || 1);
@@ -359,13 +378,12 @@ export default function EditScreen() {
               scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
             });
           } else {
-            scheduleStampConfigUpdate({
-              ...stampConfigRef.current,
-              position: {
-                x: baseStampPosition.current.x + gestureState.dx,
-                y: baseStampPosition.current.y + gestureState.dy,
-              },
-            });
+            // 한 손가락 드래그 — stampConfig(React state)를 안 건드리고 이
+            // Animated.Value에 직접 쓴다. RoutePreview가 각인 Svg 전체를 이
+            // 값만큼 오프셋하므로(stampDragOffset) 리렌더 없이 네이티브 쪽에서
+            // 움직인다.
+            stampDragX.setValue(gestureState.dx);
+            stampDragY.setValue(gestureState.dy);
           }
           return;
         }
@@ -392,12 +410,33 @@ export default function EditScreen() {
       onPanResponderRelease: (_evt, gestureState) => {
         setIsInteracting(false);
         setStampTargeted(false);
+        // gestureStart가 non-null이면 이 제스처 동안 핀치(두 손가락)로 넘어간
+        // 적이 있었다는 뜻 — 아래 reset 전에 먼저 읽어 둔다.
+        const wasStampPinching = gestureStart.current !== null;
         gestureStart.current = null;
         if (editTargetRef.current === 'stamp') {
-          // 마지막으로 예약된(아직 화면엔 안 반영된) 값까지 확실히 반영한 다음 커밋 —
-          // 안 그러면 손을 뗀 마지막 프레임 분의 미세한 위치·크기 변화가 씹힐 수 있다.
-          flushPendingStampConfig();
-          commitStampConfig(stampConfigRef.current);
+          if (wasStampPinching) {
+            // 핀치(위치+크기) 경로 — scheduleStampConfigUpdate가 이미 최신값을
+            // stampConfigRef에 반영해 두고 있다. 마지막으로 예약된(아직 화면엔 안
+            // 반영된) 값까지 확실히 반영한 다음 커밋 — 안 그러면 손을 뗀 마지막
+            // 프레임 분의 미세한 변화가 씹힐 수 있다.
+            flushPendingStampConfig();
+            commitStampConfig(stampConfigRef.current);
+          } else {
+            // 한 손가락 드래그 — stampConfig(state)는 이번 드래그 동안 안
+            // 건드렸다(stampDragX/Y로만 네이티브에서 움직였다). 최종 위치를 여기서
+            // 계산해 커밋하고, 오프셋은 0으로 되돌린다(안 그러면 다음 렌더에서
+            // 실제 위치 + 남은 오프셋이 겹쳐 보인다).
+            const finalPosition = {
+              x: baseStampPosition.current.x + gestureState.dx,
+              y: baseStampPosition.current.y + gestureState.dy,
+            };
+            const next = { ...stampConfigRef.current, position: finalPosition };
+            updateStampConfig(next);
+            commitStampConfig(next);
+            stampDragX.setValue(0);
+            stampDragY.setValue(0);
+          }
         } else {
           // 드래그 중엔 transform(state)을 안 건드렸다 — SharedValue에 마지막으로
           // 쓰인 값(위 onPanResponderMove)이 곧 최종값이니 그걸 그대로 커밋한다.
@@ -647,6 +686,7 @@ export default function EditScreen() {
                 bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
                 stampSelected={stampTargeted}
                 playing={isPlaying}
+                stampDragOffset={{ x: stampDragX, y: stampDragY }}
               />
             </View>
             {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}

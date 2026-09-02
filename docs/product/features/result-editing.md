@@ -148,6 +148,16 @@
 
 "각인(거리·정보) 옮기고 배치할 때 많이 느리다"는 별개의 피드백 — 위 재생 관련 항목과 원인이 다르다. 각인을 끌 때 손가락이 움직일 때마다(raw 터치 이벤트, 화면 프레임보다 훨씬 잦다) `updateStampConfig`를 그대로 불러서, `RoutePreview`가 매번 다시 렌더되며 `stampLayoutDescriptors`(포맷팅 함수들 + 8개 레이아웃 분기 계산)를 그때마다 다시 돌고 있었다 — §5 "직접 다듬기" 슬라이더 때(위 항목) 겪은 것과 같은 종류의 문제라 같은 해법을 그대로 적용: ref에 최신값은 즉시 반영해 다음 프레임에 쓰고, 실제 state 반영(`updateStampConfig` 호출)은 `requestAnimationFrame`으로 프레임당 한 번만 묶는다(`scheduleStampConfigUpdate`/`flushPendingStampConfig`). 손을 뗄 때는 예약된 값까지 확실히 반영한 뒤 커밋해 마지막 프레임 분이 씹히지 않게 한다.
 
+### 각인 한 손가락 드래그를 네이티브(Animated.Value)로 (2026-09-02)
+
+위 RAF 스로틀로도 "각인 옮기는 게 여전히 렉이 걸린다"는 후속 피드백 — `requestAnimationFrame`은 화면 프레임당 한 번으로는 묶어 줬지만, 매 프레임 여전히 `stampConfig`(React state) → `RoutePreview` 리렌더 → `stampLayoutDescriptors` 재계산이라는 왕복 자체는 남아 있었다. "이것도 네이티브로 할 수 있나?"는 질문에 — 각인은 Skia가 아니라 `react-native-svg`라 진행률 애니메이션처럼 Reanimated `SharedValue`를 프레임마다 바로 읽는 길이 없다. 대신 **바텀시트를 끌 때 이미 쓰던 것과 같은 방식**(클래식 RN `Animated.Value` + `useNativeDriver: true`, `onPanResponderMove`에서 `.setValue()` 직접 호출)을 각인에도 적용했다.
+
+- 각인 텍스트(+선택 박스)를 안전 영역 가이드와 **별도의 `Svg`**로 뗐다 — 필터(`stampGlow`)도 그 Svg 안에 따로 둠. SVG 필터는 같은 SVG 문서 안에서만 참조되기 때문
+- 이 Svg를 `stampDragOffset`(x/y 각각 `Animated.Value`) 만큼 `translateX`/`translateY`하는 `Animated.View`로 감쌌다(`RoutePreview`의 새 prop)
+- `edit.tsx`는 **한 손가락 드래그(위치만)** 중엔 `stampConfig`를 아예 안 건드리고 `stampDragX/Y.setValue(...)`만 부른다 — 리렌더 자체가 없다. 손을 뗄 때만 최종 위치를 계산해 `stampConfig`에 한 번 커밋하고 오프셋을 0으로 되돌린다
+- **두 손가락(핀치, 크기 조정)은 그대로 RAF 스로틀 경로**를 쓴다 — 크기까지 이 방식으로 감당하려면 폰트 재계산과 결합해야 해서 복잡도가 크고, 핀치는 위치 드래그보다 짧고 드문 제스처라 우선순위를 낮췄다. 한 손가락 드래그 도중 두 번째 손가락이 닿아 핀치로 넘어가는 순간엔 오프셋을 0으로 되돌려 이중으로 안 겹치게 함
+- **알려진 린트 소음 추가분**: `stampDragX`/`Y`(`useRef(new Animated.Value(0)).current`, `sheetTranslateY`와 같은 패턴)와 그 `.setValue()` 호출이 이번 변경으로 `react-hooks/refs`·`react-hooks/immutability` 오탐을 9건 늘렸다 — 전부 이미 허용 중이던 것과 같은 두 범주
+
 ### 편집 중 미리보기 크롭을 안전 영역 기준으로 (2026-09-02)
 
 편집 화면 미리보기(`fit="cover"`)가 9:16 캔버스 전체를 기준으로 화면을 채우다 보니, 편집 화면 뷰 비율이 9:16보다 납작해서 위아래가 꽤 잘려 나가 보인다는 피드백이 있었다. 캔버스 전체 대신 인스타 안전 영역(`SAFE_AREA_TOP/BOTTOM_RATIO` — 어차피 스토리에 올리면 프로필·답장창에 가려지는 부분)만 기준으로 화면을 채우는 `fit="cover-safe"`를 추가해 `edit.tsx`에서 씀. 잘려 나가는 부분이 "어차피 안 보이는 영역"이라 체감상 원본 그대로에 가깝다. `route-preview.tsx`의 Skia `Group transform`과 SVG `viewBox` 양쪽 다 안전 영역 기준으로 맞춰야 각인·경로가 어긋나지 않는다. 결과물(mp4)은 이 크롭과 무관하게 항상 캔버스 전체를 그린다(화면 표시 방식일 뿐).
