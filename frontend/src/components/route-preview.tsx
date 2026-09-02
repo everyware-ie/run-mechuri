@@ -129,6 +129,14 @@ type Props = {
    * 따로 계산) — 편집 중 미리보기에서만 화면을 꽉 채워 보여주는 표시 방식 차이일 뿐이다.
    */
   fit?: 'contain' | 'cover' | 'cover-safe';
+  /**
+   * cover-safe 전용: 뷰 하단에서 다른 UI(바텀시트 등)가 덮어서 실제로는 안 보이는
+   * 높이(뷰 픽셀 단위). previewArea가 flex:1이라 바텀시트가 덮는 만큼까지 포함해서
+   * viewHeight가 잡히는 경우, 이 값만큼 빼고 "실제로 보이는 높이"만 기준으로
+   * 안전 영역을 채운다 — 안 그러면 안전 영역 하단 가까이 있는 각인이 시트 뒤로
+   * 밀려 들어가 안 보인다. 기본 0(전부 보인다고 가정).
+   */
+  bottomInset?: number;
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -157,6 +165,7 @@ export function RoutePreview({
   viewWidth,
   viewHeight,
   fit = 'contain',
+  bottomInset = 0,
 }: Props) {
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
@@ -247,20 +256,28 @@ export function RoutePreview({
   const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
   const safeHeight = CANVAS_HEIGHT * (1 - SAFE_AREA_TOP_RATIO - SAFE_AREA_BOTTOM_RATIO);
 
+  // 실기기 피드백(2026-09-02): edit.tsx의 미리보기 View는 flex:1이라 바텀시트가
+  // 가리는 만큼까지 포함해서 onLayout 높이가 잡힌다(시트는 그 위에 겹쳐 그리는
+  // absolute 오버레이라 별도 flex 공간을 안 차지함) — cover-safe가 "안전 영역"을
+  // 이 높이 전체에 꽉 채우면, 안전 영역 하단 가까이(STAMP_DEFAULT_Y) 있는 각인
+  // 텍스트가 실제로는 시트 뒤로 밀려 들어가 안 보이게 됐다. bottomInset(시트가
+  // 가리는 만큼)을 빼고 "실제로 보이는 높이"만 기준으로 안전 영역을 채운다.
+  const usableHeight = fit === 'cover-safe' ? Math.max(1, viewHeight - bottomInset) : viewHeight;
+
   // 캔버스 → 뷰 스케일. Skia Group은 캔버스 좌표(1080x1920)로 그리고 하나의 스케일로 축소.
   // contain=min(다 보이게, 여백 남음) / cover=max(캔버스 전체 기준 꽉 채움) /
-  // cover-safe=max(안전 영역 기준 꽉 채움).
+  // cover-safe=max(안전 영역 기준, 시트에 안 가려진 높이만 채움).
   const fitScale =
     fit === 'cover'
       ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT)
       : fit === 'cover-safe'
-        ? Math.max(viewWidth / CANVAS_WIDTH, viewHeight / safeHeight)
+        ? Math.max(viewWidth / CANVAS_WIDTH, usableHeight / safeHeight)
         : Math.min(viewWidth / CANVAS_WIDTH, viewHeight / CANVAS_HEIGHT);
   const offsetX = (viewWidth - CANVAS_WIDTH * fitScale) / 2;
-  // cover-safe는 캔버스 중앙이 아니라 안전 영역 중앙을 뷰 중앙에 맞춘다.
+  // cover-safe는 캔버스 중앙이 아니라 "안 가려진 영역" 중앙에 안전 영역 중앙을 맞춘다.
   const offsetY =
     fit === 'cover-safe'
-      ? (viewHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
+      ? (usableHeight - safeHeight * fitScale) / 2 - safeTop * fitScale
       : (viewHeight - CANVAS_HEIGHT * fitScale) / 2;
 
   // 시안과 동일: translate(cx+tx, cy+ty) rotate scale translate(-cx,-cy)
@@ -312,7 +329,7 @@ export function RoutePreview({
       <Svg
         style={{ position: 'absolute', top: 0, left: 0 }}
         width={viewWidth}
-        height={viewHeight}
+        height={usableHeight}
         viewBox={
           fit === 'cover-safe'
             ? `0 ${safeTop} ${CANVAS_WIDTH} ${safeHeight}`
