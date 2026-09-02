@@ -530,7 +530,11 @@ export default function EditScreen() {
             </Text>
           </View>
 
-          <Text style={styles.sectionLabel}>배치</Text>
+          {/* "배치"라는 이름 아래 묻혀 있던 걸 드로잉 프리셋과 같은 라벨 패턴으로 —
+              실기기 피드백(2026-09): 이건 단순 위치 배치가 아니라 각인을 어떤 스타일로
+              표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
+              나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
+          <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
           <View style={styles.chipRow}>
             {STAMP_LAYOUTS.map((l) => {
               const on = (stampConfig.layout ?? 'row') === l.id;
