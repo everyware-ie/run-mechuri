@@ -1,6 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
@@ -60,8 +61,33 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleResumeDraft = () => {
+  const handleResumeDraft = async () => {
     if (!draft) return;
+    // 실기기 피드백(2026-09-03): "다시 편집"과 같은 문제(docs/product/features/
+    // background-selection.md 참고)가 "이어서 만들기"에도 그대로 있었다 — 초안의
+    // backgroundImagePath도 앱 업데이트/재설치 사이에 깨질 수 있는 절대경로다.
+    // 편집을 다 끝낸 뒤(공유 화면)에야 실패로 알기보다, 시작 전에 확인해서
+    // 배경만 다시 고르게 안내한다.
+    const bgInfo = await FileSystem.getInfoAsync(draft.backgroundImagePath);
+    if (!bgInfo.exists) {
+      Alert.alert('배경 이미지를 다시 골라야 해요', '이전에 쓴 배경 사진을 더 이상 찾을 수 없어요. 배경만 다시 골라주세요 — 나머지 편집 내용은 그대로 유지됩니다.', [
+        {
+          text: '확인',
+          onPress: () => {
+            loadDraft({
+              selectedRun: draft.run,
+              track: draft.track,
+              preset: draft.preset,
+              transform: draft.transform,
+              smoothOptions: draft.smoothOptions,
+              stampConfig: draft.stampConfig,
+            });
+            router.push('/background-selection');
+          },
+        },
+      ]);
+      return;
+    }
     loadDraft({
       selectedRun: draft.run,
       track: draft.track,
