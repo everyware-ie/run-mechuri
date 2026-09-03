@@ -735,9 +735,21 @@ public class RouteRendererModule: Module {
       let titleFont = 13 * u
       let rowGap = 10 * u
 
+      // 실기기 피드백(2026-09-03), TS와 동일(route-preview.tsx stampLayoutDescriptors
+      // 'stack' 참고): 가운데 줄(hero)·meta가 꺼져 있어도 문구가 항상 그 몫의
+      // 간격까지 띄운 채였다 — 실제로 있는 줄끼리만 간격을 둔다.
+      let hasMeta = !metaItems.isEmpty
+      let hasHero = hero != nil
       let metaBaseline = bottomAnchor
-      let heroBaseline = metaBaseline - rowGap - heroSize * 0.85
-      let captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+      let heroBaseline = hasMeta ? bottomAnchor - rowGap - heroSize * 0.85 : bottomAnchor
+      let captionBaseline: CGFloat
+      if hasHero {
+        captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+      } else if hasMeta {
+        captionBaseline = metaBaseline - rowGap - titleFont * 0.85
+      } else {
+        captionBaseline = bottomAnchor - rowGap - titleFont * 0.85
+      }
 
       if !metaItems.isEmpty {
         let font = UIFont.monospacedSystemFont(ofSize: metaFont, weight: .medium)
@@ -771,9 +783,12 @@ public class RouteRendererModule: Module {
       let dividerGap = 16 * u
       let rowPadTop = 12 * u
 
+      // 실기기 피드백(2026-09-03), TS와 동일 — 통계 4칸을 다 꺼도 머리글이 그 몫의
+      // 간격까지 띄운 채였다.
+      let hasStats = !statOrder.isEmpty
       let valueBaseline = bottomAnchor
       let labelBaseline = valueBaseline - 22 * u * 1.15
-      let dividerY = labelBaseline - labelFont * 0.9 - rowPadTop
+      let dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor
       let headerBaseline = dividerY - dividerGap - headerFont * 0.3
 
       if !caption.isEmpty { draw(caption, CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
@@ -965,9 +980,12 @@ public class RouteRendererModule: Module {
       if hasKey("date") { parts.append(valueFor("date")) }
       let oneLine = parts.joined(separator: " · ")
 
+      // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
+      // 간격까지 띄운 채였다.
+      let hasOneLine = !oneLine.isEmpty
       let oneLineBaseline = bottomAnchor
       let dividerY = oneLineBaseline - oneLineFont * 1.3 - gap
-      let titleBaseline = dividerY - gap - titleFont * 0.85
+      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85
 
       if !oneLine.isEmpty {
         draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), UIFont.monospacedSystemFont(ofSize: oneLineFont, weight: .medium), .center)

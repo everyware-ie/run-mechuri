@@ -1103,11 +1103,26 @@ function stampLayoutDescriptors(
     const titleFont = 13 * u;
     const rowGap = 10 * u;
 
+    // 실기기 피드백(2026-09-03): "글씨가 매우 멀리 떨어져 나온다" — 시간·페이스처럼
+    // 가운데 줄(hero)이 꺼져 있어도 문구(caption)는 항상 hero 몫의 간격까지 띄운
+    // 채였다 — 빈 줄 위에 멀리 떠 보인 원인. 아래에서 위로 실제로 있는 줄끼리만
+    // 간격을 두도록 고쳤다(원본 디자인엔 없던, 포팅하며 생긴 버그 — 디자인을
+    // 더 받을 필요 없이 배치 계산만 고치면 된다).
+    const hasMeta = metaItems.length > 0;
+    const hasHero = !!heroKey;
     const metaBaseline = bottomAnchor;
-    const heroBaseline = metaBaseline - rowGap - heroSize * 0.85;
-    const captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85;
+    // hero는 meta가 실제로 있을 때만 그만큼 간격을 두고, meta가 없으면 hero 자신이
+    // 맨 아래 줄이 되어 바로 bottomAnchor에 놓인다.
+    const heroBaseline = hasMeta ? bottomAnchor - rowGap - heroSize * 0.85 : bottomAnchor;
+    // caption은 바로 아래 실제로 있는 줄(hero → meta → 없으면 bottomAnchor 자체)
+    // 기준으로만 간격을 둔다 — 없는 줄 몫의 간격은 더하지 않는다.
+    const captionBaseline = hasHero
+      ? heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+      : hasMeta
+        ? metaBaseline - rowGap - titleFont * 0.85
+        : bottomAnchor - rowGap - titleFont * 0.85;
 
-    if (metaItems.length > 0) {
+    if (hasMeta) {
       const metaGap = 14 * u;
       const charW = metaFont * 0.62;
       let cursorX = leftX;
@@ -1144,9 +1159,13 @@ function stampLayoutDescriptors(
     const dividerGap = 16 * u;
     const rowPadTop = 12 * u;
 
+    // 실기기 피드백(2026-09-03): "글씨가 매우 멀리 떨어져 나온다" — 통계 4칸을 다
+    // 꺼도 문구+날짜 머리글은 항상 그 몫의 간격까지 띄운 채였다. 통계가 실제로
+    // 있을 때만 그 간격을 반영한다.
+    const hasStats = statOrder.length > 0;
     const valueBaseline = bottomAnchor;
     const labelBaseline = valueBaseline - 22 * u * 1.15;
-    const dividerY = labelBaseline - labelFont * 0.9 - rowPadTop;
+    const dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor;
     const headerBaseline = dividerY - dividerGap - headerFont * 0.3;
 
     if (caption) {
@@ -1397,9 +1416,13 @@ function stampLayoutDescriptors(
     );
     const oneLine = parts.join(' · ');
 
+    // 실기기 피드백(2026-09-03): "글씨가 매우 멀리 떨어져 나온다" — 통계를 다 꺼서
+    // 한 줄(oneLine)이 비어도 문구(caption)는 항상 그 몫의 간격까지 띄운 채였다.
+    // oneLine이 실제로 있을 때만 그 간격을 반영한다.
+    const hasOneLine = !!oneLine;
     const oneLineBaseline = bottomAnchor;
     const dividerY = oneLineBaseline - oneLineFont * 1.3 - gap;
-    const titleBaseline = dividerY - gap - titleFont * 0.85;
+    const titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85;
 
     if (oneLine) {
       nodes.push({ key: 'oneLine', x: centerX, y: oneLineBaseline, size: oneLineFont, family: 'JetBrainsMono_500Medium', text: oneLine, anchor: 'middle' });
