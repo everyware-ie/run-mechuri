@@ -145,6 +145,16 @@ const DRAW_SECONDS = 9;
 const HOLD_SECONDS = 3;
 // 재생 버튼(2026-09-02)이 "한 번 재생하고 자동으로 멈춘다"의 길이를 재려고 밖에서도 씀.
 export const CYCLE_SECONDS = DRAW_SECONDS + HOLD_SECONDS;
+// 실기기 피드백(2026-09-03): "일정 거리 이동하고 멈추고, 이동하고 멈추고 한다" —
+// 경로 자체(Skia Path의 end)는 SharedValue라 프레임마다 네이티브에서 계속
+// 갱신되지만(진짜 30fps로 고정된 게 아니다), 각인 숫자(거리·시간·페이스 카운트업)는
+// react-native-svg라 SharedValue를 못 쓰고 이 값이 바뀔 때마다 실제로 리렌더가
+// 필요하다 — 그 리렌더가 DRAW_SECONDS/STAMP_SYNC_STEPS 간격(이전엔 30이라
+// 9/30=0.3초마다)으로 규칙적으로 일어나는 게 경로가 규칙적으로 살짝씩 멎어
+// 보이는 원인일 가능성이 높다(같은 JS 스레드를 잠깐씩 쓰므로). 30 → 12로 낮춰
+// 그 간격을 0.75초로 늘렸다 — 숫자가 그정도 빈도로 올라가도 눈에는 여전히
+// 매끄럽게 세는 것처럼 보이면서, 리렌더 빈도는 40% 수준으로 줄어든다.
+const STAMP_SYNC_STEPS = 12;
 
 // 시안 neon 테마 팔레트.
 const LINE_WARM = '#FFF3EC';
@@ -279,7 +289,7 @@ export function RoutePreview({
   // LightRunnerLayer), 여기 JS 쪽엔 "그리기 자체"를 위한 진행률 state가 더 이상
   // 없다 — 각인(거리·시간·페이스) 카운트업 숫자를 SVG로 그리는 데만 이 값이
   // 필요해서, 어느 프리셋이 켜져 있든 그 프리셋 레이어가 onProgressSample로
-  // 대략 30단계마다만 낮춰서 여기로 올려준다(JS 리렌더가 드묾).
+  // 대략 STAMP_SYNC_STEPS단계마다만 낮춰서 여기로 올려준다(JS 리렌더가 드묾).
   const [uiStampProgress, setUiStampProgress] = useState(0);
 
   // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
@@ -561,9 +571,9 @@ function useUIThreadProgress(
   }, [playing, elapsed]);
 
   // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
-  // 30단계로만 낮춰서 JS 쪽에 넘긴다(light-runner와 같은 이유).
+  // STAMP_SYNC_STEPS단계로만 낮춰서 JS 쪽에 넘긴다(light-runner와 같은 이유).
   useAnimatedReaction(
-    () => Math.floor(progress.value * 30),
+    () => Math.floor(progress.value * STAMP_SYNC_STEPS),
     (bucket, prevBucket) => {
       if (bucket !== prevBucket) {
         scheduleOnRN(onProgressSample, progress.value);
@@ -646,10 +656,11 @@ function LightRunnerLayer({
   }, [playing, elapsed]);
 
   // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
-  // 30단계(진행률 0→1 구간을 30칸으로 나눈 정도)로만 낮춰서 JS 쪽에 넘긴다. Skia
-  // 캔버스 자체(아래 SharedValue들)는 이 동기화와 무관하게 계속 UI 스레드에서 그려진다.
+  // STAMP_SYNC_STEPS단계(진행률 0→1 구간을 그만큼 칸으로 나눈 정도)로만 낮춰서
+  // JS 쪽에 넘긴다. Skia 캔버스 자체(아래 SharedValue들)는 이 동기화와 무관하게
+  // 계속 UI 스레드에서 그려진다.
   useAnimatedReaction(
-    () => Math.floor(progress.value * 30),
+    () => Math.floor(progress.value * STAMP_SYNC_STEPS),
     (bucket, prevBucket) => {
       if (bucket !== prevBucket) {
         scheduleOnRN(onProgressSample, progress.value);
