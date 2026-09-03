@@ -1120,8 +1120,14 @@ function stampLayoutDescriptors(
     const heroBaseline = hasMeta ? bottomAnchor - rowGap - heroSize * 0.85 : bottomAnchor;
     // caption은 바로 아래 실제로 있는 줄(hero → meta → 없으면 bottomAnchor 자체)
     // 기준으로만 간격을 둔다 — 없는 줄 몫의 간격은 더하지 않는다.
+    //
+    // 실기기 피드백(2026-09-03): "글씨가 겹친다" — hero(58*u, 아주 큰 숫자) 위로
+    // 문구를 띄우는 간격이 heroSize*0.3(17u 정도)뿐이었다. hero처럼 큰 글자는
+    // 실제 글자 몸통이 baseline 위로 그보다 훨씬(0.8~0.9배) 올라오기 때문에,
+    // 그 안에 문구가 파고들어 겹쳐 보였다 — 바로 아래(glass 프리셋)에서 이미
+    // hero 위쪽 간격에 heroSize*0.92를 쓰고 있는 것과 같은 값으로 맞춘다.
     const captionBaseline = hasHero
-      ? heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+      ? heroBaseline - heroSize * 0.92 - rowGap - titleFont * 0.3
       : hasMeta
         ? metaBaseline - rowGap - titleFont * 0.85
         : bottomAnchor - rowGap - titleFont * 0.85;
@@ -1141,7 +1147,7 @@ function stampLayoutDescriptors(
       nodes.push({ key: 'hero', x: leftX, y: heroBaseline, size: heroSize, family: 'SpaceGrotesk_700Bold', text: heroText, anchor: 'start', parts: splitHeroValue(heroText, heroSize) });
     }
     if (caption) {
-      nodes.push({ key: 'caption', x: leftX, y: captionBaseline, size: titleFont, family: 'SpaceGrotesk_500Medium', text: caption, anchor: 'start' });
+      nodes.push({ key: 'caption', x: leftX, y: captionBaseline, size: titleFont, family: 'NotoSansKR_500Medium', text: caption, anchor: 'start' });
     }
     return { texts: nodes, rects };
   }
@@ -1173,7 +1179,7 @@ function stampLayoutDescriptors(
     const headerBaseline = dividerY - dividerGap - headerFont * 0.3;
 
     if (caption) {
-      nodes.push({ key: 'caption', x: leftX, y: headerBaseline, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+      nodes.push({ key: 'caption', x: leftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
     }
     if (dateText) {
       nodes.push({ key: 'date', x: rightX, y: headerBaseline, size: dateFont, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
@@ -1214,7 +1220,7 @@ function stampLayoutDescriptors(
     const headerBaseline = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO + 24 * M + headerFont * 0.85 + config.position.y;
 
     if (caption) {
-      nodes.push({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+      nodes.push({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
     }
     const dateText = has('date') ? value('date') : '';
     if (dateText) {
@@ -1321,7 +1327,7 @@ function stampLayoutDescriptors(
     if (hasHeader) {
       cursor += headerFont * 0.85;
       if (caption) {
-        nodes.push({ key: 'caption', x: panelLeft + padX, y: cursor, size: headerFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'start' });
+        nodes.push({ key: 'caption', x: panelLeft + padX, y: cursor, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
       }
       if (dateText) {
         nodes.push({ key: 'date', x: panelRight - padX, y: cursor, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
@@ -1356,13 +1362,14 @@ function stampLayoutDescriptors(
 
   if (layout === 'rail') {
     // 2e "사이드 레일" — 왼쪽 끝에 세로 네온 선, 그 옆에 거리·시간·페이스·평균심박·
-    // 날짜를 위아래로 쌓는다(거리만 크게). 문구는 오른쪽 아래.
+    // 날짜를 위아래로 쌓는다(거리만 크게).
     const u = M * s;
     const railPadLeft = 22 * M;
     const labelFont = 9 * u;
     const distValueFont = 34 * u;
     const otherValueFont = 20 * u;
     const rowGap = 18 * u;
+    const railX = config.position.x;
 
     const rows: { label: string; text: string; big?: boolean }[] = [];
     if (has('distance')) rows.push({ label: 'DISTANCE', text: value('distance'), big: true });
@@ -1371,11 +1378,16 @@ function stampLayoutDescriptors(
     if (has('heartRate')) rows.push({ label: 'AVG BPM', text: value('heartRate') });
     if (has('date')) rows.push({ label: 'DATE', text: value('date') });
 
+    // 스택 바로 아래에 문구를 붙이려면 railTop/railBottom을 caption 계산에서도
+    // 써야 해서 if 블록 밖으로 뺐다.
+    let railTop = CANVAS_HEIGHT / 2 + config.position.y;
+    let railBottom = railTop;
+
     if (rows.length > 0) {
       const rowHeights = rows.map((r) => labelFont * 1.2 + (r.big ? distValueFont : otherValueFont) * 1.05);
       const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + rowGap * (rows.length - 1);
-      const railTop = CANVAS_HEIGHT / 2 - totalHeight / 2 + config.position.y;
-      const railX = config.position.x;
+      railTop = CANVAS_HEIGHT / 2 - totalHeight / 2 + config.position.y;
+      railBottom = railTop + totalHeight;
       rects.push({ key: 'rail-line', x: railX, y: railTop, width: 3 * u, height: totalHeight, rx: 0, fill: GLOW });
 
       let cursorY = railTop;
@@ -1389,16 +1401,23 @@ function stampLayoutDescriptors(
       });
     }
     if (caption) {
-      // 실기기 피드백(2026-09-03): 디자인 bottom:24px, M 곱하는 걸 빠뜨렸던 버그(위
-      // 'stack' 설명과 동일) — 24*M로 맞춘다.
+      // 실기기 피드백(2026-09-03): 원본 디자인은 문구를 오른쪽 아래에 스택과
+      // 완전히 떨어뜨려 놨는데, 실기기에서 "혼자 너무 멀리 있고 크기도 안
+      // 맞는다"는 피드백 — 사용자 확인 후 디자인과 다르게 스택 바로 아래,
+      // 왼쪽 정렬로 붙이는 배치로 바꿨다(어긋남 기록에 남김). 스택이 아예
+      // 없을 때(항목을 다 껐을 때)만 기존 자리(안전 영역 하단, 오른쪽 정렬)로
+      // 돌아간다.
+      const hasRail = rows.length > 0;
       nodes.push({
         key: 'caption',
-        x: CANVAS_WIDTH - 22 * M + config.position.x,
-        y: CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y,
+        x: hasRail ? railX + railPadLeft : CANVAS_WIDTH - 22 * M + config.position.x,
+        y: hasRail
+          ? railBottom + rowGap + 13 * u * 0.8
+          : CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y,
         size: 13 * u,
-        family: 'SpaceGrotesk_700Bold',
+        family: 'NotoSansKR_700Bold',
         text: caption,
-        anchor: 'end',
+        anchor: hasRail ? 'start' : 'end',
       });
     }
     return { texts: nodes, rects };
@@ -1439,7 +1458,7 @@ function stampLayoutDescriptors(
       rects.push({ key: 'divider', x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: Math.max(1, 2 * u), rx: 0, fill: 'rgba(255,255,255,0.5)' });
     }
     if (caption) {
-      nodes.push({ key: 'caption', x: centerX, y: titleBaseline, size: titleFont, family: 'SpaceGrotesk_700Bold', text: caption, anchor: 'middle' });
+      nodes.push({ key: 'caption', x: centerX, y: titleBaseline, size: titleFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'middle' });
     }
     return { texts: nodes, rects };
   }
@@ -1455,7 +1474,7 @@ function stampLayoutDescriptors(
       x: centerX,
       y: baseY - 58 * s,
       size: 34 * s,
-      family: 'SpaceGrotesk_500Medium',
+      family: 'NotoSansKR_500Medium',
       text: caption,
       anchor: 'middle',
     });

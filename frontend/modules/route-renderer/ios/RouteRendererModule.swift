@@ -744,9 +744,12 @@ public class RouteRendererModule: Module {
       let hasHero = hero != nil
       let metaBaseline = bottomAnchor
       let heroBaseline = hasMeta ? bottomAnchor - rowGap - heroSize * 0.85 : bottomAnchor
+      // 실기기 피드백(2026-09-03), TS와 동일 — hero 위 간격이 heroSize*0.3뿐이라
+      // 큰 글자 몸통과 문구가 겹쳐 보였다. glass 프리셋의 hero 위쪽 간격(0.92)과
+      // 같은 값으로 맞춘다.
       let captionBaseline: CGFloat
       if hasHero {
-        captionBaseline = heroBaseline - heroSize * 0.3 - rowGap - titleFont * 0.85
+        captionBaseline = heroBaseline - heroSize * 0.92 - rowGap - titleFont * 0.3
       } else if hasMeta {
         captionBaseline = metaBaseline - rowGap - titleFont * 0.85
       } else {
@@ -944,11 +947,17 @@ public class RouteRendererModule: Module {
       if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
       if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
 
+      // 스택 바로 아래에 문구를 붙이려면 railTop/railBottom을 caption 계산에서도
+      // 써야 해서 if 블록 밖으로 뺐다(TS와 동일).
+      let railX = CGFloat(stamp.stampX)
+      var railTop = canvasSize.height / 2 + CGFloat(stamp.stampY)
+      var railBottom = railTop
+
       if !rows.isEmpty {
         let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
         let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(rows.count - 1)
-        let railTop = canvasSize.height / 2 - totalHeight / 2 + CGFloat(stamp.stampY)
-        let railX = CGFloat(stamp.stampX)
+        railTop = canvasSize.height / 2 - totalHeight / 2 + CGFloat(stamp.stampY)
+        railBottom = railTop + totalHeight
         fillRect(CGRect(x: railX, y: railTop, width: 3 * u, height: totalHeight), radius: 0, color: self.glowColor)
 
         var cursorY = railTop
@@ -962,10 +971,15 @@ public class RouteRendererModule: Module {
         }
       }
       if !caption.isEmpty {
-        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:24px, M 곱하는 걸
-        // 빠뜨렸던 버그. 24*M로 맞춘다.
-        let y = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
-        draw(caption, CGPoint(x: canvasSize.width - 22 * M + CGFloat(stamp.stampX), y: y), UIFont.systemFont(ofSize: 13 * u, weight: .bold), .right)
+        // 실기기 피드백(2026-09-03), TS와 동일 — 원본 디자인의 오른쪽 아래 고립
+        // 배치 대신, 스택이 있으면 그 바로 아래(왼쪽 정렬)로 붙인다. 스택이 아예
+        // 없을 때만 기존 자리(안전 영역 하단, 오른쪽 정렬)로 돌아간다.
+        let hasRail = !rows.isEmpty
+        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + CGFloat(stamp.stampX)
+        let y = hasRail
+          ? railBottom + rowGap + 13 * u * 0.8
+          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: 13 * u, weight: .bold), hasRail ? .left : .right)
       }
       return
     }
