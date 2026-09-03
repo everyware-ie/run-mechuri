@@ -136,13 +136,18 @@ export default function ShareScreen() {
         await clearDraft();
         finishAfterMinHold(() => setOutputPath(result.outputPath));
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.
           router.back();
           return;
         }
+        // 실기기 피드백(2026-09-03): 실패 원인을 그냥 버리고 있어서 "왜" 실패했는지
+        // 알 방법이 없었다 — 배경 이미지 경로가 더 이상 유효하지 않은 경우(재설치로
+        // 캐시 경로가 깨진 "다시 편집" 등) 등을 나중에 추적할 수 있게 최소한 로그는
+        // 남긴다.
+        console.warn('RouteRenderer.renderClip failed', error);
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
         Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
