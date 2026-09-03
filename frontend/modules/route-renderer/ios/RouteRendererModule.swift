@@ -932,13 +932,18 @@ public class RouteRendererModule: Module {
 
     if stamp.stampLayout == "rail" {
       // 2e "사이드 레일" — 왼쪽 끝 세로 네온 선 + 거리·시간·페이스·평균심박·날짜를
-      // 위아래로 쌓는다(거리만 크게). 문구는 오른쪽 아래.
+      // 위아래로 쌓는다(거리만 크게).
+      //
+      // 실기기 피드백(2026-09-03), TS와 동일 — label(9*u)은 bar·corner·glass와
+      // 공유하는 크기라 그대로 두고, 값 크기만 황금비(φ≈1.618)로 다시 짰다.
+      let phi: CGFloat = 1.618
       let u = M * s
       let railPadLeft = 22 * M
       let labelFont = 9 * u
-      let distValueFont = 34 * u
-      let otherValueFont = 20 * u
-      let rowGap = 18 * u
+      let otherValueFont = 22 * u
+      let distValueFont = otherValueFont * phi
+      let rowGap = 20 * u
+      let captionFont = 13 * u
 
       var rows: [(label: String, text: String, big: Bool)] = []
       if hasKey("distance") { rows.append(("DISTANCE", valueFor("distance"), true)) }
@@ -947,16 +952,22 @@ public class RouteRendererModule: Module {
       if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
       if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
 
-      // 스택 바로 아래에 문구를 붙이려면 railTop/railBottom을 caption 계산에서도
-      // 써야 해서 if 블록 밖으로 뺐다(TS와 동일).
       let railX = CGFloat(stamp.stampX)
-      var railTop = canvasSize.height / 2 + CGFloat(stamp.stampY)
+      let hasRail = !rows.isEmpty
+      // 실기기 피드백: "위치도 저기가 최선인가?" — 스택(rows)만 캔버스 세로
+      // 중앙에 놓고 문구를 그 아래 덧붙이던 것을, 문구 몫까지 포함한 블록
+      // 전체를 안전 영역(§7-1) 안에서 가운데 두도록 고쳤다(TS와 동일).
+      let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
+      let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(max(0, rows.count - 1))
+      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 : 0
+      let combinedHeight = totalHeight + captionBlockHeight
+      let safeTop = canvasSize.height * safeAreaTopRatio
+      let safeBottom = canvasSize.height * (1 - safeAreaBottomRatio)
+      let blockTop = safeTop + max(0, (safeBottom - safeTop - combinedHeight) / 2)
+      let railTop = blockTop + CGFloat(stamp.stampY)
       var railBottom = railTop
 
-      if !rows.isEmpty {
-        let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
-        let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(rows.count - 1)
-        railTop = canvasSize.height / 2 - totalHeight / 2 + CGFloat(stamp.stampY)
+      if hasRail {
         railBottom = railTop + totalHeight
         fillRect(CGRect(x: railX, y: railTop, width: 3 * u, height: totalHeight), radius: 0, color: self.glowColor)
 
@@ -974,12 +985,11 @@ public class RouteRendererModule: Module {
         // 실기기 피드백(2026-09-03), TS와 동일 — 원본 디자인의 오른쪽 아래 고립
         // 배치 대신, 스택이 있으면 그 바로 아래(왼쪽 정렬)로 붙인다. 스택이 아예
         // 없을 때만 기존 자리(안전 영역 하단, 오른쪽 정렬)로 돌아간다.
-        let hasRail = !rows.isEmpty
         let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + CGFloat(stamp.stampX)
         let y = hasRail
-          ? railBottom + rowGap + 13 * u * 0.8
+          ? railBottom + rowGap + captionFont * 0.8
           : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
-        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: 13 * u, weight: .bold), hasRail ? .left : .right)
+        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right)
       }
       return
     }

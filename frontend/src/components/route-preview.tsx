@@ -1363,13 +1363,21 @@ function stampLayoutDescriptors(
   if (layout === 'rail') {
     // 2e "사이드 레일" — 왼쪽 끝에 세로 네온 선, 그 옆에 거리·시간·페이스·평균심박·
     // 날짜를 위아래로 쌓는다(거리만 크게).
+    //
+    // 실기기 피드백(2026-09-03): "글씨를 더 키워도 될 것 같다, 황금비율 같은 거
+    // 없나" — label(9*u)은 bar·corner·glass 세 프리셋과 공유하는 "작은 태그"
+    // 크기라 통일성 때문에 그대로 두고, 값 크기만 황금비(φ≈1.618)로 다시 짰다:
+    // otherValueFont를 20→22로 살짝 키우고, distValueFont(거리, 제일 강조할
+    // 숫자)는 otherValueFont*φ로 계산 — 이전엔 34/20=1.7배로 임의 비율이었다.
+    const PHI = 1.618;
     const u = M * s;
     const railPadLeft = 22 * M;
     const labelFont = 9 * u;
-    const distValueFont = 34 * u;
-    const otherValueFont = 20 * u;
-    const rowGap = 18 * u;
+    const otherValueFont = 22 * u;
+    const distValueFont = otherValueFont * PHI;
+    const rowGap = 20 * u;
     const railX = config.position.x;
+    const captionFont = 13 * u;
 
     const rows: { label: string; text: string; big?: boolean }[] = [];
     if (has('distance')) rows.push({ label: 'DISTANCE', text: value('distance'), big: true });
@@ -1378,15 +1386,24 @@ function stampLayoutDescriptors(
     if (has('heartRate')) rows.push({ label: 'AVG BPM', text: value('heartRate') });
     if (has('date')) rows.push({ label: 'DATE', text: value('date') });
 
-    // 스택 바로 아래에 문구를 붙이려면 railTop/railBottom을 caption 계산에서도
-    // 써야 해서 if 블록 밖으로 뺐다.
-    let railTop = CANVAS_HEIGHT / 2 + config.position.y;
+    const hasRail = rows.length > 0;
+    // 실기기 피드백: "위치도 저기가 최선인가?" — 기존엔 스택(rows)만 캔버스
+    // 세로 중앙에 놓고 문구는 그 아래 덧붙이는 식이라, 스택+문구를 합친
+    // 블록의 실제 중심이 안전 영역 중심보다 아래로 처졌다. 문구 몫까지 미리
+    // 계산해 블록 전체를 안전 영역(§7-1) 안에서 가운데 두도록 고쳤다 — 항목이
+    // 많아 블록이 안전 영역보다 커지는 경우엔 위쪽 경계에서 시작(잘리는 것보다
+    // 나음).
+    const rowHeights = rows.map((r) => labelFont * 1.2 + (r.big ? distValueFont : otherValueFont) * 1.05);
+    const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + rowGap * Math.max(0, rows.length - 1);
+    const captionBlockHeight = caption && hasRail ? rowGap + captionFont * 1.15 : 0;
+    const combinedHeight = totalHeight + captionBlockHeight;
+    const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
+    const safeBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO);
+    const blockTop = safeTop + Math.max(0, (safeBottom - safeTop - combinedHeight) / 2);
+    let railTop = blockTop + config.position.y;
     let railBottom = railTop;
 
-    if (rows.length > 0) {
-      const rowHeights = rows.map((r) => labelFont * 1.2 + (r.big ? distValueFont : otherValueFont) * 1.05);
-      const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + rowGap * (rows.length - 1);
-      railTop = CANVAS_HEIGHT / 2 - totalHeight / 2 + config.position.y;
+    if (hasRail) {
       railBottom = railTop + totalHeight;
       rects.push({ key: 'rail-line', x: railX, y: railTop, width: 3 * u, height: totalHeight, rx: 0, fill: GLOW });
 
@@ -1401,20 +1418,13 @@ function stampLayoutDescriptors(
       });
     }
     if (caption) {
-      // 실기기 피드백(2026-09-03): 원본 디자인은 문구를 오른쪽 아래에 스택과
-      // 완전히 떨어뜨려 놨는데, 실기기에서 "혼자 너무 멀리 있고 크기도 안
-      // 맞는다"는 피드백 — 사용자 확인 후 디자인과 다르게 스택 바로 아래,
-      // 왼쪽 정렬로 붙이는 배치로 바꿨다(어긋남 기록에 남김). 스택이 아예
-      // 없을 때(항목을 다 껐을 때)만 기존 자리(안전 영역 하단, 오른쪽 정렬)로
-      // 돌아간다.
-      const hasRail = rows.length > 0;
       nodes.push({
         key: 'caption',
         x: hasRail ? railX + railPadLeft : CANVAS_WIDTH - 22 * M + config.position.x,
         y: hasRail
-          ? railBottom + rowGap + 13 * u * 0.8
+          ? railBottom + rowGap + captionFont * 0.8
           : CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y,
-        size: 13 * u,
+        size: captionFont,
         family: 'NotoSansKR_700Bold',
         text: caption,
         anchor: hasRail ? 'start' : 'end',
