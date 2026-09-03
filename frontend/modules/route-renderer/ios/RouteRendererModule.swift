@@ -726,7 +726,9 @@ public class RouteRendererModule: Module {
       // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
       let u = M * s
       let leftX = 24 * M + CGFloat(stamp.stampX)
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+      // 빠뜨렸던 버그. 26*M로 맞춘다.
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
       let hero = keyed.first { heroKeys.contains($0.0) }
       let metaItems = keyed.filter { $0.0 != hero?.0 }
 
@@ -841,7 +843,9 @@ public class RouteRendererModule: Module {
 
       if let hero = keyed.first(where: { heroKeys.contains($0.0) }) {
         let heroSize = 66 * u
-        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+        // 빠뜨렸던 버그. 26*M로 맞춘다.
+        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
         drawHeroValue(hero.1, CGPoint(x: 22 * M + CGFloat(stamp.stampX), y: heroBaseline), heroSize, align: .left)
       }
       return
@@ -888,7 +892,9 @@ public class RouteRendererModule: Module {
 
       let panelLeft = 16 * M + CGFloat(stamp.stampX)
       let panelRight = panelLeft + panelWidth
-      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 4 + CGFloat(stamp.stampY)
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:18px, M 곱하는 걸
+      // 빠뜨렸던 버그. 18*M로 맞춘다.
+      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + CGFloat(stamp.stampY)
       let panelTop = panelBottom - panelHeight
 
       fillRect(
@@ -956,7 +962,9 @@ public class RouteRendererModule: Module {
         }
       }
       if !caption.isEmpty {
-        let y = canvasSize.height * (1 - safeAreaBottomRatio) - 20 + CGFloat(stamp.stampY)
+        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:24px, M 곱하는 걸
+        // 빠뜨렸던 버그. 24*M로 맞춘다.
+        let y = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
         draw(caption, CGPoint(x: canvasSize.width - 22 * M + CGFloat(stamp.stampX), y: y), UIFont.systemFont(ofSize: 13 * u, weight: .bold), .right)
       }
       return

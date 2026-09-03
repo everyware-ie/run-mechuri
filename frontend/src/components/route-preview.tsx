@@ -1094,7 +1094,11 @@ function stampLayoutDescriptors(
     // 전부 왼쪽 아래 정렬.
     const u = M * s;
     const leftX = 24 * M + config.position.x;
-    const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y;
+    // 실기기 피드백(2026-09-03): 디자인 원본은 이 블록 아래쪽 여백이 bottom:26px인데
+    // 포팅할 때 M을 안 곱한 채(-20, 고정 캔버스 단위) 임시로 넣어 뒀었다 — 2b·2f는
+    // 이미 -24*M/-30*M로 제대로 곱해 놨는데 이것만 빠져 있었다. 그만큼 안전 영역
+    // 경계에 바짝 붙어 보였던 것 — 디자인 값(26px) 그대로 M을 곱해 맞춘다.
+    const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
     const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
     const metaItems = activeItems.filter((item) => item !== heroKey);
 
@@ -1236,7 +1240,9 @@ function stampLayoutDescriptors(
     const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
     if (heroKey) {
       const heroSize = 66 * u;
-      const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y;
+      // 실기기 피드백(2026-09-03): 디자인 bottom:26px, M 곱하는 걸 빠뜨렸던 버그(위
+      // 'stack' 설명과 동일) — 26*M로 맞춘다.
+      const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
       const heroText = value(heroKey);
       nodes.push({
         key: 'hero',
@@ -1296,7 +1302,9 @@ function stampLayoutDescriptors(
 
     const panelLeft = 16 * M + config.position.x;
     const panelRight = panelLeft + panelWidth;
-    const panelBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 4 + config.position.y;
+    // 실기기 피드백(2026-09-03): 디자인 bottom:18px, M 곱하는 걸 빠뜨렸던 버그(위
+    // 'stack' 설명과 동일) — 18*M로 맞춘다.
+    const panelBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 18 * M + config.position.y;
     const panelTop = panelBottom - panelHeight;
 
     rects.push({
@@ -1381,10 +1389,12 @@ function stampLayoutDescriptors(
       });
     }
     if (caption) {
+      // 실기기 피드백(2026-09-03): 디자인 bottom:24px, M 곱하는 걸 빠뜨렸던 버그(위
+      // 'stack' 설명과 동일) — 24*M로 맞춘다.
       nodes.push({
         key: 'caption',
         x: CANVAS_WIDTH - 22 * M + config.position.x,
-        y: CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 20 + config.position.y,
+        y: CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y,
         size: 13 * u,
         family: 'SpaceGrotesk_700Bold',
         text: caption,
