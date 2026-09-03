@@ -1,5 +1,5 @@
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -507,7 +507,14 @@ export function RoutePreview({
 // FRD §6-1(경로 렌더링) "처음부터 선으로 그려져 나간다"는 애니메이션을 요구하므로
 // 그리는 부분만 보여주되, 매 프레임 점을 다시 훑지 않도록 fullPath를 네이티브
 // trim(start/end)으로 잘라 그린다(2026-09-01).
-function DefaultDrawingLayer({
+// 실기기 피드백(2026-09-03): "경로가 특정 지점에서 매번 멈칫한다" — 원인은 진짜
+// 경로 렌더링(SharedValue 기반, 이 컴포넌트 안)이 아니라, 각인 숫자 동기화
+// (onProgressSample→RoutePreview의 setUiStampProgress)가 부모를 리렌더시킬 때마다
+// 이 컴포넌트도 같이 리렌더되면서(React가 자식 함수를 다시 호출) 매번 JSX를 새로
+// 만들고 조정(reconcile)하는 비용이 들었던 것 — 그 비용이 재생과 같은 프레임에
+// 몰리면 살짝씩 멎어 보인다. props(fullPath 등)가 실제로 안 바뀌었을 땐 이 비용
+// 자체가 불필요하므로 memo로 건너뛰게 한다.
+const DefaultDrawingLayer = memo(function DefaultDrawingLayer({
   fullPath,
   isInteracting,
   playing,
@@ -531,7 +538,7 @@ function DefaultDrawingLayer({
       color={LINE_WARM}
     />
   );
-}
+});
 
 // 불빛 러너 — 시안 "glow" 알고리즘 이식(paint() mode!=='plain'/'seg' 분기). 시안은 캔버스
 // 폭 ~345px 기준으로 T.w=3(선 두께)·shadowBlur 10/20/26을 쓴다 — 우리 Skia 캔버스는 최종
@@ -593,7 +600,12 @@ function useUIThreadProgress(
 // canvas 루프에 가장 가까운 구조. 프리셋이 'light-runner'로 바뀔 때마다 이 컴포넌트가
 // 새로 마운트되므로(부모의 preset 분기 렌더링), elapsed는 항상 0부터 새로 시작한다 —
 // §3 "프리셋을 바꾸면 처음부터 재생" 규칙이 저절로 지켜진다.
-function LightRunnerLayer({
+//
+// memo(2026-09-03): DefaultDrawingLayer와 같은 이유 — onProgressSample이
+// 부모(RoutePreview)를 리렌더시킬 때마다 이 컴포넌트도 매번 다시 불려 도형
+// 트리를 새로 만들고 조정하는 비용이 들었다. props가 실제로 안 바뀌었으면
+// 그 비용을 건너뛴다.
+const LightRunnerLayer = memo(function LightRunnerLayer({
   projected,
   cumulative,
   totalDistance,
@@ -710,7 +722,7 @@ function LightRunnerLayer({
       </Circle>
     </Group>
   );
-}
+});
 
 // 시안 "seg": 옅은 전체 경로 위에 구간마다(완료=밝게, 그리는 중=중간) 쌓고,
 // 방금 완료된 구간일수록 반짝인다.
@@ -775,7 +787,10 @@ function useSegmentReactiveProps(
   return { end, opacity, strokeWidth, blur, dotR, dotOpacity };
 }
 
-function SegmentLayer({
+// memo(2026-09-03): DefaultDrawingLayer·LightRunnerLayer와 같은 이유 — 셋 중
+// 도형 개수가 가장 많은(최대 12구간 × Path·Circle) 컴포넌트라 이 리렌더 비용이
+// 제일 크다.
+const SegmentLayer = memo(function SegmentLayer({
   projected,
   cumulative,
   totalDistance,
@@ -872,7 +887,7 @@ function SegmentLayer({
       })}
     </Group>
   );
-}
+});
 
 // §7-1: 인스타 스토리 UI가 가리는 상하단. 기본 숨김, 편집 화면의 토글 버튼으로만 켠다
 // (실기기 피드백 2026-09: 항상 떠 있으면 채움이든 점선이든 거슬린다는 지적 — 필요할
