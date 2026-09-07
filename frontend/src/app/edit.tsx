@@ -302,11 +302,12 @@ export default function EditScreen() {
         // 제스처 동안의 모든 dx/dy 변환(아래 move·release)에서 재사용한다.
         // previewSize는 드래그 도중 안 바뀌므로 grant에서 한 번만 계산해 ref에
         // 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음). 미리보기는
-        // 가이드 on/off와 무관하게 항상 'cover-safe'라(아래 JSX) fit도 고정.
+        // 가이드 on/off와 무관하게 항상 'cover'라(아래 JSX) fit도 그대로 맞춘다 —
+        // 다르면 탭 위치·드래그 이동량이 실제 화면과 어긋난다.
         const { fitScale, offsetX, offsetY } = computeFitTransform(
           previewSizeRef.current.width,
           previewSizeRef.current.height,
-          'cover-safe',
+          'cover',
           SHEET_EXPANDED_HEIGHT + insets.bottom
         );
         gestureFitScaleRef.current = fitScale;
@@ -706,17 +707,29 @@ export default function EditScreen() {
                 isInteracting={isInteracting || isSheetDragging}
                 viewWidth={previewSize.width}
                 viewHeight={previewSize.height}
+                // 실기기 피드백(2026-09-07): "편집 화면이랑 갤러리 저장 후가 완전
+                // 다르다" — 인스타그램 공유가 아직 없어서(4단계 예정) 지금 v0의
+                // 유일한 결과물 경로는 "기기에 저장"인데, cover-safe는 인스타에
+                // 올렸을 때 UI에 가려질 안전 영역 밖(위·아래 각 17%)을 편집
+                // 화면에서 아예 안 보여준다 — 정작 저장된 파일(사진 앱에서 보면
+                // 인스타 UI가 없으니)에는 그 부분이 그대로 다 나오니, 편집 중
+                // 본 것과 저장 후 본 것이 서로 다른 크롭으로 보였다. 인스타 공유가
+                // 실제로 붙기 전까지는 'cover'(캔버스 전체, 화면에 맞춰 잘라내되
+                // 안전 영역 같은 임의 여백은 없음)로 맞춰 저장 결과와 일치시킨다.
+                // "인스타 스토리 영역" 버튼은 그대로 남겨 인스타에 올렸을 때
+                // 어떻게 잘릴지 미리 보고 싶을 때만 확인하게 한다.
+                //
                 // 실기기 피드백(2026-09-02): 가이드 on/off로 fit을 바꿨더니(이전엔
-                // 'cover'로 전환) 그때마다 경로·각인까지 화면에서 훅 움직여
-                // 보였다("기존 배치가 내려간다") — 미리보기는 가이드 상태와
-                // 무관하게 항상 'cover-safe'로 고정한다. 가이드 자체(아바타·닫기·
-                // 답장창)는 route-preview.tsx 안에서 이 fit과 별개의, 화면
-                // 전체 기준 고정 좌표로 그린다(아래 showSafeAreaGuide 참고) —
-                // 그래야 미리보기 크롭과 무관하게 항상 같은 자리에 뜬다.
-                fit="cover-safe"
+                // 'cover'↔'cover-safe' 전환) 그때마다 경로·각인까지 화면에서 훅
+                // 움직여 보였다("기존 배치가 내려간다") — 미리보기는 가이드 상태와
+                // 무관하게 항상 같은 fit(지금은 'cover')으로 고정한다. 가이드
+                // 자체(아바타·닫기·답장창)는 route-preview.tsx 안에서 이 fit과
+                // 별개의, 화면 전체 기준 고정 좌표로 그린다(아래 showSafeAreaGuide
+                // 참고) — 그래야 미리보기 크롭과 무관하게 항상 같은 자리에 뜬다.
+                fit="cover"
                 // previewArea가 flex:1이라 바텀시트(펼친 상태 기준, 접으면 더
                 // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
-                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다. cover-safe에서만 쓰임.
+                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다.
                 bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
                 stampSelected={stampTargeted}
                 playing={isPlaying}
