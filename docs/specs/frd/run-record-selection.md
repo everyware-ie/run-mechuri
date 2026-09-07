@@ -3,7 +3,7 @@ title: 러닝 기록 선택 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-08-26
+updated: 2026-09-07
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 1번, §6 첫 진입, §6 데이터 진입"
 related:
@@ -116,7 +116,7 @@ HealthKit의 실외 달리기 워크아웃만 보여준다. 걷기, 자전거, �
 
 1. **불러올 실외 러닝 기록이 없다**
 2. 기록이 아직 없거나, 건강 데이터 접근이 허용되지 않았을 수 있다
-3. 설정에서 권한을 확인하는 길, 그리고 한 번 뛰고 오라는 안내
+3. **iOS 설정 앱**에서 권한을 확인하는 길, 그리고 한 번 뛰고 오라는 안내
 
 **1번에 "실외"를 넣는 것이 중요하다.** 그 한 단어가 세 경우를 다 맞는 말로 만든다.
 
