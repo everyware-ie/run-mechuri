@@ -44,7 +44,13 @@ public class InstagramStoryShareModule: Module {
 
     // §3-1: 결과물(mp4) 전체를 스토리 배경 영상으로 얹는다(스티커가 아니다 —
     // 원클릭 취지에 맞게 사용자가 배경을 또 고르지 않도록).
-    AsyncFunction("shareToStory") { (videoPath: String) async throws -> Void in
+    //
+    // 실기기 진단(2026-09-08): 번들 ID 등록·Instagram 테스터 초대·수락까지 다 했는데도
+    // "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 계속 떴다 — 계정
+    // 설정 문제가 아니라 backgroundVideo 키 자체가 이 경로로는 안 먹히는 것으로 의심된다.
+    // backgroundImage(정적 이미지)는 Meta가 오랫동안 확실히 지원해온 경로라, 배경 사진을
+    // 같이 실어 보내 최소한 그쪽은 뜨는지 확인하고 실패해도 폴백이 되게 한다.
+    AsyncFunction("shareToStory") { (videoPath: String, backgroundImagePath: String?) async throws -> Void in
       guard let appID = facebookAppID else {
         throw InstagramStoryShareError.notConfigured
       }
@@ -65,10 +71,19 @@ public class InstagramStoryShareModule: Module {
         throw InstagramStoryShareError.videoNotFound
       }
 
-      let pasteboardItems: [String: Any] = [
+      var pasteboardItems: [String: Any] = [
         "com.instagram.sharedSticker.backgroundVideo": videoData,
         "com.instagram.sharedSticker.appID": appID,
       ]
+      // backgroundImagePath는 "file:///..." 또는 순수 로컬 경로 둘 다 올 수 있다
+      // (background-selection.tsx가 documentDirectory 경로를 그대로 넘긴다) — 스킴이
+      // 없으면 fileURLWithPath로, 있으면 그대로 파싱한다.
+      if let bgPath = backgroundImagePath {
+        let bgURL = bgPath.contains("://") ? URL(string: bgPath) : URL(fileURLWithPath: bgPath)
+        if let bgURL, let bgData = try? Data(contentsOf: bgURL) {
+          pasteboardItems["com.instagram.sharedSticker.backgroundImage"] = bgData
+        }
+      }
       // 인스타그램 쪽 pasteboard는 짧게만 유지한다 — 화면을 벗어나도 계속 남아있으면
       // 다른 앱이 우리 결과물을 읽어갈 수 있어 5분 뒤 만료로 둔다.
       UIPasteboard.general.setItems(

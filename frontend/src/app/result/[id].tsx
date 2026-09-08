@@ -94,7 +94,7 @@ export default function ResultDetailScreen() {
       return;
     }
     try {
-      await InstagramStoryShare.shareToStory(result.outputPath);
+      await InstagramStoryShare.shareToStory(result.outputPath, result.backgroundImagePath);
     } catch (error) {
       console.warn('InstagramStoryShare.shareToStory failed', error);
       Alert.alert('인스타그램으로 보내지 못했어요', '이 결과물은 보관함에 그대로 남아있어요.');

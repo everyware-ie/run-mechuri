@@ -190,7 +190,7 @@ export default function ShareScreen() {
       return;
     }
     try {
-      await InstagramStoryShare.shareToStory(outputPath);
+      await InstagramStoryShare.shareToStory(outputPath, draft.backgroundImagePath ?? undefined);
       // §3-3: 공유 API는 실제로 게시했는지 콜백을 주지 않는다 — URL을 연 시점을
       // 공유로 간주하고 바로 홈(보관함)으로 보낸다. 편집 화면으로 돌리지 않는다.
       reset();

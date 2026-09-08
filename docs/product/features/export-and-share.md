@@ -67,8 +67,19 @@
   `outputURL.absoluteString`("file:///..." URI 문자열)인데, `shareToStory`가 이걸
   `URL(fileURLWithPath:)`에 그대로 넣어서 "file://"까지 경로의 일부로 오인해 깨진 경로가 됐다 —
   `Data(contentsOf:)`가 항상 실패해 App ID·인스타 설치 여부와 무관하게 매번 `videoNotFound`가
-  떨어진 것. `URL(string: videoPath)`로 고침(이미 완전한 URI 문자열이므로 파싱만 하면 됨).
-  재검증 필요
+  떨어진 것. `URL(string: videoPath)`로 고침(이미 완전한 URI 문자열이므로 파싱만 하면 됨)
+- **실기기 검증 2차 실패 → "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 계속 뜸
+  (2026-09-08).** 위 경로 버그를 고친 뒤에도 인스타그램이 URL 스킴은 받되(화면 전환은 됨)
+  pasteboard 내용을 계속 거부했다. Meta 대시보드에서 iOS 플랫폼(번들 ID)을 등록하고, 앱이
+  개발 모드라 "Instagram 테스터"로 자기 계정을 초대·수락까지 했는데도 한 시간 넘게 동일 증상 —
+  계정·등록 설정 문제가 아니라 **`com.instagram.sharedSticker.backgroundVideo` 키 자체가 이
+  경로로는 안 먹히는 것으로 의심됨**(Meta가 이 키를 계속 지원하는지 확인할 공식 근거를 갖고
+  있지 못함 — `[확인 필요]`). 진단 겸 폴백으로 `shareToStory`에 `backgroundImagePath` 매개변수를
+  추가해 정적 배경 사진도 같이 pasteboard에 실어 보내게 함(`com.instagram.sharedSticker.backgroundImage`)
+  — 이미지 키는 Meta가 오래 지원해온 경로라, 이것도 안 뜨면 계정 설정을, 이미지는 뜨는데 영상만
+  안 뜨면 `backgroundVideo` 키 자체를 의심하는 쪽으로 좁힌다. **재검증 필요.** 영상 공유가
+  끝내 안 되면 최후 대안은 "완주 시점 정지 이미지 공유"로 스코프를 줄이는 것(§4-1이 "클립만
+  저장"을 원칙으로 하지만, 인스타 공유 한정으로는 재검토 여지 있음 — phs00 논의 필요)
 - **배경 영상으로 넣는다** (스티커가 아니라). pasteboard의 `com.instagram.sharedSticker.backgroundVideo`
   키로 mp4 원본을 그대로 얹는다 — 결과물(mp4) 전체가 스토리 화면을 채우는 것이 목표("우와")에
   맞고, 스티커로 얹으면 사용자가 배경을 또 골라야 해서 §3-1 "원클릭" 취지와 어긋난다
