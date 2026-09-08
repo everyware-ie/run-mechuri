@@ -23,8 +23,8 @@ import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule'
 //
 // 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장·인스타 공유 모두 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
-// §3 인스타그램 스토리 공유: Facebook App ID 등록 전까지는 shareToStory가 항상
-// 실패하고, JS는 그 실패를 §3-2 미설치 안내와 같은 경로(저장 유도)로 처리한다
+// §3 인스타그램 스토리 공유: shareToStory 실패는 사유(App ID 미설정·인스타 미설치
+// 등)를 가리지 않고 §3-2 미설치 안내와 같은 경로(저장 유도)로 처리한다
 // (docs/product/features/export-and-share.md "인스타그램 스토리 공유 착수" 참고).
 // 디자인: "1a 야간 네온"
 

@@ -10,11 +10,9 @@ import UIKit
 // 실제로 게시했는지는 콜백으로 알 수 없다(§3-3 — 그래서 JS 쪽은 URL을 연 시점
 // 자체를 "공유했다"로 본다).
 
-// TODO(JiEung2): Meta for Developers 앱 등록이 끝나면 실제 App ID로 교체.
-// 값이 비어 있는 동안은 shareToStory가 항상 notConfigured를 던지고, JS는 이걸
-// "인스타그램이 없습니다"(§3-2)와 같은 저장 안내 경로로 처리한다 — 실패 UI를
-// 따로 만들지 않기 위한 의도적 선택.
-private let facebookAppID: String? = nil
+// Meta for Developers 앱 등록 완료(2026-09-08). app.json의 infoPlist
+// FacebookAppID와 같은 값이어야 한다.
+private let facebookAppID: String? = "1057312323881185"
 
 enum InstagramStoryShareError: Error, LocalizedError {
   case notConfigured
