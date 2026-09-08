@@ -54,7 +54,13 @@ public class InstagramStoryShareModule: Module {
       guard let appID = facebookAppID else {
         throw InstagramStoryShareError.notConfigured
       }
-      guard let shareURL = URL(string: "instagram-stories://share"),
+      // 실기기 4차 실패(2026-09-08): FacebookAppID·fb<ID> URL 스킴을 Info.plist에 추가해도
+      // "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 그대로였다. 웹 검색으로
+      // 찾은 사례(Duna-Pocket 블로그)에 따르면 `instagram-stories://share` URL 자체에
+      // `source_application` 쿼리로 App ID를 실어 보내야 한다 — pasteboard의
+      // `com.instagram.sharedSticker.appID`와는 별개로, 인스타그램이 호출자를 식별하는
+      // 통로가 하나 더 있는 것으로 보인다. **재검증 필요.**
+      guard let shareURL = URL(string: "instagram-stories://share?source_application=\(appID)"),
         UIApplication.shared.canOpenURL(shareURL)
       else {
         throw InstagramStoryShareError.instagramNotInstalled

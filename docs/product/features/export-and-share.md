@@ -105,8 +105,18 @@
   `instagram-stories://share`는 열리더라도(스킴 자체는 우리 게 아니라 인스타그램 것이라
   canOpenURL은 늘 통과했다) pasteboard 내용을 누가 보냈는지 확인 못 해 거부하는 것으로
   보인다. `app.json`에 `FacebookAppID: "1057312323881185"`와
-  `CFBundleURLTypes: [{ CFBundleURLSchemes: ["fb1057312323881185"] }]` 추가. **App.json
-  네이티브 설정 변경이라 `expo prebuild` 재실행 필요 — 재검증 필요.**
+  `CFBundleURLTypes: [{ CFBundleURLSchemes: ["fb1057312323881185"] }]` 추가. App.json
+  네이티브 설정 변경이라 `expo prebuild` 재실행 필요.
+- **실기기 4차 실패 → `source_application` 쿼리 파라미터 누락 발견 (2026-09-08).** 위
+  FacebookAppID·URL 스킴 추가 후에도 "이 앱은 현재 스토리에 공유하는 기능을 지원하지
+  않습니다"가 그대로였다. 공식 문서(Meta for Developers "스토리에 공유하기")와 실제
+  구현 사례를 다시 찾아보니, pasteboard의 `com.instagram.sharedSticker.appID`와는
+  별개로 **`instagram-stories://share` URL 자체에도 `?source_application=<APP_ID>`
+  쿼리로 App ID를 실어야 한다**는 걸 놓치고 있었다 — 그동안은 쿼리 없는 순수
+  `instagram-stories://share`만 열었다. `InstagramStoryShareModule.swift`의 `shareURL`을
+  `instagram-stories://share?source_application=1057312323881185`로 수정. **재검증 필요.**
+  (참고: [Meta 공식 문서](https://developers.facebook.com/docs/instagram-platform/sharing-to-stories?locale=ko_KR),
+  [실제 구현 사례](https://yoonah-dev.oopy.io/eb077683-4278-411c-85a3-bc339f14232f))
 - **완성 카드를 "3a" 시안 S8b·S8b-상세에 맞춰 다듬음 (2026-09-08, 이미지 UI 반영).**
   `share.tsx`·`result/[id].tsx` 둘 다 대상.
   - 버튼 행: "인스타그램 스토리로 공유"(주, `flex:1`) 옆에 저장을 아이콘 버튼(`expo-symbols`
