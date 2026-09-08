@@ -6,7 +6,7 @@
 
 ## 구현 노트
 
-`frontend/src/app/share.tsx`. v0는 §4 기기 저장까지만 — §3 인스타그램 공유는 4단계(인스타 네이티브 브릿지) 이후.
+`frontend/src/app/share.tsx`. §3 인스타그램 공유 착수(2026-09-08, 아래 절 참고).
 
 - **완성 시점 = 인코딩 완료 시점**으로 설계함 (화면 진입 시점이 아님). S8 리뷰에서 나온 "취소하면 보관함에 뭐가 남나" 모호함을 처음부터 이렇게 만들어서 피함 — `renderClip`이 성공적으로 끝난 뒤에만 `addResult`로 보관함에 추가
 - 기기 저장은 `expo-media-library`의 `saveToLibraryAsync` 사용. `app.json`에 `NSPhotoLibraryAddUsageDescription`(add-only 권한) 추가
@@ -24,6 +24,33 @@
 - `share.tsx`의 완성 화면을 "3안" 시안 S8b(공유 카드)에 맞췄다: 파일 경로 텍스트(개발용)를 빼고, 배경 위에 완주 시점 경로·각인을 얹은 카드(`RouteThumbnail`, 300px) + 거리 + 러닝한 날을 둔다. 보관함 상세(`result/[id].tsx`)와 같은 구성 — "완성됐고 이게 보관함에 이렇게 남는다"가 바로 읽힌다
 - 동작(§2 인코딩·§4 기기 저장·§2-4 실패·F1·F2)은 그대로. 표시만 바꿈
 - **"인스타그램 스토리" 버튼은 아직 안 넣었다** — 브릿지(4단계) 없이 누를 데가 없어서, §3이 붙을 때 카드 아래 버튼 행으로 추가한다
+
+### 인스타그램 스토리 공유 착수 (§3, 2026-09-08)
+
+`JiEung2/feature/instagram-story-share` 브랜치에서 시작. FRD §3-1이 "공식 공유 API"로만 열어둔
+구현 세부를 이번에 정했다.
+
+- **막힌 전제조건**: §3-1 `[확인 필요]` 그대로 — Instagram Sharing to Stories(pasteboard 방식)는
+  Meta for Developers에 앱을 등록해 얻는 **Facebook App ID**가 있어야 한다(PRD 502행에도 스토어
+  제출물 트랙 항목으로 이미 적혀 있음). **등록 절차 진행 중**이라 App ID 실값이 나오기 전까지는
+  브릿지의 실제 `instagram-stories://share` 호출부는 구현만 해두고 실기기 검증은 값이 나온 뒤로
+  미룬다
+- **배경 영상으로 넣는다** (스티커가 아니라). pasteboard의 `com.instagram.sharedSticker.backgroundVideo`
+  키로 mp4 원본을 그대로 얹는다 — 결과물(mp4) 전체가 스토리 화면을 채우는 것이 목표("우와")에
+  맞고, 스티커로 얹으면 사용자가 배경을 또 골라야 해서 §3-1 "원클릭" 취지와 어긋난다
+- **복귀 감지는 안 한다.** 공유 API는 사용자가 실제로 게시했는지 콜백을 주지 않는다. `instagram-
+  stories://share` 호출 직후를 "공유했다"로 간주하고 바로 홈(보관함)으로 보낸다(§3-3). 실제
+  게시 여부와 무관하게 이 시점을 완료로 치는 근사값 — `applicationDidBecomeActive` 기반 복귀
+  감지보다 구현이 단순하고, 사용자가 인스타에서 뒤로 가도 우리 쪽에서 붙잡을 방법이 어차피 없다
+- **버튼 위치**: `share.tsx` 완성 카드(§4 목업 구현 5/6에서 만든 그 카드) 아래 버튼 행에
+  "인스타그램 스토리로 공유"를 추가. 기기 저장 버튼과 나란히 둔다(§4-2: 저장은 곁다리가 아니라
+  인스타가 있어도 쓰는 기능이므로 우선순위를 매기지 않음)
+- **미설치 안내(§3-2)**: `Linking.canOpenURL('instagram-stories://share')`로 사전 확인. `false`면
+  "인스타그램이 없습니다" 안내 후 기기 저장으로 유도(이미 있는 저장 버튼을 그대로 가리킴 — 별도
+  화면 안 만듦)
+- Info.plist(`app.json`의 `ios.infoPlist`)에 `LSApplicationQueriesSchemes: ["instagram-stories"]`
+  추가 필요(canOpenURL이 스킴을 인식하려면 사전 선언이 있어야 함) + App ID 나오면 `FacebookAppID`
+  키 추가
 
 ### ~~`[확인 필요]`~~ 한 줄 문구 — 넣기로 했다 (2026-09-07)
 
