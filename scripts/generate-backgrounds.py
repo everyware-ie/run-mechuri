@@ -168,31 +168,32 @@ def rosette(stops, ink, count=3, cx=0.50, cy=0.42, orbit=0.115, size=0.30,
 
 
 # 색값의 근거는 docs/product/features/background-images.md 를 볼 것
+# 파일명은 ASCII만 — Metro 에셋 서버가 한글 경로를 못 읽는다(require ENOENT). 한글 설명은 주석.
 SPECS = [
     # 아침 — 짙은 남색이 어둠으로 내려간다. 셋 다 같은 바탕에 빛의 방향만 다르다
-    ('아침-1-빛없음',   lambda: diagonal('#1A4680', '#0B0D10')),
-    ('아침-2-아래빛',   lambda: diagonal('#1A4680', '#0B0D10', light='#6FA8CE',
-                                         amount=0.340, direction='down')),
-    ('아침-3-위빛',     lambda: diagonal('#1A4680', '#0B0D10', light='#6FA8CE',
-                                         amount=0.440, direction='up')),
+    ('morning-1',   lambda: diagonal('#1A4680', '#0B0D10')),                      # 빛없음
+    ('morning-2',   lambda: diagonal('#1A4680', '#0B0D10', light='#6FA8CE',       # 아래빛
+                                      amount=0.340, direction='down')),
+    ('morning-3',   lambda: diagonal('#1A4680', '#0B0D10', light='#6FA8CE',       # 위빛
+                                      amount=0.440, direction='up')),
     # 점심 — 위가 진한 파랑, 아래로 갈수록 하얘진다
-    ('점심-1-바다하늘', lambda: sky([(0.00, '#1E86D6'), (0.34, '#5DAEE6'), (0.66, '#A9D6F1'),
-                                    (0.88, '#DCEFFA'), (1.00, '#EAF6FD')])),
-    ('점심-2-해있는하늘', lambda: sky([(0.00, '#4FA8E4'), (0.40, '#7CC0EC'),
-                                      (0.74, '#BADEF5'), (1.00, '#E4F2FC')],
-                                     sun=(0.50, 0.02, 0.55, '#FFFFFF', 0.55))),
-    ('점심-3-맑은한낮', lambda: sky([(0.00, '#1878CE'), (0.30, '#4A9EDC'),
-                                    (0.62, '#8CC6EC'), (1.00, '#CFE9F7')])),
+    ('noon-1', lambda: sky([(0.00, '#1E86D6'), (0.34, '#5DAEE6'), (0.66, '#A9D6F1'),   # 바다하늘
+                            (0.88, '#DCEFFA'), (1.00, '#EAF6FD')])),
+    ('noon-2', lambda: sky([(0.00, '#4FA8E4'), (0.40, '#7CC0EC'),                       # 해있는하늘
+                            (0.74, '#BADEF5'), (1.00, '#E4F2FC')],
+                           sun=(0.50, 0.02, 0.55, '#FFFFFF', 0.55))),
+    ('noon-3', lambda: sky([(0.00, '#1878CE'), (0.30, '#4A9EDC'),                       # 맑은한낮
+                            (0.62, '#8CC6EC'), (1.00, '#CFE9F7')])),
     # 저녁 — 위에 파랑이 남고 아래에만 노을이 걸린다
-    ('저녁-1-파스텔',   lambda: sky([(0.00, '#8CC6EA'), (0.26, '#DCDCE0'), (0.48, '#F6CDBC'),
-                                    (0.72, '#F9A493'), (1.00, '#F58B86')])),
-    ('저녁-2-드라마틱', lambda: sky([(0.00, '#2E2B5E'), (0.32, '#684386'), (0.58, '#BE5490'),
-                                    (0.80, '#F0553E'), (1.00, '#FF8347')])),
-    ('저녁-3-맑은노을', lambda: sky([(0.00, '#123B72'), (0.30, '#3E79B4'), (0.58, '#CFC7A6'),
-                                    (0.82, '#F3A23C'), (1.00, '#E8721F')])),
+    ('evening-1',   lambda: sky([(0.00, '#8CC6EA'), (0.26, '#DCDCE0'), (0.48, '#F6CDBC'),   # 파스텔
+                                 (0.72, '#F9A493'), (1.00, '#F58B86')])),
+    ('evening-2',   lambda: sky([(0.00, '#2E2B5E'), (0.32, '#684386'), (0.58, '#BE5490'),   # 드라마틱
+                                 (0.80, '#F0553E'), (1.00, '#FF8347')])),
+    ('evening-3',   lambda: sky([(0.00, '#123B72'), (0.30, '#3E79B4'), (0.58, '#CFC7A6'),   # 맑은노을
+                                 (0.82, '#F3A23C'), (1.00, '#E8721F')])),
     # 팀 — 밤하늘에 메추리알 셋을 겹쳐 얹는다
-    ('팀-1-알셋',       lambda: rosette([(0.00, '#141C2C'), (0.50, '#0B111C'), (1.00, '#05070C')],
-                                        ink='#F0C49A')),
+    ('team-1',       lambda: rosette([(0.00, '#141C2C'), (0.50, '#0B111C'), (1.00, '#05070C')],   # 알셋
+                                     ink='#F0C49A')),
 ]
 
 

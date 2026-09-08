@@ -34,6 +34,16 @@ const UI_SHOW_DELAY = 300;
 const UI_MIN_HOLD = 500;
 const UI_PROGRESS_DELAY = 2000;
 
+// 실기기 피드백(2026-09-08) 후속: 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전
+// share.tsx 인스턴스가 언마운트되지 않은 채(expo-router push라 스택에 그대로 남음)
+// 새 인스턴스가 하나 더 쌓인다. 네이티브 쪽은 generation 카운터로 옛 렌더를 스스로
+// 멈추게 했지만(RouteRendererModule.swift), 옛 인스턴스의 .then/.catch 클로저는
+// 여전히 살아있어서 그 결과가 나중에 도착하면 이미 최신 화면이 떠 있는데도
+// router.back()이나 실패 Alert가 튀어나올 수 있다. 앱 전체에서 "가장 최근에 시작된
+// 렌더만 유효하다"를 이 모듈 스코프 카운터로 표시해, 옛 인스턴스는 자기 결과가
+// 와도 조용히 무시하게 한다.
+let activeShareGeneration = 0;
+
 type UiPhase = 'hidden' | 'spinner' | 'progress';
 
 export default function ShareScreen() {
@@ -89,6 +99,9 @@ export default function ShareScreen() {
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
 
+    activeShareGeneration += 1;
+    const myGeneration = activeShareGeneration;
+
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
@@ -98,15 +111,28 @@ export default function ShareScreen() {
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
       stampMode: draft.stampConfig.mode,
-      stampItems: draft.stampConfig.enabled,
+      stampLayout: draft.stampConfig.layout ?? 'row',
+      stampItems: {
+        distance: draft.stampConfig.enabled?.distance ?? false,
+        time: draft.stampConfig.enabled?.time ?? false,
+        pace: draft.stampConfig.enabled?.pace ?? false,
+        heartRate: draft.stampConfig.enabled?.heartRate ?? false,
+        date: draft.stampConfig.enabled?.date ?? false,
+        place: draft.stampConfig.enabled?.place ?? false,
+      },
       stampX: draft.stampConfig.position.x,
       stampY: draft.stampConfig.position.y,
+      stampScale: draft.stampConfig.scale ?? 1,
+      caption: draft.stampConfig.caption ?? '',
+      placeName: draft.stampConfig.placeName ?? '',
+      runDate: selectedRun.date,
       distanceMeters: selectedRun.distanceMeters,
       durationSeconds: selectedRun.durationSeconds,
       averagePaceSecPerKm: selectedRun.averagePaceSecPerKm,
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
         // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
         // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
@@ -127,13 +153,19 @@ export default function ShareScreen() {
         await clearDraft();
         finishAfterMinHold(() => setOutputPath(result.outputPath));
       })
-      .catch(() => {
+      .catch((error) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 조용히 종료
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.
           router.back();
           return;
         }
+        // 실기기 피드백(2026-09-03): 실패 원인을 그냥 버리고 있어서 "왜" 실패했는지
+        // 알 방법이 없었다 — 배경 이미지 경로가 더 이상 유효하지 않은 경우(재설치로
+        // 캐시 경로가 깨진 "다시 편집" 등) 등을 나중에 추적할 수 있게 최소한 로그는
+        // 남긴다.
+        console.warn('RouteRenderer.renderClip failed', error);
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
         Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
@@ -177,6 +209,12 @@ export default function ShareScreen() {
     // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
     // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
     const MediaLibrary = await import('expo-media-library');
+    // expo-media-library 57(SDK 57)에서 top-level 함수들이 새 클래스형 API로
+    // 갈아끼워지면서, 기본 진입점의 saveToLibraryAsync는 실제 구현이 없고 항상
+    // throw만 하는 껍데기로 바뀌었다(권한 승인 여부와 무관하게 무조건 실패).
+    // 실제 구현은 legacy 서브패스에만 남아 있어 거기서 따로 불러온다.
+    // (requestPermissionsAsync는 deprecated 목록에 없어 기본 진입점 그대로 둔다.)
+    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
     // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
     // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
     // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
@@ -187,7 +225,7 @@ export default function ShareScreen() {
       return;
     }
     try {
-      await MediaLibrary.saveToLibraryAsync(outputPath);
+      await saveToLibraryAsync(outputPath);
       setSaveStatus('기기에 저장했어요');
     } catch (error) {
       console.warn('saveToLibraryAsync failed', error);

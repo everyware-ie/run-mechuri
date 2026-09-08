@@ -30,3 +30,12 @@ export function formatPace(secPerKm: number): string {
 export function formatHeartRate(bpm: number): string {
   return `${Math.round(bpm)}bpm`;
 }
+
+/** 러닝한 날 (ISO) → "MM.dd". 시안 S6/S8b 표기. */
+export function formatStampDate(isoDate: string): string {
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return '';
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${mm}.${dd}`;
+}

@@ -70,7 +70,7 @@ export function RouteThumbnail({
             strokeCap="round"
             strokeJoin="round"
             color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={9} color={GLOW} />
+            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
           </Path>
         </Group>
       </Canvas>
