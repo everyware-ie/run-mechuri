@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
@@ -11,18 +11,21 @@ import { clearDraft } from '@/lib/draft-store';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
+import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
 import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
 
 // FRD: docs/specs/frd/export-and-share.md
-// v0 스코프: 인스타 공유(§3)는 4단계(인스타 브릿지) 이후. 지금은 §4 기기 저장까지만.
 // §2-2: 공유 화면에 들어온 시점이 아니라, 인코딩이 실제로 끝난 시점에만 완성으로 친다
 // (S8 리뷰에서 나온 그 모호함을 여기서는 처음부터 이렇게 설계함).
 // §2-3·common-rules §6: 대기 표시 타이밍 — 0.3초 뒤 스피너, 한 번 뜨면 0.5초는 유지,
 // 2초 넘기면 진행률+취소로 바뀐다. §2-4·F1·F2: 취소·실패 둘 다 편집 화면으로 돌아오고
 // 편집값은 유지된다(초안은 edit.tsx가 계속 저장해둔 그대로).
 //
-// 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
+// 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장·인스타 공유 모두 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
+// §3 인스타그램 스토리 공유: Facebook App ID 등록 전까지는 shareToStory가 항상
+// 실패하고, JS는 그 실패를 §3-2 미설치 안내와 같은 경로(저장 유도)로 처리한다
+// (docs/product/features/export-and-share.md "인스타그램 스토리 공유 착수" 참고).
 // 디자인: "1a 야간 네온"
 
 const CARD_SIZE = 300;
@@ -143,6 +146,30 @@ export default function ShareScreen() {
   const handleCancel = () => {
     cancelledRef.current = true;
     RouteRenderer.cancelRender();
+  };
+
+  const handleShareToInstagram = async () => {
+    if (!outputPath) return;
+    // §3-2: 인스타그램이 없으면 저장으로 안내한다. canOpenURL이 스킴을 인식하려면
+    // app.json의 LSApplicationQueriesSchemes에 미리 선언돼 있어야 한다.
+    const canOpen = await Linking.canOpenURL('instagram-stories://share');
+    if (!canOpen) {
+      Alert.alert('인스타그램이 없어요', '대신 기기에 저장해서 나중에 올려주세요.');
+      return;
+    }
+    try {
+      await InstagramStoryShare.shareToStory(outputPath);
+      // §3-3: 공유 API는 실제로 게시했는지 콜백을 주지 않는다 — URL을 연 시점을
+      // 공유로 간주하고 바로 홈(보관함)으로 보낸다. 편집 화면으로 돌리지 않는다.
+      reset();
+      router.replace('/');
+    } catch (error) {
+      // App ID 미등록(Meta 앱 등록 진행 중, docs/product/features/export-and-share.md
+      // 참고)을 포함한 모든 실패를 같은 안내로 묶는다 — §3-2 미설치 안내와 같은
+      // 경로(저장으로 유도)라 실패 사유별 UI를 따로 만들지 않는다.
+      console.warn('InstagramStoryShare.shareToStory failed', error);
+      Alert.alert('인스타그램으로 보내지 못했어요', '대신 기기에 저장해서 나중에 올려주세요.');
+    }
   };
 
   const handleSaveToPhotos = async () => {
@@ -271,14 +298,12 @@ export default function ShareScreen() {
         </Text>
 
         <View style={styles.actionColumn}>
-          <ThemedButton title="기기에 저장" onPress={handleSaveToPhotos} />
+          {/* §5: 인스타 공유가 우선순위 1위 — PRD 목표("우와")가 저장만으로는 안 닿는다. */}
+          <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} />
+          <ThemedButton title="기기에 저장" variant="outline" onPress={handleSaveToPhotos} />
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
           <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
-          {/* §3 인스타그램 스토리 공유는 인스타 네이티브 브릿지(4단계) 이후. */}
-          <Text style={styles.notice}>
-            공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.{'\n'}
-            인스타그램 스토리 공유는 4단계(인스타 브릿지)에서 붙습니다.
-          </Text>
+          <Text style={styles.notice}>공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.</Text>
         </View>
       </View>
     </SafeAreaView>

@@ -11,7 +11,8 @@
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.mechuri.runmechuri",
       "infoPlist": {
-        "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다."
+        "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다.",
+        "LSApplicationQueriesSchemes": ["instagram-stories"]
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
