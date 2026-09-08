@@ -14,5 +14,6 @@ updated: 2026-09-02
 | 2026-08-18 | [iOS 네이티브 단독 확정, HealthKit 기반, MVP 범위와 9/1 1차 빌드](2026-08-18-native-ios-and-mvp-scope.md) | decided | [2026-08-18](../meetings/2026-08-18/synthesis.md) |
 | 2026-08-25 | [기술 스택 React Native + Expo 확정, 디자인 컨셉 1a, GPX 제외](2026-08-25-react-native-expo-stack.md) | decided | [2026-08-25](../meetings/2026-08-25/synthesis.md) |
 | 2026-09-01 | [시안과 FRD가 부딪치면 FRD를 따른다, 기본 배경 3장 확정, 설정 화면 제외](2026-09-01-frd-over-mockup.md) | decided | [2026-09-01](../meetings/2026-09-01/synthesis.md) |
+| 2026-09-08 | [배경 소재 두 가지를 MVP에 넣는다, 각인 표시 모드 개정, 역할 변경](2026-09-08-scope-and-roles.md) | decided | [2026-09-08](../meetings/2026-09-08/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
