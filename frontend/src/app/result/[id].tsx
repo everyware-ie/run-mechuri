@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
@@ -23,6 +24,7 @@ export default function ResultDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { loadDraft } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
+  const [showMissingSheet, setShowMissingSheet] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -90,7 +92,9 @@ export default function ResultDetailScreen() {
     // "보관함으로 돌아가기"가 곧 "저장된 채 유지"라 별도 저장 버튼 없이 안내만 한다.
     const canOpen = await Linking.canOpenURL('instagram-stories://share');
     if (!canOpen) {
-      Alert.alert('인스타그램이 없어요', '이 결과물은 보관함에 그대로 남아있어요.');
+      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다. 이 화면은
+      // 이미 보관함에 저장된 결과물이라 별도 저장 동작 없이 닫기만 준다.
+      setShowMissingSheet(true);
       return;
     }
     try {
@@ -160,6 +164,12 @@ export default function ResultDetailScreen() {
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
         </View>
       </View>
+
+      <InstagramMissingSheet
+        visible={showMissingSheet}
+        description="이 결과물은 보관함에 그대로 남아있어요."
+        onClose={() => setShowMissingSheet(false)}
+      />
     </SafeAreaView>
   );
 }

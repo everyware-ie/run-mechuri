@@ -1,8 +1,10 @@
+import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
@@ -52,6 +54,7 @@ export default function ShareScreen() {
   const [progress, setProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [showMissingSheet, setShowMissingSheet] = useState(false);
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
 
@@ -186,7 +189,8 @@ export default function ShareScreen() {
     // app.json의 LSApplicationQueriesSchemes에 미리 선언돼 있어야 한다.
     const canOpen = await Linking.canOpenURL('instagram-stories://share');
     if (!canOpen) {
-      Alert.alert('인스타그램이 없어요', '대신 기기에 저장해서 나중에 올려주세요.');
+      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다.
+      setShowMissingSheet(true);
       return;
     }
     try {
@@ -336,14 +340,32 @@ export default function ShareScreen() {
         </Text>
 
         <View style={styles.actionColumn}>
-          {/* §5: 인스타 공유가 우선순위 1위 — PRD 목표("우와")가 저장만으로는 안 닿는다. */}
-          <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} />
-          <ThemedButton title="기기에 저장" variant="outline" onPress={handleSaveToPhotos} />
+          {/* §5: 인스타 공유가 우선순위 1위 — PRD 목표("우와")가 저장만으로는 안 닿는다.
+              "3a" 시안 S8b: 주 버튼(인스타그램 공유) + 보조 저장을 아이콘 버튼으로 붙인
+              한 줄 구성(2026-09-08, 이미지 UI 반영). 홈으로는 시안에 없지만 앱에는
+              필요한 동작이라 그대로 아래 별도 버튼으로 둔다. */}
+          <View style={styles.primaryRow}>
+            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
+            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+              <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
+            </Pressable>
+          </View>
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
           <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
           <Text style={styles.notice}>공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.</Text>
         </View>
       </View>
+
+      <InstagramMissingSheet
+        visible={showMissingSheet}
+        description="대신 기기에 저장해서 나중에 올려주세요."
+        primaryLabel="기기에 저장"
+        onPrimary={() => {
+          setShowMissingSheet(false);
+          handleSaveToPhotos();
+        }}
+        onClose={() => setShowMissingSheet(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -393,6 +415,17 @@ const styles = StyleSheet.create({
   distanceUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
   notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
+  primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  shareButton: { flex: 1 },
+  iconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   encCard: {
     width: CARD_SIZE,
     height: CARD_SIZE,

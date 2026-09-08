@@ -98,6 +98,16 @@
   안 넣는다** — 그건 FBSDKCoreKit(Facebook 로그인·앱 이벤트)을 쓸 때 필요한 키인데, 우리는 그
   SDK 자체를 안 쓴다. App ID는 pasteboard 페이로드(`com.instagram.sharedSticker.appID`)에만
   실려 나가고, 그 값은 Swift 상수에서 직접 읽는다
+- **완성 카드를 "3a" 시안 S8b·S8b-상세에 맞춰 다듬음 (2026-09-08, 이미지 UI 반영).**
+  `share.tsx`·`result/[id].tsx` 둘 다 대상.
+  - 버튼 행: "인스타그램 스토리로 공유"(주, `flex:1`) 옆에 저장을 아이콘 버튼(`expo-symbols`
+    `square.and.arrow.down`)으로 붙여 시안의 한 줄 구성으로 바꿈. **"홈으로"는 시안에 없지만
+    이 앱엔 필요한 동작이라 스타일·동작 그대로 아래 별도 버튼으로 남김** — 시안을 베끼는 게
+    아니라 이 화면에 맞게 반영하는 것이므로
+  - 미설치 안내(§3-2)를 OS 기본 `Alert.alert` 대신 시안 S8b-상세의 카드형 팝업으로 교체 —
+    새 공용 컴포넌트 `src/components/instagram-missing-sheet.tsx`(`InstagramMissingSheet`).
+    `share.tsx`는 "기기에 저장" 버튼을 같이 주고, `result/[id].tsx`는 이미 보관함에 있는
+    결과물이라 저장 동작 없이 닫기만 준다
 
 ### ~~`[확인 필요]`~~ 한 줄 문구 — 넣기로 했다 (2026-09-07)
 
