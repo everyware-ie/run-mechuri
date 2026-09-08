@@ -94,10 +94,19 @@
   "인스타그램이 없습니다" 안내 후 기기 저장으로 유도(이미 있는 저장 버튼을 그대로 가리킴 — 별도
   화면 안 만듦)
 - Info.plist(`app.json`의 `ios.infoPlist`)에 `LSApplicationQueriesSchemes: ["instagram-stories"]`
-  추가(canOpenURL이 스킴을 인식하려면 사전 선언이 있어야 함). **`FacebookAppID` Info.plist 키는
-  안 넣는다** — 그건 FBSDKCoreKit(Facebook 로그인·앱 이벤트)을 쓸 때 필요한 키인데, 우리는 그
-  SDK 자체를 안 쓴다. App ID는 pasteboard 페이로드(`com.instagram.sharedSticker.appID`)에만
-  실려 나가고, 그 값은 Swift 상수에서 직접 읽는다
+  추가(canOpenURL이 스킴을 인식하려면 사전 선언이 있어야 함).
+- ~~**`FacebookAppID` Info.plist 키는 안 넣는다**~~ → **정정 (2026-09-08, 실기기 3차 실패 후).**
+  "번들 ID 등록 + 테스터 초대·수락 + pasteboard에 backgroundImage까지 같이 실어 보내기"를
+  다 해도 "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 그대로였다 — 계정 설정도
+  pasteboard 페이로드도 아니라 **호출하는 앱 자체를 인스타그램이 식별하지 못하는 것**으로
+  좁혔다. Meta의 "Sharing to Instagram Stories" 셋업 문서는 FBSDKCoreKit을 안 쓰더라도
+  Info.plist에 `FacebookAppID`와 `fb<APP_ID>` 형식의 `CFBundleURLTypes` 등록을 요구한다 —
+  인스타그램이 호출자 앱을 이 URL 스킴으로 식별하기 때문에, 이게 없으면
+  `instagram-stories://share`는 열리더라도(스킴 자체는 우리 게 아니라 인스타그램 것이라
+  canOpenURL은 늘 통과했다) pasteboard 내용을 누가 보냈는지 확인 못 해 거부하는 것으로
+  보인다. `app.json`에 `FacebookAppID: "1057312323881185"`와
+  `CFBundleURLTypes: [{ CFBundleURLSchemes: ["fb1057312323881185"] }]` 추가. **App.json
+  네이티브 설정 변경이라 `expo prebuild` 재실행 필요 — 재검증 필요.**
 - **완성 카드를 "3a" 시안 S8b·S8b-상세에 맞춰 다듬음 (2026-09-08, 이미지 UI 반영).**
   `share.tsx`·`result/[id].tsx` 둘 다 대상.
   - 버튼 행: "인스타그램 스토리로 공유"(주, `flex:1`) 옆에 저장을 아이콘 버튼(`expo-symbols`

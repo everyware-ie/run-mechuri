@@ -1,7 +1,8 @@
+import { SymbolView } from 'expo-symbols';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
@@ -25,6 +26,7 @@ export default function ResultDetailScreen() {
   const { loadDraft } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -105,6 +107,27 @@ export default function ResultDetailScreen() {
     }
   };
 
+  const handleSaveToPhotos = async () => {
+    if (!result) return;
+    // share.tsx의 handleSaveToPhotos와 같은 이유로 legacy 서브패스에서 불러온다
+    // (expo-media-library 57에서 기본 진입점의 saveToLibraryAsync가 항상 실패하는 껍데기로
+    // 바뀜). 여기선 이미 완성된 결과물이라 outputPath만 그대로 넘긴다.
+    const MediaLibrary = await import('expo-media-library');
+    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
+    const { status } = await MediaLibrary.requestPermissionsAsync(true);
+    if (status !== 'granted') {
+      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
+      return;
+    }
+    try {
+      await saveToLibraryAsync(result.outputPath);
+      setSaveStatus('기기에 저장했어요');
+    } catch (error) {
+      console.warn('saveToLibraryAsync failed', error);
+      setSaveStatus('저장에 실패했어요');
+    }
+  };
+
   const handleMakeAnother = () => {
     if (!result) return;
     // §2-2: "같은 기록으로 새로 만들기"는 렌더러 초기값에서 시작한다(result-editing §8).
@@ -158,7 +181,15 @@ export default function ResultDetailScreen() {
         <Text style={styles.meta}>{result.runDate.slice(0, 10)}</Text>
 
         <View style={styles.actionColumn}>
-          <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} />
+          {/* share.tsx S8b와 같은 구성(2026-09-08): 주 버튼(인스타그램 공유) + 저장
+              아이콘 버튼 한 줄. */}
+          <View style={styles.primaryRow}>
+            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
+            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+              <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
+            </Pressable>
+          </View>
+          {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
           <ThemedButton title="다시 편집" variant="outline" onPress={handleReEdit} />
           <ThemedButton title="같은 기록으로 새로 만들기" variant="outline" onPress={handleMakeAnother} />
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
@@ -167,7 +198,12 @@ export default function ResultDetailScreen() {
 
       <InstagramMissingSheet
         visible={showMissingSheet}
-        description="이 결과물은 보관함에 그대로 남아있어요."
+        description="대신 기기에 저장해서 나중에 올려주세요."
+        primaryLabel="기기에 저장"
+        onPrimary={() => {
+          setShowMissingSheet(false);
+          handleSaveToPhotos();
+        }}
         onClose={() => setShowMissingSheet(false)}
       />
     </SafeAreaView>
@@ -189,4 +225,15 @@ const styles = StyleSheet.create({
   meta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.textMuted },
   notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 12 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.lg },
+  primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  shareButton: { flex: 1 },
+  iconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

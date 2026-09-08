@@ -15,7 +15,13 @@
         "NSHealthUpdateUsageDescription": "메추리 런은 건강 데이터를 읽기만 하며 새로 쓰거나 수정하지 않습니다.",
         "NSLocationWhenInUseUsageDescription": "러닝 경로가 어느 지역인지 알아내 '장소' 각인에 넣는 데만 씁니다. 위치를 추적하거나 저장하지 않습니다.",
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["instagram-stories"]
+        "LSApplicationQueriesSchemes": ["instagram-stories"],
+        "FacebookAppID": "1057312323881185",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["fb1057312323881185"]
+          }
+        ]
       },
       "entitlements": {
         "com.apple.developer.healthkit": true
