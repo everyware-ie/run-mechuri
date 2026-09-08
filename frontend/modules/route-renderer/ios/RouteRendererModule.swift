@@ -661,9 +661,17 @@ public class RouteRendererModule: Module {
       let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
       let w = (text as NSString).size(withAttributes: attrs).width
       let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
+      // 실기기 피드백(2026-09-08) "인스타 공유 결과물에서 각인이 다 겹쳐 보인다":
+      // 이 파일의 모든 y 좌표(headerBaseline·valueBaseline·cursor 등)는
+      // route-preview.tsx(SVG, y="baseline")와 값을 맞추려고 전부 "베이스라인"
+      // 기준으로 계산해뒀다. 그런데 NSString.draw(at:)는 origin을 텍스트 박스의
+      // "맨 위"로 잡는다(베이스라인이 아니다) — 베이스라인 y를 그대로 넘기면 모든
+      // 글자가 font.ascender만큼 아래로 밀려 그려지고, 그 결과 서로 다른 줄끼리
+      // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
+      let topY = origin.y - font.ascender
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-      (text as NSString).draw(at: CGPoint(x: x, y: origin.y), withAttributes: attrs)
+      (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
     let mutedColor = self.lineWarm.withAlphaComponent(0.5)
@@ -680,9 +688,9 @@ public class RouteRendererModule: Module {
       if main.isEmpty { return nil }
       return (main, String(text[range]))
     }
-    // 숫자(크게) + 단위(작게)를 한 줄로 이어 align 기준으로 그린다. UIKit의 NSString.draw(at:)는
-    // 원점을 텍스트 위쪽 기준으로 잡아서(SVG의 baseline 기준과 다름) 두 크기의 baseline이
-    // 완전히 일치하진 않는다 — 각인 폰트 불일치와 같은 종류의 근사치로 허용한다.
+    // 숫자(크게) + 단위(작게)를 한 줄로 이어 align 기준으로 그린다. origin.y는 다른
+    // 곳과 같은 "베이스라인" 기준 — main·unit 둘 다 자기 font.ascender로 top y를
+    // 구해서 같은 베이스라인(origin.y)에 나란히 앉힌다(위 draw()와 같은 이유의 같은 수정).
     func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
       guard let split = splitHeroValue(text) else {
         draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), align)
@@ -704,8 +712,8 @@ public class RouteRendererModule: Module {
       }
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-      (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y), withAttributes: mainAttrs)
-      (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y + (size - size * 0.42)), withAttributes: unitAttrs)
+      (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y - mainFont.ascender), withAttributes: mainAttrs)
+      (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y - unitFont.ascender), withAttributes: unitAttrs)
       ctx.restoreGState()
     }
     // route-preview.tsx STAT_LABEL과 같음 — 통계 칸 라벨.
