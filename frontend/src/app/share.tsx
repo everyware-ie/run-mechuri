@@ -31,6 +31,16 @@ const UI_SHOW_DELAY = 300;
 const UI_MIN_HOLD = 500;
 const UI_PROGRESS_DELAY = 2000;
 
+// 실기기 피드백(2026-09-08) 후속: 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전
+// share.tsx 인스턴스가 언마운트되지 않은 채(expo-router push라 스택에 그대로 남음)
+// 새 인스턴스가 하나 더 쌓인다. 네이티브 쪽은 generation 카운터로 옛 렌더를 스스로
+// 멈추게 했지만(RouteRendererModule.swift), 옛 인스턴스의 .then/.catch 클로저는
+// 여전히 살아있어서 그 결과가 나중에 도착하면 이미 최신 화면이 떠 있는데도
+// router.back()이나 실패 Alert가 튀어나올 수 있다. 앱 전체에서 "가장 최근에 시작된
+// 렌더만 유효하다"를 이 모듈 스코프 카운터로 표시해, 옛 인스턴스는 자기 결과가
+// 와도 조용히 무시하게 한다.
+let activeShareGeneration = 0;
+
 type UiPhase = 'hidden' | 'spinner' | 'progress';
 
 export default function ShareScreen() {
@@ -86,6 +96,9 @@ export default function ShareScreen() {
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
 
+    activeShareGeneration += 1;
+    const myGeneration = activeShareGeneration;
+
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
@@ -116,6 +129,7 @@ export default function ShareScreen() {
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
         // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
         // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
@@ -137,6 +151,7 @@ export default function ShareScreen() {
         finishAfterMinHold(() => setOutputPath(result.outputPath));
       })
       .catch((error) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 조용히 종료
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.

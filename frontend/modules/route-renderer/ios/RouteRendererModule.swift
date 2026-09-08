@@ -122,9 +122,18 @@ private enum RoutePreset: String {
 }
 
 public class RouteRendererModule: Module {
-  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제라
-  // 인스턴스 플래그 하나로 충분하다 — 작업별 취소 토큰까지는 필요 없다.
+  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제였는데,
+  // 실기기 피드백(2026-09-08) "퍼센트가 늘었다줄었다한다" — 그 전제가 실제로는 보장돼
+  // 있지 않았다. 편집 화면을 벗어나도 인코딩은 계속되는 게 의도된 동작(§2-3 "이 화면을
+  // 벗어나도 계속")인데, 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전 renderClip이
+  // 안 멈춘 채로 새 renderClip이 하나 더 시작돼 두 개가 동시에 프레임을 그리며 각자
+  // onRenderProgress를 쐈다 — 새로 뜬 공유 화면의 리스너는 둘을 구분 못 하고 둘 다
+  // 받아서, 최신 것(낮은 값에서 시작)과 이전 것(더 진행된 값)이 번갈아 들어와
+  // 퍼센트가 오르내리는 것처럼 보였다. isCancelled 하나로는 "취소 버튼"과 "새
+  // 요청이 이전 걸 대체"를 구분 못 해 세대 번호(generation)를 따로 둔다 — 새
+  // renderClip이 시작되면 이전 세대의 프레임 루프는 다음 프레임에서 스스로 멈춘다.
   private var isCancelled = false
+  private var currentGeneration = 0
 
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
@@ -138,6 +147,8 @@ public class RouteRendererModule: Module {
 
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
       self.isCancelled = false
+      self.currentGeneration &+= 1
+      let generation = self.currentGeneration
       guard options.points.count >= 2 else {
         throw RouteRendererError.notEnoughPoints
       }
@@ -165,7 +176,8 @@ public class RouteRendererModule: Module {
         totalDistance: totalDistance,
         background: background,
         stamp: options,
-        to: outputURL
+        to: outputURL,
+        generation: generation
       )
 
       self.sendEvent("onRenderProgress", ["progress": 1.0])
@@ -1069,7 +1081,8 @@ public class RouteRendererModule: Module {
     totalDistance: Double,
     background: UIImage,
     stamp: RenderClipOptionsInput,
-    to outputURL: URL
+    to outputURL: URL,
+    generation: Int
   ) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try? FileManager.default.removeItem(at: outputURL)
@@ -1115,7 +1128,11 @@ public class RouteRendererModule: Module {
       // 이게 없으면 360프레임 × 수십 MB가 메서드가 끝날 때까지 쌓여 jetsam이 앱을 죽인다.
       autoreleasepool {
         // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
-        if self.isCancelled {
+        // generation 불일치는 "취소 버튼"이 아니라 "더 새 renderClip 요청이 이걸
+        // 대체했다"는 뜻 — 둘 다 조용히 멈추고 미완성 파일을 지우는 건 같지만,
+        // 후자는 사용자가 취소한 게 아니므로 실패 알림을 띄우면 안 된다(아래
+        // RouteRendererError.cancelled를 JS가 똑같이 "조용한 종료"로 처리해 준다).
+        if self.isCancelled || self.currentGeneration != generation {
           thrown = RouteRendererError.cancelled
           return
         }
@@ -1145,7 +1162,7 @@ public class RouteRendererModule: Module {
           return
         }
 
-        while !writerInput.isReadyForMoreMediaData && !self.isCancelled {
+        while !writerInput.isReadyForMoreMediaData && !self.isCancelled && self.currentGeneration == generation {
           Thread.sleep(forTimeInterval: 0.01)
         }
         let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
