@@ -54,8 +54,14 @@ public class InstagramStoryShareModule: Module {
         throw InstagramStoryShareError.instagramNotInstalled
       }
 
-      let fileURL = URL(fileURLWithPath: videoPath)
-      guard let videoData = try? Data(contentsOf: fileURL) else {
+      // RouteRenderer.renderClip이 돌려주는 outputPath는 순수 경로가 아니라
+      // outputURL.absoluteString("file:///...")이다. URL(fileURLWithPath:)에
+      // 그대로 넣으면 "file://" 자체를 경로의 일부로 오인해 깨진 경로가 되고
+      // Data(contentsOf:)가 항상 실패한다 — 그게 "공유할 영상을 찾을 수 없습니다"로
+      // 이어져 실기기에서 매번 실패로 보였다(2026-09-08).
+      guard let fileURL = URL(string: videoPath),
+        let videoData = try? Data(contentsOf: fileURL)
+      else {
         throw InstagramStoryShareError.videoNotFound
       }
 

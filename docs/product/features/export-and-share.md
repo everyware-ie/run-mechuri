@@ -61,8 +61,14 @@
 
 - ~~**막힌 전제조건**~~ → **해소됨 (2026-09-08).** §3-1 `[확인 필요]`였던 Facebook App ID를
   Meta for Developers 앱 등록으로 받았다(`1057312323881185`, PRD 502행 스토어 제출물 트랙
-  항목과 동일 건). `InstagramStoryShareModule.swift`의 `facebookAppID` 상수에 반영. 실기기
-  검증(실제로 인스타그램 스토리 편집 화면까지 넘어가는지)은 아직 남아 있음
+  항목과 동일 건). `InstagramStoryShareModule.swift`의 `facebookAppID` 상수에 반영
+- **실기기 검증 1차 실패 → 경로 형식 버그 발견 (2026-09-08).** "인스타그램으로 보내지 못했어요"로
+  항상 실패. 원인은 `RouteRenderer.renderClip`이 돌려주는 `outputPath`가 순수 파일 경로가 아니라
+  `outputURL.absoluteString`("file:///..." URI 문자열)인데, `shareToStory`가 이걸
+  `URL(fileURLWithPath:)`에 그대로 넣어서 "file://"까지 경로의 일부로 오인해 깨진 경로가 됐다 —
+  `Data(contentsOf:)`가 항상 실패해 App ID·인스타 설치 여부와 무관하게 매번 `videoNotFound`가
+  떨어진 것. `URL(string: videoPath)`로 고침(이미 완전한 URI 문자열이므로 파싱만 하면 됨).
+  재검증 필요
 - **배경 영상으로 넣는다** (스티커가 아니라). pasteboard의 `com.instagram.sharedSticker.backgroundVideo`
   키로 mp4 원본을 그대로 얹는다 — 결과물(mp4) 전체가 스토리 화면을 채우는 것이 목표("우와")에
   맞고, 스티커로 얹으면 사용자가 배경을 또 골라야 해서 §3-1 "원클릭" 취지와 어긋난다
