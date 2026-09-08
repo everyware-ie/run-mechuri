@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
@@ -11,9 +11,13 @@ import { Colors, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
+import InstagramStoryShare from '../../../modules/instagram-story-share/src/InstagramStoryShareModule';
+
 // FRD: docs/specs/frd/home-and-library.md §2-2
 // "보기 / 공유 / 다시 편집 / 같은 기록으로 새로 만들기 / 삭제"
 // 보기는 v0는 정지 이미지(썸네일 크게)로 대신한다 — 영상 재생 라이브러리는 아직 안 붙임.
+// 공유(2026-09-08 추가): mp4가 이미 outputPath에 있으므로 share.tsx처럼 다시 인코딩할
+// 필요 없이 바로 인스타그램 스토리로 넘긴다.
 
 export default function ResultDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -66,6 +70,35 @@ export default function ResultDetailScreen() {
       stampConfig: result.stampConfig,
     });
     router.push('/edit');
+  };
+
+  const handleShareToInstagram = async () => {
+    if (!result) return;
+    // 배경 이미지와 같은 이유로 outputPath도 재설치 등으로 사라졌을 수 있다
+    // (background-selection.md "다시 편집이 결과물을 못 만들던 문제" 참고). mp4는
+    // 배경 사진과 달리 "다시 고르기"로 복구가 안 되니(재인코딩해야 함), 여기선
+    // 다시 편집/새로 만들기로 안내한다.
+    const info = await FileSystem.getInfoAsync(result.outputPath);
+    if (!info.exists) {
+      Alert.alert(
+        '영상을 더 이상 찾을 수 없어요',
+        '이 결과물의 영상 파일이 사라졌어요. "다시 편집"이나 "같은 기록으로 새로 만들기"로 다시 만들어주세요.'
+      );
+      return;
+    }
+    // export-and-share FRD §3-2: 인스타그램이 없으면 저장으로 안내한다. 여기선
+    // "보관함으로 돌아가기"가 곧 "저장된 채 유지"라 별도 저장 버튼 없이 안내만 한다.
+    const canOpen = await Linking.canOpenURL('instagram-stories://share');
+    if (!canOpen) {
+      Alert.alert('인스타그램이 없어요', '이 결과물은 보관함에 그대로 남아있어요.');
+      return;
+    }
+    try {
+      await InstagramStoryShare.shareToStory(result.outputPath);
+    } catch (error) {
+      console.warn('InstagramStoryShare.shareToStory failed', error);
+      Alert.alert('인스타그램으로 보내지 못했어요', '이 결과물은 보관함에 그대로 남아있어요.');
+    }
   };
 
   const handleMakeAnother = () => {
@@ -121,7 +154,8 @@ export default function ResultDetailScreen() {
         <Text style={styles.meta}>{result.runDate.slice(0, 10)}</Text>
 
         <View style={styles.actionColumn}>
-          <ThemedButton title="다시 편집" onPress={handleReEdit} />
+          <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} />
+          <ThemedButton title="다시 편집" variant="outline" onPress={handleReEdit} />
           <ThemedButton title="같은 기록으로 새로 만들기" variant="outline" onPress={handleMakeAnother} />
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
         </View>

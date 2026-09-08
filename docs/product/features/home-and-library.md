@@ -10,7 +10,7 @@
 
 - **새로 만들기**(항상): `record-selection`으로 이동
 - **결과물 목록**: `frontend/src/lib/results-store.ts`(AsyncStorage)에서 읽음. §2-1 정렬(러닝한 날 최신순), 썸네일(`route-thumbnail.tsx`, 완성 순간 정지 이미지) 반영. 2열 그리드
-- **결과물에서 할 수 있는 것**(§2-2): `frontend/src/app/result/[id].tsx` — 다시 편집·같은 기록으로 새로 만들기·삭제. "보기"는 v0에서 정지 이미지로 대신함(영상 재생 라이브러리 미도입)
+- **결과물에서 할 수 있는 것**(§2-2): `frontend/src/app/result/[id].tsx` — 공유·다시 편집·같은 기록으로 새로 만들기·삭제. "보기"는 v0에서 정지 이미지로 대신함(영상 재생 라이브러리 미도입). 공유(2026-09-08)는 이미 만들어둔 mp4(`outputPath`)를 재인코딩 없이 바로 인스타그램 스토리로 넘긴다 — 로직은 export-and-share FRD §3, 자세한 건 [내보내기·공유·저장 노트](export-and-share.md) 참고
 - **이어서 만들기**(§3): `frontend/src/lib/draft-store.ts` — 단일 슬롯(§3-1 "맨 위에 하나"). edit.tsx 진입·프리셋·변형값 변경마다 저장, share.tsx 완성 시 삭제
 - **쇼케이스**(§4): FRD가 명시적으로 "여유 시"(§4-3)라 계속 미착수
 
