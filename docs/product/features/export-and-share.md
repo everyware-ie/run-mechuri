@@ -117,6 +117,12 @@
   `instagram-stories://share?source_application=1057312323881185`로 수정. **재검증 필요.**
   (참고: [Meta 공식 문서](https://developers.facebook.com/docs/instagram-platform/sharing-to-stories?locale=ko_KR),
   [실제 구현 사례](https://yoonah-dev.oopy.io/eb077683-4278-411c-85a3-bc339f14232f))
+- `LSApplicationQueriesSchemes`에 `instagram-stories` 외에 `instagram`도 추가(2026-09-08,
+  외부 가이드 대조 중 발견 — 근거는 약하지만 비용이 없어 같이 넣음). App.json 변경이라
+  prebuild 필요
+- **아직 미확인: 일반 Roles > Testers(Instagram 전용 테스터와 별개).** 앱이 아직 개발
+  모드라면 Instagram 전용 테스터 등록·수락과 무관하게, 앱 대시보드 Roles 메뉴에도 테스트
+  계정이 개발자/테스터로 올라가 있어야 할 수 있다 — `[확인 필요]`
 - **완성 카드를 "3a" 시안 S8b·S8b-상세에 맞춰 다듬음 (2026-09-08, 이미지 UI 반영).**
   `share.tsx`·`result/[id].tsx` 둘 다 대상.
   - 버튼 행: "인스타그램 스토리로 공유"(주, `flex:1`) 옆에 저장을 아이콘 버튼(`expo-symbols`
