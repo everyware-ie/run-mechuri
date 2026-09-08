@@ -73,22 +73,37 @@ public class HealthKitBridgeModule: Module {
     AsyncFunction("getOutdoorRuns") { () async throws -> [RunRecordPayload] in
       let outdoorWorkouts = try await self.fetchOutdoorRunWorkouts()
 
-      var results: [RunRecordPayload] = []
-      for workout in outdoorWorkouts {
-        var payload = RunRecordPayload()
-        payload.id = workout.uuid.uuidString
-        payload.date = ISO8601DateFormatter().string(from: workout.startDate)
-        payload.distanceMeters = workout.totalDistance?.doubleValue(for: .meter()) ?? 0
-        payload.durationSeconds = workout.duration
-        payload.averagePaceSecPerKm = payload.distanceMeters > 0
-          ? payload.durationSeconds / (payload.distanceMeters / 1000)
-          : 0
-        payload.averageHeartRate = try await self.averageHeartRate(for: workout)
-        payload.hasRoute = try await self.hasWorkoutRoute(workout)
-        results.append(payload)
+      // 실기기 피드백(2026-09): 워크아웃 수만큼 심박·경로 유무 쿼리를 for-await로
+      // 하나씩 직렬로 기다렸더니, 기록이 많을수록(왕복 시간 × 워크아웃 수 × 2) 목록
+      // 진입 자체가 눈에 띄게 느렸다. 워크아웃마다·쿼리마다 서로 독립적이라 전부
+      // 병렬로 실행하고, 완료 순서가 뒤섞이므로 인덱스로 원래(최신순) 정렬을 되살린다.
+      let indexed = try await withThrowingTaskGroup(of: (Int, RunRecordPayload).self) { group in
+        for (index, workout) in outdoorWorkouts.enumerated() {
+          group.addTask {
+            var payload = RunRecordPayload()
+            payload.id = workout.uuid.uuidString
+            payload.date = ISO8601DateFormatter().string(from: workout.startDate)
+            payload.distanceMeters = workout.totalDistance?.doubleValue(for: .meter()) ?? 0
+            payload.durationSeconds = workout.duration
+            payload.averagePaceSecPerKm = payload.distanceMeters > 0
+              ? payload.durationSeconds / (payload.distanceMeters / 1000)
+              : 0
+            async let heartRate = self.averageHeartRate(for: workout)
+            async let hasRoute = self.hasWorkoutRoute(workout)
+            payload.averageHeartRate = try await heartRate
+            payload.hasRoute = try await hasRoute
+            return (index, payload)
+          }
+        }
+        var collected: [(Int, RunRecordPayload)] = []
+        for try await result in group {
+          collected.append(result)
+        }
+        return collected
       }
-      // 최신순 정렬 (startDate 내림차순은 쿼리 단계에서 이미 적용됨)
-      return results
+      // 최신순 정렬 (startDate 내림차순은 쿼리 단계에서 이미 적용됨) — 병렬 완료 순서와
+      // 무관하게 원래 순서를 되살린다.
+      return indexed.sorted { $0.0 < $1.0 }.map { $0.1 }
     }
 
     // §5: 고른 다음 트랙 좌표를 앱이 복사해 보관한다. 여기서 실제 좌표를 가져온다.

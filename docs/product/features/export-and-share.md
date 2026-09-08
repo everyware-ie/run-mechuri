@@ -6,7 +6,7 @@
 
 ## 구현 노트
 
-`frontend/src/app/share.tsx`. v0는 §4 기기 저장까지만 — §3 인스타그램 공유는 4단계(인스타 네이티브 브릿지) 이후.
+`frontend/src/app/share.tsx`. §3 인스타그램 공유 착수(2026-09-08, 아래 절 참고).
 
 - **완성 시점 = 인코딩 완료 시점**으로 설계함 (화면 진입 시점이 아님). S8 리뷰에서 나온 "취소하면 보관함에 뭐가 남나" 모호함을 처음부터 이렇게 만들어서 피함 — `renderClip`이 성공적으로 끝난 뒤에만 `addResult`로 보관함에 추가
 - 기기 저장은 `expo-media-library`의 `saveToLibraryAsync` 사용. `app.json`에 `NSPhotoLibraryAddUsageDescription`(add-only 권한) 추가
@@ -19,11 +19,120 @@
 - **F1·F2 (취소·실패 시 편집값 유지)**: 둘 다 `router.back()`으로 편집 화면으로 돌아간다. `edit.tsx`가 진입·변경마다 초안을 계속 저장해두므로(1단계에서 만든 구조) 별도 복원 로직 없이 그대로 유지된다. 취소는 사용자가 직접 누른 거라 안내 없이 조용히 돌아가고, 실패는 `Alert.alert`로 이유를 알린 뒤 돌아간다(F3 재시도는 별도 버튼 없이 편집 화면의 "다음"을 다시 누르는 것으로 충분하다고 판단)
 - **v0 근사**: 실패 원인은 세분화하지 않는다(§2-4가 구분하는 "저장 공간 부족" 등은 Swift `RouteRendererError`의 일반 메시지로 뭉뚱그려짐). 인코딩 소요 시간 자체가 `[확인 필요]`(FRD 명시)라 0.3/0.5/2초 수치는 실기기 확인 전 제안값 그대로 씀
 
+### 인코딩 퍼센트가 오르내리던 문제 (2026-09-08, 실기기 피드백)
+
+"동영상 만들 때 퍼센트가 늘었다 줄었다한다"는 신고. 프레임 루프(`writeClip`)는
+`progress = frameIndex / totalFrames`로 한 호출 안에서는 절대 거꾸로 가지 않으므로,
+계산 문제가 아니라 **렌더가 두 개 동시에 도는 문제**라고 먼저 추론했다.
+
+원인: 인코딩 중 뒤로 가서 편집 화면에서 "다음"을 다시 누르면 `share.tsx`가
+`router.push('/share')`로 새 인스턴스를 쌓는데(§2-3 "화면을 벗어나도 계속"이 의도된
+동작이라 이전 인스턴스는 언마운트되지 않고 그대로 스택에 남는다), 이전 `renderClip`
+호출을 멈출 방법이 없어서 새 `renderClip`이 하나 더 시작돼 두 개가 동시에 프레임을
+그렸다. `isCancelled` 플래그는 모듈 인스턴스 하나에 하나뿐이라(위 §2-3 노트의
+"한 번에 렌더 하나만 돈다는 전제") 취소 버튼 용도로만 쓸 수 있고 이 케이스는
+구분하지 못했다. 새 화면의 `onRenderProgress` 리스너는 두 렌더의 이벤트를 구분 없이
+받아, 최신 렌더(낮은 값)와 이전 렌더(더 진행된 값)가 번갈아 도착해 퍼센트가
+오르내리는 것처럼 보인 것.
+
+고침 (둘 다 필요, 하나만으로는 불충분):
+
+- **네이티브**: `RouteRendererModule.swift`에 `currentGeneration` 카운터 추가.
+  `renderClip` 호출마다 증가시키고 프레임 루프·버퍼 대기 루프 양쪽에서 자기 세대와
+  비교 — 더 새 요청이 시작되면 이전 세대는 다음 프레임에서 스스로 멈추고
+  `RouteRendererError.cancelled`를 던진다(취소 버튼과 같은 처리 — 조용히 멈추고
+  미완성 파일 삭제)
+- **JS**: 네이티브가 멈춰도 이전 `share.tsx` 인스턴스의 `.then`/`.catch` 클로저는
+  여전히 살아있어서(언마운트되지 않았으므로) 그 결과가 도착하면 이미 최신 화면이
+  떠 있는데 `router.back()`이나 "결과물을 만들지 못했어요" `Alert`가 튀어나올 수
+  있었다. `share.tsx`에 모듈 스코프 `activeShareGeneration` 카운터를 두고, `.then`·
+  `.catch` 진입 시 자기 세대가 최신이 아니면 아무것도 안 하고 조용히 리턴하게 함
+
 ### 완성 화면 다듬기 (§4, 목업 구현 5/6)
 
 - `share.tsx`의 완성 화면을 "3안" 시안 S8b(공유 카드)에 맞췄다: 파일 경로 텍스트(개발용)를 빼고, 배경 위에 완주 시점 경로·각인을 얹은 카드(`RouteThumbnail`, 300px) + 거리 + 러닝한 날을 둔다. 보관함 상세(`result/[id].tsx`)와 같은 구성 — "완성됐고 이게 보관함에 이렇게 남는다"가 바로 읽힌다
 - 동작(§2 인코딩·§4 기기 저장·§2-4 실패·F1·F2)은 그대로. 표시만 바꿈
-- **"인스타그램 스토리" 버튼은 아직 안 넣었다** — 브릿지(4단계) 없이 누를 데가 없어서, §3이 붙을 때 카드 아래 버튼 행으로 추가한다
+- **"인스타그램 스토리" 버튼**은 §3 착수(아래 절)에서 완성 카드에 추가했다
+
+### 인스타그램 스토리 공유 착수 (§3, 2026-09-08)
+
+`JiEung2/feature/instagram-story-share` 브랜치에서 시작. FRD §3-1이 "공식 공유 API"로만 열어둔
+구현 세부를 이번에 정했다.
+
+- ~~**막힌 전제조건**~~ → **해소됨 (2026-09-08).** §3-1 `[확인 필요]`였던 Facebook App ID를
+  Meta for Developers 앱 등록으로 받았다(`1057312323881185`, PRD 502행 스토어 제출물 트랙
+  항목과 동일 건). `InstagramStoryShareModule.swift`의 `facebookAppID` 상수에 반영
+- **실기기 검증 1차 실패 → 경로 형식 버그 발견 (2026-09-08).** "인스타그램으로 보내지 못했어요"로
+  항상 실패. 원인은 `RouteRenderer.renderClip`이 돌려주는 `outputPath`가 순수 파일 경로가 아니라
+  `outputURL.absoluteString`("file:///..." URI 문자열)인데, `shareToStory`가 이걸
+  `URL(fileURLWithPath:)`에 그대로 넣어서 "file://"까지 경로의 일부로 오인해 깨진 경로가 됐다 —
+  `Data(contentsOf:)`가 항상 실패해 App ID·인스타 설치 여부와 무관하게 매번 `videoNotFound`가
+  떨어진 것. `URL(string: videoPath)`로 고침(이미 완전한 URI 문자열이므로 파싱만 하면 됨)
+- **실기기 검증 2차 실패 → "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 계속 뜸
+  (2026-09-08).** 위 경로 버그를 고친 뒤에도 인스타그램이 URL 스킴은 받되(화면 전환은 됨)
+  pasteboard 내용을 계속 거부했다. Meta 대시보드에서 iOS 플랫폼(번들 ID)을 등록하고, 앱이
+  개발 모드라 "Instagram 테스터"로 자기 계정을 초대·수락까지 했는데도 한 시간 넘게 동일 증상 —
+  계정·등록 설정 문제가 아니라 **`com.instagram.sharedSticker.backgroundVideo` 키 자체가 이
+  경로로는 안 먹히는 것으로 의심됨**(Meta가 이 키를 계속 지원하는지 확인할 공식 근거를 갖고
+  있지 못함 — `[확인 필요]`). 진단 겸 폴백으로 `shareToStory`에 `backgroundImagePath` 매개변수를
+  추가해 정적 배경 사진도 같이 pasteboard에 실어 보내게 함(`com.instagram.sharedSticker.backgroundImage`)
+  — 이미지 키는 Meta가 오래 지원해온 경로라, 이것도 안 뜨면 계정 설정을, 이미지는 뜨는데 영상만
+  안 뜨면 `backgroundVideo` 키 자체를 의심하는 쪽으로 좁힌다. **재검증 필요.** 영상 공유가
+  끝내 안 되면 최후 대안은 "완주 시점 정지 이미지 공유"로 스코프를 줄이는 것(§4-1이 "클립만
+  저장"을 원칙으로 하지만, 인스타 공유 한정으로는 재검토 여지 있음 — phs00 논의 필요)
+- **배경 영상으로 넣는다** (스티커가 아니라). pasteboard의 `com.instagram.sharedSticker.backgroundVideo`
+  키로 mp4 원본을 그대로 얹는다 — 결과물(mp4) 전체가 스토리 화면을 채우는 것이 목표("우와")에
+  맞고, 스티커로 얹으면 사용자가 배경을 또 골라야 해서 §3-1 "원클릭" 취지와 어긋난다
+- **복귀 감지는 안 한다.** 공유 API는 사용자가 실제로 게시했는지 콜백을 주지 않는다. `instagram-
+  stories://share` 호출 직후를 "공유했다"로 간주하고 바로 홈(보관함)으로 보낸다(§3-3). 실제
+  게시 여부와 무관하게 이 시점을 완료로 치는 근사값 — `applicationDidBecomeActive` 기반 복귀
+  감지보다 구현이 단순하고, 사용자가 인스타에서 뒤로 가도 우리 쪽에서 붙잡을 방법이 어차피 없다
+- **버튼 위치**: `share.tsx` 완성 카드(§4 목업 구현 5/6에서 만든 그 카드) 아래 버튼 행에
+  "인스타그램 스토리로 공유"를 추가. 기기 저장 버튼과 나란히 둔다(§4-2: 저장은 곁다리가 아니라
+  인스타가 있어도 쓰는 기능이므로 우선순위를 매기지 않음)
+- **미설치 안내(§3-2)**: `Linking.canOpenURL('instagram-stories://share')`로 사전 확인. `false`면
+  "인스타그램이 없습니다" 안내 후 기기 저장으로 유도(이미 있는 저장 버튼을 그대로 가리킴 — 별도
+  화면 안 만듦)
+- Info.plist(`app.json`의 `ios.infoPlist`)에 `LSApplicationQueriesSchemes: ["instagram-stories"]`
+  추가(canOpenURL이 스킴을 인식하려면 사전 선언이 있어야 함).
+- ~~**`FacebookAppID` Info.plist 키는 안 넣는다**~~ → **정정 (2026-09-08, 실기기 3차 실패 후).**
+  "번들 ID 등록 + 테스터 초대·수락 + pasteboard에 backgroundImage까지 같이 실어 보내기"를
+  다 해도 "이 앱은 현재 스토리에 공유하는 기능을 지원하지 않습니다"가 그대로였다 — 계정 설정도
+  pasteboard 페이로드도 아니라 **호출하는 앱 자체를 인스타그램이 식별하지 못하는 것**으로
+  좁혔다. Meta의 "Sharing to Instagram Stories" 셋업 문서는 FBSDKCoreKit을 안 쓰더라도
+  Info.plist에 `FacebookAppID`와 `fb<APP_ID>` 형식의 `CFBundleURLTypes` 등록을 요구한다 —
+  인스타그램이 호출자 앱을 이 URL 스킴으로 식별하기 때문에, 이게 없으면
+  `instagram-stories://share`는 열리더라도(스킴 자체는 우리 게 아니라 인스타그램 것이라
+  canOpenURL은 늘 통과했다) pasteboard 내용을 누가 보냈는지 확인 못 해 거부하는 것으로
+  보인다. `app.json`에 `FacebookAppID: "1057312323881185"`와
+  `CFBundleURLTypes: [{ CFBundleURLSchemes: ["fb1057312323881185"] }]` 추가. App.json
+  네이티브 설정 변경이라 `expo prebuild` 재실행 필요.
+- **실기기 4차 실패 → `source_application` 쿼리 파라미터 누락 발견 (2026-09-08).** 위
+  FacebookAppID·URL 스킴 추가 후에도 "이 앱은 현재 스토리에 공유하는 기능을 지원하지
+  않습니다"가 그대로였다. 공식 문서(Meta for Developers "스토리에 공유하기")와 실제
+  구현 사례를 다시 찾아보니, pasteboard의 `com.instagram.sharedSticker.appID`와는
+  별개로 **`instagram-stories://share` URL 자체에도 `?source_application=<APP_ID>`
+  쿼리로 App ID를 실어야 한다**는 걸 놓치고 있었다 — 그동안은 쿼리 없는 순수
+  `instagram-stories://share`만 열었다. `InstagramStoryShareModule.swift`의 `shareURL`을
+  `instagram-stories://share?source_application=1057312323881185`로 수정. **재검증 필요.**
+  (참고: [Meta 공식 문서](https://developers.facebook.com/docs/instagram-platform/sharing-to-stories?locale=ko_KR),
+  [실제 구현 사례](https://yoonah-dev.oopy.io/eb077683-4278-411c-85a3-bc339f14232f))
+- `LSApplicationQueriesSchemes`에 `instagram-stories` 외에 `instagram`도 추가(2026-09-08,
+  외부 가이드 대조 중 발견 — 근거는 약하지만 비용이 없어 같이 넣음). App.json 변경이라
+  prebuild 필요
+- **아직 미확인: 일반 Roles > Testers(Instagram 전용 테스터와 별개).** 앱이 아직 개발
+  모드라면 Instagram 전용 테스터 등록·수락과 무관하게, 앱 대시보드 Roles 메뉴에도 테스트
+  계정이 개발자/테스터로 올라가 있어야 할 수 있다 — `[확인 필요]`
+- **완성 카드를 "3a" 시안 S8b·S8b-상세에 맞춰 다듬음 (2026-09-08, 이미지 UI 반영).**
+  `share.tsx`·`result/[id].tsx` 둘 다 대상.
+  - 버튼 행: "인스타그램 스토리로 공유"(주, `flex:1`) 옆에 저장을 아이콘 버튼(`expo-symbols`
+    `square.and.arrow.down`)으로 붙여 시안의 한 줄 구성으로 바꿈. **"홈으로"는 시안에 없지만
+    이 앱엔 필요한 동작이라 스타일·동작 그대로 아래 별도 버튼으로 남김** — 시안을 베끼는 게
+    아니라 이 화면에 맞게 반영하는 것이므로
+  - 미설치 안내(§3-2)를 OS 기본 `Alert.alert` 대신 시안 S8b-상세의 카드형 팝업으로 교체 —
+    새 공용 컴포넌트 `src/components/instagram-missing-sheet.tsx`(`InstagramMissingSheet`).
+    `share.tsx`는 "기기에 저장" 버튼을 같이 주고, `result/[id].tsx`는 이미 보관함에 있는
+    결과물이라 저장 동작 없이 닫기만 준다
 
 ### ~~`[확인 필요]`~~ 한 줄 문구 — 넣기로 했다 (2026-09-07)
 

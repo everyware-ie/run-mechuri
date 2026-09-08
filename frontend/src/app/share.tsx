@@ -1,8 +1,10 @@
+import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
@@ -11,18 +13,21 @@ import { clearDraft } from '@/lib/draft-store';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
+import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
 import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
 
 // FRD: docs/specs/frd/export-and-share.md
-// v0 스코프: 인스타 공유(§3)는 4단계(인스타 브릿지) 이후. 지금은 §4 기기 저장까지만.
 // §2-2: 공유 화면에 들어온 시점이 아니라, 인코딩이 실제로 끝난 시점에만 완성으로 친다
 // (S8 리뷰에서 나온 그 모호함을 여기서는 처음부터 이렇게 설계함).
 // §2-3·common-rules §6: 대기 표시 타이밍 — 0.3초 뒤 스피너, 한 번 뜨면 0.5초는 유지,
 // 2초 넘기면 진행률+취소로 바뀐다. §2-4·F1·F2: 취소·실패 둘 다 편집 화면으로 돌아오고
 // 편집값은 유지된다(초안은 edit.tsx가 계속 저장해둔 그대로).
 //
-// 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장 둘 다 네이티브 모듈).
+// 이 화면은 iOS 네이티브 전용이다(렌더러·미디어 저장·인스타 공유 모두 네이티브 모듈).
 // 웹은 로컬 확인용일 뿐이라 여기서는 크래시 대신 안내만 보여준다.
+// §3 인스타그램 스토리 공유: shareToStory 실패는 사유(App ID 미설정·인스타 미설치
+// 등)를 가리지 않고 §3-2 미설치 안내와 같은 경로(저장 유도)로 처리한다
+// (docs/product/features/export-and-share.md "인스타그램 스토리 공유 착수" 참고).
 // 디자인: "1a 야간 네온"
 
 const CARD_SIZE = 300;
@@ -30,6 +35,16 @@ const CARD_SIZE = 300;
 const UI_SHOW_DELAY = 300;
 const UI_MIN_HOLD = 500;
 const UI_PROGRESS_DELAY = 2000;
+
+// 실기기 피드백(2026-09-08) 후속: 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전
+// share.tsx 인스턴스가 언마운트되지 않은 채(expo-router push라 스택에 그대로 남음)
+// 새 인스턴스가 하나 더 쌓인다. 네이티브 쪽은 generation 카운터로 옛 렌더를 스스로
+// 멈추게 했지만(RouteRendererModule.swift), 옛 인스턴스의 .then/.catch 클로저는
+// 여전히 살아있어서 그 결과가 나중에 도착하면 이미 최신 화면이 떠 있는데도
+// router.back()이나 실패 Alert가 튀어나올 수 있다. 앱 전체에서 "가장 최근에 시작된
+// 렌더만 유효하다"를 이 모듈 스코프 카운터로 표시해, 옛 인스턴스는 자기 결과가
+// 와도 조용히 무시하게 한다.
+let activeShareGeneration = 0;
 
 type UiPhase = 'hidden' | 'spinner' | 'progress';
 
@@ -39,6 +54,7 @@ export default function ShareScreen() {
   const [progress, setProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [showMissingSheet, setShowMissingSheet] = useState(false);
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
 
@@ -86,6 +102,9 @@ export default function ShareScreen() {
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
 
+    activeShareGeneration += 1;
+    const myGeneration = activeShareGeneration;
+
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
@@ -95,15 +114,28 @@ export default function ShareScreen() {
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
       stampMode: draft.stampConfig.mode,
-      stampItems: draft.stampConfig.enabled,
+      stampLayout: draft.stampConfig.layout ?? 'row',
+      stampItems: {
+        distance: draft.stampConfig.enabled?.distance ?? false,
+        time: draft.stampConfig.enabled?.time ?? false,
+        pace: draft.stampConfig.enabled?.pace ?? false,
+        heartRate: draft.stampConfig.enabled?.heartRate ?? false,
+        date: draft.stampConfig.enabled?.date ?? false,
+        place: draft.stampConfig.enabled?.place ?? false,
+      },
       stampX: draft.stampConfig.position.x,
       stampY: draft.stampConfig.position.y,
+      stampScale: draft.stampConfig.scale ?? 1,
+      caption: draft.stampConfig.caption ?? '',
+      placeName: draft.stampConfig.placeName ?? '',
+      runDate: selectedRun.date,
       distanceMeters: selectedRun.distanceMeters,
       durationSeconds: selectedRun.durationSeconds,
       averagePaceSecPerKm: selectedRun.averagePaceSecPerKm,
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
         // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
         // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
         // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
@@ -124,13 +156,19 @@ export default function ShareScreen() {
         await clearDraft();
         finishAfterMinHold(() => setOutputPath(result.outputPath));
       })
-      .catch(() => {
+      .catch((error) => {
+        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 조용히 종료
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.
           router.back();
           return;
         }
+        // 실기기 피드백(2026-09-03): 실패 원인을 그냥 버리고 있어서 "왜" 실패했는지
+        // 알 방법이 없었다 — 배경 이미지 경로가 더 이상 유효하지 않은 경우(재설치로
+        // 캐시 경로가 깨진 "다시 편집" 등) 등을 나중에 추적할 수 있게 최소한 로그는
+        // 남긴다.
+        console.warn('RouteRenderer.renderClip failed', error);
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
         Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
@@ -145,11 +183,42 @@ export default function ShareScreen() {
     RouteRenderer.cancelRender();
   };
 
+  const handleShareToInstagram = async () => {
+    if (!outputPath) return;
+    // §3-2: 인스타그램이 없으면 저장으로 안내한다. canOpenURL이 스킴을 인식하려면
+    // app.json의 LSApplicationQueriesSchemes에 미리 선언돼 있어야 한다.
+    const canOpen = await Linking.canOpenURL('instagram-stories://share');
+    if (!canOpen) {
+      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다.
+      setShowMissingSheet(true);
+      return;
+    }
+    try {
+      await InstagramStoryShare.shareToStory(outputPath, draft.backgroundImagePath ?? undefined);
+      // §3-3: 공유 API는 실제로 게시했는지 콜백을 주지 않는다 — URL을 연 시점을
+      // 공유로 간주하고 바로 홈(보관함)으로 보낸다. 편집 화면으로 돌리지 않는다.
+      reset();
+      router.replace('/');
+    } catch (error) {
+      // App ID 미등록(Meta 앱 등록 진행 중, docs/product/features/export-and-share.md
+      // 참고)을 포함한 모든 실패를 같은 안내로 묶는다 — §3-2 미설치 안내와 같은
+      // 경로(저장으로 유도)라 실패 사유별 UI를 따로 만들지 않는다.
+      console.warn('InstagramStoryShare.shareToStory failed', error);
+      Alert.alert('인스타그램으로 보내지 못했어요', '대신 기기에 저장해서 나중에 올려주세요.');
+    }
+  };
+
   const handleSaveToPhotos = async () => {
     if (!outputPath) return;
     // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
     // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
     const MediaLibrary = await import('expo-media-library');
+    // expo-media-library 57(SDK 57)에서 top-level 함수들이 새 클래스형 API로
+    // 갈아끼워지면서, 기본 진입점의 saveToLibraryAsync는 실제 구현이 없고 항상
+    // throw만 하는 껍데기로 바뀌었다(권한 승인 여부와 무관하게 무조건 실패).
+    // 실제 구현은 legacy 서브패스에만 남아 있어 거기서 따로 불러온다.
+    // (requestPermissionsAsync는 deprecated 목록에 없어 기본 진입점 그대로 둔다.)
+    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
     // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
     // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
     // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
@@ -160,7 +229,7 @@ export default function ShareScreen() {
       return;
     }
     try {
-      await MediaLibrary.saveToLibraryAsync(outputPath);
+      await saveToLibraryAsync(outputPath);
       setSaveStatus('기기에 저장했어요');
     } catch (error) {
       console.warn('saveToLibraryAsync failed', error);
@@ -271,16 +340,32 @@ export default function ShareScreen() {
         </Text>
 
         <View style={styles.actionColumn}>
-          <ThemedButton title="기기에 저장" onPress={handleSaveToPhotos} />
+          {/* §5: 인스타 공유가 우선순위 1위 — PRD 목표("우와")가 저장만으로는 안 닿는다.
+              "3a" 시안 S8b: 주 버튼(인스타그램 공유) + 보조 저장을 아이콘 버튼으로 붙인
+              한 줄 구성(2026-09-08, 이미지 UI 반영). 홈으로는 시안에 없지만 앱에는
+              필요한 동작이라 그대로 아래 별도 버튼으로 둔다. */}
+          <View style={styles.primaryRow}>
+            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
+            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+              <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
+            </Pressable>
+          </View>
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
           <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
-          {/* §3 인스타그램 스토리 공유는 인스타 네이티브 브릿지(4단계) 이후. */}
-          <Text style={styles.notice}>
-            공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.{'\n'}
-            인스타그램 스토리 공유는 4단계(인스타 브릿지)에서 붙습니다.
-          </Text>
+          <Text style={styles.notice}>공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.</Text>
         </View>
       </View>
+
+      <InstagramMissingSheet
+        visible={showMissingSheet}
+        description="대신 기기에 저장해서 나중에 올려주세요."
+        primaryLabel="기기에 저장"
+        onPrimary={() => {
+          setShowMissingSheet(false);
+          handleSaveToPhotos();
+        }}
+        onClose={() => setShowMissingSheet(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -330,6 +415,17 @@ const styles = StyleSheet.create({
   distanceUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
   notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
+  primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  shareButton: { flex: 1 },
+  iconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   encCard: {
     width: CARD_SIZE,
     height: CARD_SIZE,

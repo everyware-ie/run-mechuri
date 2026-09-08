@@ -47,8 +47,14 @@ export async function listResults(): Promise<SavedResult[]> {
     smoothOptions: r.smoothOptions ?? IDENTITY_SMOOTH,
     stampConfig: r.stampConfig ?? IDENTITY_STAMP,
   }));
-  // §2-1: 정렬은 최신순, 러닝한 날 기준
-  return withDefaults.sort((a, b) => (a.runDate < b.runDate ? 1 : -1));
+  // §2-1: 정렬은 최신순, 러닝한 날 기준. 같은 기록으로 여러 결과물을 만들면(§2-2
+  // "같은 기록으로 새로 만들기") runDate가 완전히 같아지는데, 그 동률은 FRD가
+  // 정해두지 않은 부분이라 만든 시각(createdAt)이 최근인 것을 위로 둔다 — "러닝한
+  // 날 기준 최신순"이라는 1차 기준 자체는 그대로다.
+  return withDefaults.sort((a, b) => {
+    if (a.runDate !== b.runDate) return a.runDate < b.runDate ? 1 : -1;
+    return a.createdAt < b.createdAt ? 1 : -1;
+  });
 }
 
 export async function addResult(result: SavedResult): Promise<void> {

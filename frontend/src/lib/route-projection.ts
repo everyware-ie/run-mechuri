@@ -72,7 +72,13 @@ export function cumulativeDistances(points: Point[]): number[] {
   return result;
 }
 
-/** §5-4: 진행률은 거리(호 길이) 기준. 점 인덱스가 아니다. */
+/** §5-4: 진행률은 거리(호 길이) 기준. 점 인덱스가 아니다.
+ *
+ * 편집 화면 애니메이션은 이 함수를 매 프레임(최대 60fps) 부른다 — 예전엔 여기서
+ * 순회(O(n))로 targetDistance가 속한 구간을 찾았는데, 긴 경로일수록·애니메이션
+ * 후반부일수록 매 프레임 배열을 거의 끝까지 훑어야 해서 실기기에서 눈에 띄는
+ * 끊김의 원인이 됐다(2026-09-01). `cumulative`는 항상 오름차순이므로 이분 탐색으로
+ * 바꿔 O(log n)으로 줄였다 — 반환값은 이전과 동일하다. */
 export function pointsUpToDistance(
   targetDistance: number,
   projected: CanvasPoint[],
@@ -80,23 +86,64 @@ export function pointsUpToDistance(
 ): CanvasPoint[] {
   if (projected.length === 0) return [];
   if (targetDistance <= 0) return [projected[0]];
-  const result: CanvasPoint[] = [projected[0]];
-  for (let i = 1; i < projected.length; i++) {
-    if (cumulative[i] <= targetDistance) {
-      result.push(projected[i]);
-    } else {
-      const segStart = cumulative[i - 1];
-      const segEnd = cumulative[i];
-      const segLen = segEnd - segStart;
-      const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
-      result.push({
-        x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
-        y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
-      });
-      break;
-    }
+  if (cumulative.length < 2) return [projected[0]];
+  if (targetDistance >= cumulative[cumulative.length - 1]) return projected;
+
+  // cumulative[i] > targetDistance인 첫 인덱스 i를 찾는다(0 < i < length).
+  let lo = 1;
+  let hi = cumulative.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cumulative[mid] <= targetDistance) lo = mid + 1;
+    else hi = mid;
   }
-  return result;
+  const i = lo;
+  const segStart = cumulative[i - 1];
+  const segEnd = cumulative[i];
+  const segLen = segEnd - segStart;
+  const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
+  const interpolated: CanvasPoint = {
+    x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
+    y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
+  };
+  return [...projected.slice(0, i), interpolated];
+}
+
+/** pointsUpToDistance와 같은 지점을 찾지만, 그 지점 하나만 필요할 때(머리 점·구간
+ * 경계 점) 앞부분 전체를 slice로 새로 배열에 담지 않는다 — 애니메이션 중 매 프레임
+ * 불려서(2026-09-01), 경로가 길어질수록(진행률이 높을수록) 매번 커지는 배열을
+ * 할당하는 비용도 누적됐다. 반환값은 pointsUpToDistance(...).at(-1)과 같다.
+ *
+ * 'worklet' 지시어: 불빛 러너(light-runner) 프리셋은 이 함수를 Reanimated
+ * useDerivedValue 안(UI 스레드)에서 부른다 — 다른 파일에서 가져다 쓰는 함수가
+ * 워클릿 안에서 불리려면 이 함수 자신도 워클릿으로 표시돼 있어야 한다. */
+export function pointAtDistance(
+  targetDistance: number,
+  projected: CanvasPoint[],
+  cumulative: number[]
+): CanvasPoint | undefined {
+  'worklet';
+  if (projected.length === 0) return undefined;
+  if (targetDistance <= 0) return projected[0];
+  if (cumulative.length < 2) return projected[0];
+  if (targetDistance >= cumulative[cumulative.length - 1]) return projected[projected.length - 1];
+
+  let lo = 1;
+  let hi = cumulative.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cumulative[mid] <= targetDistance) lo = mid + 1;
+    else hi = mid;
+  }
+  const i = lo;
+  const segStart = cumulative[i - 1];
+  const segEnd = cumulative[i];
+  const segLen = segEnd - segStart;
+  const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
+  return {
+    x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
+    y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
+  };
 }
 
 /** 다듬기(route-smoothing.applySmoothing) 적용 후처럼 원본 위경도와 점 대응이 깨진

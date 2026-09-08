@@ -1,11 +1,13 @@
-import { Link, router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Radius, Spacing } from '@/constants/theme';
+import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
 import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -21,7 +23,36 @@ import { useCreationFlow } from '@/state/creation-flow';
 export default function HomeScreen() {
   const [results, setResults] = useState<SavedResult[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [checkedConnection, setCheckedConnection] = useState(false);
   const { loadDraft } = useCreationFlow();
+
+  // connect.tsx(시안 S0): 앱을 한 번도 연결 안 해본 첫 실행에서만 보여준다.
+  // useFocusEffect가 아니라 마운트 시 한 번만 — 연결 뒤엔 홈으로 돌아올 때마다
+  // 다시 검사할 필요가 없다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const connected = await hasConnectedOnce();
+      if (cancelled) return;
+      if (connected) {
+        setCheckedConnection(true);
+        return;
+      }
+      // 이 플래그가 생기기 전부터 이미 쓰던 사람(만든 결과물이 있음)에게는
+      // 이제 와서 첫 실행 화면을 보여주지 않는다 — 조용히 "연결됨"으로 채운다.
+      const existing = await listResults();
+      if (cancelled) return;
+      if (existing.length > 0) {
+        await markConnectedOnce();
+        if (!cancelled) setCheckedConnection(true);
+        return;
+      }
+      router.replace('/connect');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -30,8 +61,33 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleResumeDraft = () => {
+  const handleResumeDraft = async () => {
     if (!draft) return;
+    // 실기기 피드백(2026-09-03): "다시 편집"과 같은 문제(docs/product/features/
+    // background-selection.md 참고)가 "이어서 만들기"에도 그대로 있었다 — 초안의
+    // backgroundImagePath도 앱 업데이트/재설치 사이에 깨질 수 있는 절대경로다.
+    // 편집을 다 끝낸 뒤(공유 화면)에야 실패로 알기보다, 시작 전에 확인해서
+    // 배경만 다시 고르게 안내한다.
+    const bgInfo = await FileSystem.getInfoAsync(draft.backgroundImagePath);
+    if (!bgInfo.exists) {
+      Alert.alert('배경 이미지를 다시 골라야 해요', '이전에 쓴 배경 사진을 더 이상 찾을 수 없어요. 배경만 다시 골라주세요 — 나머지 편집 내용은 그대로 유지됩니다.', [
+        {
+          text: '확인',
+          onPress: () => {
+            loadDraft({
+              selectedRun: draft.run,
+              track: draft.track,
+              preset: draft.preset,
+              transform: draft.transform,
+              smoothOptions: draft.smoothOptions,
+              stampConfig: draft.stampConfig,
+            });
+            router.push('/background-selection');
+          },
+        },
+      ]);
+      return;
+    }
     loadDraft({
       selectedRun: draft.run,
       track: draft.track,
@@ -43,6 +99,12 @@ export default function HomeScreen() {
     });
     router.push('/edit');
   };
+
+  // 연결 여부를 확인하는 동안(또는 /connect로 리다이렉트하는 동안)은 홈 내용이
+  // 잠깐 비쳤다 사라지는 걸 막는다.
+  if (!checkedConnection) {
+    return <SafeAreaView style={styles.safeArea} />;
+  }
 
   const [hero, ...rest] = results;
 
@@ -76,12 +138,17 @@ export default function HomeScreen() {
 
             {hero ? (
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
+                {/* 실기기 피드백(2026-09-02): run/stampConfig을 넘기면 RouteThumbnail이
+                    사용자가 고른 각인 프리셋을 원래 크기·자리 그대로 그려서, 바로
+                    아래 heroOverlay(이 화면 전용, 항상 같은 자리에 거리+날짜만
+                    보여주는 고정 표시)와 겹쳐 두 개의 서로 다른 스타일 텍스트가
+                    같이 보였다("위에껀 km+날짜인데 밑에껀 작은 글씨로 km만"도 이
+                    두 표시가 겹친 것). 각인은 편집·공유 화면에서 보여줄 대상이라
+                    홈 목록에서는 안 넘긴다 — 경로 선만 그려진다. */}
                 <RouteThumbnail
                   points={hero.track.coordinates}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
-                  run={hero.run}
-                  stampConfig={hero.stampConfig}
                   size={HERO_SIZE}
                 />
                 <View style={styles.heroOverlay}>
@@ -117,23 +184,18 @@ export default function HomeScreen() {
         renderItem={({ item }) => (
           <Pressable style={styles.cell} onPress={() => router.push(`/result/${item.id}`)}>
             <View style={styles.gridThumb}>
+              {/* 위 heroCard와 같은 이유로 run/stampConfig 안 넘김 — gridLabel(항상
+                  km만)과 각인이 겹쳐 보이지 않게. */}
               <RouteThumbnail
                 points={item.track.coordinates}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
-                run={item.run}
-                stampConfig={item.stampConfig}
                 size={GRID_SIZE}
               />
               <Text style={styles.gridLabel}>{(item.distanceMeters / 1000).toFixed(2)} km</Text>
             </View>
           </Pressable>
         )}
-        ListFooterComponent={
-          <Link href="/dev-test" style={styles.devLink}>
-            개발용 확인 화면
-          </Link>
-        }
       />
     </SafeAreaView>
   );
@@ -244,12 +306,5 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 10,
     color: Colors.text,
-  },
-  devLink: {
-    marginTop: Spacing.xl,
-    fontFamily: 'JetBrainsMono_500Medium',
-    color: Colors.textMuted,
-    fontSize: 11,
-    textAlign: 'center',
   },
 });

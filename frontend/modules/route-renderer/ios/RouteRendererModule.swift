@@ -41,12 +41,15 @@ struct RouteTransformInput: Record {
   @Field var rotationDeg: Double = 0
 }
 
-/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 넷 중 어느 게 켜져 있나.
+/// result-editing FRD §7 · route-rendering FRD §7 각인 항목 중 어느 게 켜져 있나.
+/// (date·place는 시안 S6에서 추가, 2026-09-01)
 struct StampItemsInput: Record {
   @Field var distance: Bool = true
   @Field var time: Bool = true
   @Field var pace: Bool = true
   @Field var heartRate: Bool = true
+  @Field var date: Bool = false
+  @Field var place: Bool = false
 }
 
 struct RenderClipOptionsInput: Record {
@@ -61,9 +64,20 @@ struct RenderClipOptionsInput: Record {
   @Field var corner: Double = 0
   /// result-editing FRD §7. "always" | "after" | "hidden".
   @Field var stampMode: String = "hidden"
+  /// 각인 배치 프리셋 (시안 S6). "row" | "hero".
+  @Field var stampLayout: String = "row"
   @Field var stampItems: StampItemsInput = StampItemsInput()
   @Field var stampX: Double = 0
   @Field var stampY: Double = 0
+  /// 각인 묶음 크기 배율(2026-09-02 추가) — route-preview.tsx StampConfig.scale과 같은 개념.
+  /// 자리(stampX/Y)는 그대로 두고 글자 크기·내부 간격에만 곱한다.
+  @Field var stampScale: Double = 1
+  /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
+  @Field var caption: String = ""
+  /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
+  @Field var placeName: String = ""
+  /// '날짜' 각인 값 계산용 — 러닝한 날 (ISO 8601).
+  @Field var runDate: String = ""
   /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
@@ -108,9 +122,18 @@ private enum RoutePreset: String {
 }
 
 public class RouteRendererModule: Module {
-  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제라
-  // 인스턴스 플래그 하나로 충분하다 — 작업별 취소 토큰까지는 필요 없다.
+  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제였는데,
+  // 실기기 피드백(2026-09-08) "퍼센트가 늘었다줄었다한다" — 그 전제가 실제로는 보장돼
+  // 있지 않았다. 편집 화면을 벗어나도 인코딩은 계속되는 게 의도된 동작(§2-3 "이 화면을
+  // 벗어나도 계속")인데, 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전 renderClip이
+  // 안 멈춘 채로 새 renderClip이 하나 더 시작돼 두 개가 동시에 프레임을 그리며 각자
+  // onRenderProgress를 쐈다 — 새로 뜬 공유 화면의 리스너는 둘을 구분 못 하고 둘 다
+  // 받아서, 최신 것(낮은 값에서 시작)과 이전 것(더 진행된 값)이 번갈아 들어와
+  // 퍼센트가 오르내리는 것처럼 보였다. isCancelled 하나로는 "취소 버튼"과 "새
+  // 요청이 이전 걸 대체"를 구분 못 해 세대 번호(generation)를 따로 둔다 — 새
+  // renderClip이 시작되면 이전 세대의 프레임 루프는 다음 프레임에서 스스로 멈춘다.
   private var isCancelled = false
+  private var currentGeneration = 0
 
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
@@ -124,6 +147,8 @@ public class RouteRendererModule: Module {
 
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
       self.isCancelled = false
+      self.currentGeneration &+= 1
+      let generation = self.currentGeneration
       guard options.points.count >= 2 else {
         throw RouteRendererError.notEnoughPoints
       }
@@ -151,7 +176,8 @@ public class RouteRendererModule: Module {
         totalDistance: totalDistance,
         background: background,
         stamp: options,
-        to: outputURL
+        to: outputURL,
+        generation: generation
       )
 
       self.sendEvent("onRenderProgress", ["progress": 1.0])
@@ -588,43 +614,464 @@ public class RouteRendererModule: Module {
     String(format: "%.0fbpm", bpm)
   }
 
+  /// 러닝한 날 (ISO) → "MM.dd". route-preview.tsx formatStampDate와 같은 규칙.
+  private func formatStampDate(_ iso: String) -> String {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    var date = f.date(from: iso)
+    if date == nil {
+      f.formatOptions = [.withInternetDateTime]
+      date = f.date(from: iso)
+    }
+    guard let d = date else { return "" }
+    let c = Calendar.current.dateComponents([.month, .day], from: d)
+    guard let m = c.month, let day = c.day else { return "" }
+    return String(format: "%02d.%02d", m, day)
+  }
+
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
     let isComplete = progressFraction >= 1
     if stamp.stampMode == "hidden" { return }
     if stamp.stampMode == "after" && !isComplete { return }
 
-    var items: [String] = []
-    if stamp.stampItems.distance { items.append(formatDistanceKm(stamp.distanceMeters * progressFraction)) }
-    if stamp.stampItems.time { items.append(formatDuration(stamp.durationSeconds * progressFraction)) }
-    if stamp.stampItems.pace { items.append(formatPace(stamp.averagePaceSecPerKm)) }
-    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { items.append(formatHeartRate(hr)) }
-    guard !items.isEmpty else { return }
+    // 활성 항목을 키 → 값 순서대로. route-preview.tsx StampLayerSvg와 같은 순서·규칙.
+    var keyed: [(String, String)] = []
+    if stamp.stampItems.distance { keyed.append(("distance", formatDistanceKm(stamp.distanceMeters * progressFraction))) }
+    if stamp.stampItems.time { keyed.append(("time", formatDuration(stamp.durationSeconds * progressFraction))) }
+    if stamp.stampItems.pace { keyed.append(("pace", formatPace(stamp.averagePaceSecPerKm))) }
+    if stamp.stampItems.date {
+      let s = formatStampDate(stamp.runDate)
+      if !s.isEmpty { keyed.append(("date", s)) }
+    }
+    if stamp.stampItems.place && !stamp.placeName.isEmpty { keyed.append(("place", stamp.placeName)) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { keyed.append(("heartRate", formatHeartRate(hr))) }
 
-    let fontSize: CGFloat = 28
-    let gap: CGFloat = 22
-    // route-preview.tsx StampLayer와 동일한 기본 자리·간이 너비 추정(모노스페이스 가정).
-    let safeAreaBottomRatio: CGFloat = 0.2
-    let defaultY = canvasSize.height * (1 - safeAreaBottomRatio) - 90
-    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-    let y = defaultY + CGFloat(stamp.stampY)
-    let charWidth = fontSize * 0.62
+    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+    if keyed.isEmpty && caption.isEmpty { return }
 
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold),
-      .foregroundColor: lineWarm,
-    ]
-
-    let widths = items.map { CGFloat($0.count) * charWidth }
-    let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
-    var cursorX = centerX - totalWidth / 2
-
+    // route-preview.tsx SAFE_AREA_TOP/BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
+    let safeAreaTopRatio: CGFloat = 0.17
+    let safeAreaBottomRatio: CGFloat = 0.17
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    for (i, text) in items.enumerated() {
+
+    // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
+    // color 생략 시 기본 밝은 톤. 라벨류(muted)는 호출부에서 mutedColor를 넘긴다
+    // (route-preview.tsx StampTextDescriptor.muted와 같은 개념, 2026-09-02).
+    func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
+      let w = (text as NSString).size(withAttributes: attrs).width
+      let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
+      // 실기기 피드백(2026-09-08) "인스타 공유 결과물에서 각인이 다 겹쳐 보인다":
+      // 이 파일의 모든 y 좌표(headerBaseline·valueBaseline·cursor 등)는
+      // route-preview.tsx(SVG, y="baseline")와 값을 맞추려고 전부 "베이스라인"
+      // 기준으로 계산해뒀다. 그런데 NSString.draw(at:)는 origin을 텍스트 박스의
+      // "맨 위"로 잡는다(베이스라인이 아니다) — 베이스라인 y를 그대로 넘기면 모든
+      // 글자가 font.ascender만큼 아래로 밀려 그려지고, 그 결과 서로 다른 줄끼리
+      // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
+      let topY = origin.y - font.ascender
       ctx.saveGState()
       ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
-      (text as NSString).draw(at: CGPoint(x: cursorX, y: y), withAttributes: attributes)
+      (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
-      cursorX += widths[i] + gap
+    }
+    let mutedColor = self.lineWarm.withAlphaComponent(0.5)
+
+    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(stampX/Y)는 그대로 두고
+    // 글자 크기·내부 간격에만 곱한다.
+    let s = CGFloat(stamp.stampScale)
+
+    // route-preview.tsx splitHeroValue와 같은 규칙 — "5.23km"처럼 끝의 단위 글자(있으면,
+    // "/km"처럼 슬래시 포함)를 떼어 작게 그린다. "28:14"처럼 단위가 없으면 nil.
+    func splitHeroValue(_ text: String) -> (main: String, unit: String)? {
+      guard let range = text.range(of: "/?[a-zA-Z%]+$", options: .regularExpression) else { return nil }
+      let main = String(text[..<range.lowerBound])
+      if main.isEmpty { return nil }
+      return (main, String(text[range]))
+    }
+    // 숫자(크게) + 단위(작게)를 한 줄로 이어 align 기준으로 그린다. origin.y는 다른
+    // 곳과 같은 "베이스라인" 기준 — main·unit 둘 다 자기 font.ascender로 top y를
+    // 구해서 같은 베이스라인(origin.y)에 나란히 앉힌다(위 draw()와 같은 이유의 같은 수정).
+    func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
+      guard let split = splitHeroValue(text) else {
+        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), align)
+        return
+      }
+      let mainFont = UIFont.systemFont(ofSize: size, weight: .bold)
+      let unitFont = UIFont.systemFont(ofSize: size * 0.42, weight: .bold)
+      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: self.lineWarm]
+      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: self.lineWarm]
+      let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
+      let unitText = " \(split.unit)"
+      let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
+      let totalW = mainW + unitW
+      let startX: CGFloat
+      switch align {
+      case .center: startX = origin.x - totalW / 2
+      case .right: startX = origin.x - totalW
+      default: startX = origin.x
+      }
+      ctx.saveGState()
+      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y - mainFont.ascender), withAttributes: mainAttrs)
+      (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y - unitFont.ascender), withAttributes: unitAttrs)
+      ctx.restoreGState()
+    }
+    // route-preview.tsx STAT_LABEL과 같음 — 통계 칸 라벨.
+    let statLabel: [String: String] = [
+      "distance": "DIST", "time": "TIME", "pace": "PACE", "heartRate": "BPM", "date": "DATE", "place": "PLACE",
+    ]
+    let heroKeys = ["distance", "time", "pace"]
+    func hasKey(_ k: String) -> Bool { keyed.contains { $0.0 == k } }
+    func valueFor(_ k: String) -> String { keyed.first { $0.0 == k }?.1 ?? "" }
+    // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
+    func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
+      let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
+      ctx.saveGState()
+      color.setFill()
+      path.fill()
+      if let strokeColor {
+        strokeColor.setStroke()
+        path.lineWidth = 1
+        path.stroke()
+      }
+      ctx.restoreGState()
+    }
+
+    // 아래 6개(stack~line)는 디자인 프로젝트 "런 기록 카드 프리셋"의 2a~2f를 그대로
+    // 옮긴 것이다(2026-09-02, route-preview.tsx stampLayoutDescriptors와 같은 수식).
+    // 목업은 300x533 캔버스라 M=3.6을 곱해 1080x1920으로 옮긴다.
+    let M: CGFloat = 3.6
+
+    if stamp.stampLayout == "stack" {
+      // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
+      let u = M * s
+      let leftX = 24 * M + CGFloat(stamp.stampX)
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+      // 빠뜨렸던 버그. 26*M로 맞춘다.
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
+      let hero = keyed.first { heroKeys.contains($0.0) }
+      let metaItems = keyed.filter { $0.0 != hero?.0 }
+
+      let metaFont = 12 * u
+      let heroSize = 58 * u
+      let titleFont = 13 * u
+      let rowGap = 10 * u
+
+      // 실기기 피드백(2026-09-03), TS와 동일(route-preview.tsx stampLayoutDescriptors
+      // 'stack' 참고): 가운데 줄(hero)·meta가 꺼져 있어도 문구가 항상 그 몫의
+      // 간격까지 띄운 채였다 — 실제로 있는 줄끼리만 간격을 둔다.
+      let hasMeta = !metaItems.isEmpty
+      let hasHero = hero != nil
+      let metaBaseline = bottomAnchor
+      let heroBaseline = hasMeta ? bottomAnchor - rowGap - heroSize * 0.85 : bottomAnchor
+      // 실기기 피드백(2026-09-03), TS와 동일 — hero 위 간격이 heroSize*0.3뿐이라
+      // 큰 글자 몸통과 문구가 겹쳐 보였다. glass 프리셋의 hero 위쪽 간격(0.92)과
+      // 같은 값으로 맞춘다.
+      let captionBaseline: CGFloat
+      if hasHero {
+        captionBaseline = heroBaseline - heroSize * 0.92 - rowGap - titleFont * 0.3
+      } else if hasMeta {
+        captionBaseline = metaBaseline - rowGap - titleFont * 0.85
+      } else {
+        captionBaseline = bottomAnchor - rowGap - titleFont * 0.85
+      }
+
+      if !metaItems.isEmpty {
+        let font = UIFont.monospacedSystemFont(ofSize: metaFont, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        var cursorX = leftX
+        for (key, val) in metaItems {
+          let text = key == "heartRate" ? "\(val)BPM" : val
+          draw(text, CGPoint(x: cursorX, y: metaBaseline), font, .left)
+          cursorX += (text as NSString).size(withAttributes: attrs).width + 14 * u
+        }
+      }
+      if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
+      if !caption.isEmpty {
+        draw(caption, CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "bar" {
+      // 2b "하단 스탯 바" — 문구+날짜 머리글, 구분선, 그 아래 4칸 통계(거리 칸이 더 넓다).
+      let u = M * s
+      let leftX = 20 * M + CGFloat(stamp.stampX)
+      let rightX = canvasSize.width - 20 * M + CGFloat(stamp.stampX)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+      let dateText = valueFor("date")
+      let statOrder = ["distance", "time", "pace", "heartRate"].filter(hasKey)
+      let statWeight: [String: CGFloat] = ["distance": 1.3, "time": 1, "pace": 1, "heartRate": 0.9]
+
+      let headerFont = 15 * u
+      let labelFont = 9 * u
+      let dividerGap = 16 * u
+      let rowPadTop = 12 * u
+
+      // 실기기 피드백(2026-09-03), TS와 동일 — 통계 4칸을 다 꺼도 머리글이 그 몫의
+      // 간격까지 띄운 채였다.
+      let hasStats = !statOrder.isEmpty
+      let valueBaseline = bottomAnchor
+      let labelBaseline = valueBaseline - 22 * u * 1.15
+      let dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor
+      let headerBaseline = dividerY - dividerGap - headerFont * 0.3
+
+      if !caption.isEmpty { draw(caption, CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !caption.isEmpty || !dateText.isEmpty {
+        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
+      }
+      if !statOrder.isEmpty {
+        let totalWeight = statOrder.reduce(0) { $0 + (statWeight[$1] ?? 1) }
+        let totalWidth = rightX - leftX
+        var cursorX = leftX
+        for key in statOrder {
+          let colWidth = (statWeight[key] ?? 1) / totalWeight * totalWidth
+          let isDist = key == "distance"
+          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u, weight: .bold), .left)
+          cursorX += colWidth
+        }
+      }
+      return
+    }
+
+    if stamp.stampLayout == "corner" {
+      // 2c "코너 분산" — 위쪽 문구·날짜, 오른쪽에 시간·페이스·평균심박 스택, 왼쪽 아래에 큰 숫자.
+      let u = M * s
+      let topLeftX = 24 * M + CGFloat(stamp.stampX)
+      let topRightX = canvasSize.width - 24 * M + CGFloat(stamp.stampX)
+      let headerFont = 13 * u
+      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
+
+      if !caption.isEmpty { draw(caption, CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      let dateText = valueFor("date")
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+
+      let statItems = ["time", "pace", "heartRate"].filter(hasKey)
+      if !statItems.isEmpty {
+        let labelFont = 9 * u
+        let valueFont = 19 * u
+        let rowGap = 14 * u
+        var cursorY = headerBaseline + 72 * M
+        for key in statItems {
+          let labelY = cursorY + labelFont * 0.85
+          let valueY = labelY + valueFont * 1.05
+          let label = key == "heartRate" ? "AVG BPM" : (statLabel[key] ?? "")
+          draw(label, CGPoint(x: topRightX, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .right, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .right)
+          cursorY = valueY + rowGap
+        }
+      }
+
+      if let hero = keyed.first(where: { heroKeys.contains($0.0) }) {
+        let heroSize = 66 * u
+        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+        // 빠뜨렸던 버그. 26*M로 맞춘다.
+        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
+        drawHeroValue(hero.1, CGPoint(x: 22 * M + CGFloat(stamp.stampX), y: heroBaseline), heroSize, align: .left)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "glass" {
+      // 2d "글래스 플레이트" — 반투명 유리판 카드(블러는 CoreGraphics로 흉내 못 내
+      // 반투명 채우기 + 옅은 테두리로 근사).
+      let u = M * s
+      let hero = keyed.first { heroKeys.contains($0.0) }
+      let statItems = keyed.filter { $0.0 != hero?.0 && $0.0 != "date" }
+      let dateText = valueFor("date")
+      let hasHeader = !caption.isEmpty || !dateText.isEmpty
+
+      let padX = 20 * u
+      let padY = 20 * u
+      let gap = 14 * u
+      let headerFont = 13 * u
+      let heroSize = 46 * u
+      let labelFont = 9 * u
+      let valueFont = 16 * u
+      let colGap = 20 * u // 통계 칸 사이 최소 간격(겹침 방지)
+
+      let headerLineH = hasHeader ? headerFont * 1.3 : 0
+      let heroLineH = hero != nil ? heroSize * 1.05 : 0
+      let statLineH = !statItems.isEmpty ? labelFont * 1.3 + valueFont * 1.15 : 0
+      var inner = headerLineH
+      if hero != nil { inner += (hasHeader ? gap : 0) + heroLineH }
+      if !statItems.isEmpty { inner += (hero != nil ? gap : hasHeader ? gap : 0) + statLineH }
+      let panelHeight = inner + padY * 2
+
+      // route-preview.tsx와 같은 이유 — 고정 균등폭 칸이 "장소"처럼 긴 값과
+      // "페이스"를 겹쳐 보이게 했다. 실제 글자 폭(추정)만큼만 차지하는 커서
+      // 방식으로 바꿔 절대 안 겹치게 하고, 필요하면 패널을 넓힌다.
+      let statWidths: [CGFloat] = statItems.map { (pair: (String, String)) -> CGFloat in
+        let labelW = CGFloat((statLabel[pair.0] ?? "").count) * labelFont * 0.62
+        let valueW = CGFloat(pair.1.count) * valueFont * 0.62
+        return max(labelW, valueW)
+      }
+      let statRowWidth = statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1))
+      let nominalContentWidth = canvasSize.width - 32 * M - padX * 2
+      let contentWidth = max(nominalContentWidth, statRowWidth)
+      let panelWidth = contentWidth + padX * 2
+
+      let panelLeft = 16 * M + CGFloat(stamp.stampX)
+      let panelRight = panelLeft + panelWidth
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:18px, M 곱하는 걸
+      // 빠뜨렸던 버그. 18*M로 맞춘다.
+      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + CGFloat(stamp.stampY)
+      let panelTop = panelBottom - panelHeight
+
+      fillRect(
+        CGRect(x: panelLeft, y: panelTop, width: panelWidth, height: panelHeight),
+        radius: 18 * u,
+        color: UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
+        strokeColor: UIColor(white: 1, alpha: 0.14)
+      )
+
+      var cursor = panelTop + padY
+      if hasHeader {
+        cursor += headerFont * 0.85
+        if !caption.isEmpty { draw(caption, CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      }
+      if let hero {
+        cursor += (hasHeader ? gap : 0) + heroSize * 0.92
+        drawHeroValue(hero.1, CGPoint(x: panelLeft + padX, y: cursor), heroSize, align: .left)
+      }
+      if !statItems.isEmpty {
+        cursor += (hero != nil ? gap : hasHeader ? gap : 0) + labelFont * 0.85
+        let valueY = cursor + valueFont * 1.05
+        var colX = panelLeft + padX
+        for (i, item) in statItems.enumerated() {
+          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          colX += statWidths[i] + colGap
+        }
+      }
+      return
+    }
+
+    if stamp.stampLayout == "rail" {
+      // 2e "사이드 레일" — 왼쪽 끝 세로 네온 선 + 거리·시간·페이스·평균심박·날짜를
+      // 위아래로 쌓는다(거리만 크게).
+      //
+      // 실기기 피드백(2026-09-03), TS와 동일 — label(9*u)은 bar·corner·glass와
+      // 공유하는 크기라 그대로 두고, 값 크기만 황금비(φ≈1.618)로 다시 짰다.
+      let phi: CGFloat = 1.618
+      let u = M * s
+      let railPadLeft = 22 * M
+      let labelFont = 9 * u
+      let otherValueFont = 22 * u
+      let distValueFont = otherValueFont * phi
+      let rowGap = 20 * u
+      let captionFont = 13 * u
+
+      var rows: [(label: String, text: String, big: Bool)] = []
+      if hasKey("distance") { rows.append(("DISTANCE", valueFor("distance"), true)) }
+      if hasKey("time") { rows.append(("TIME", valueFor("time"), false)) }
+      if hasKey("pace") { rows.append(("PACE", valueFor("pace"), false)) }
+      if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
+      if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
+
+      let railX = CGFloat(stamp.stampX)
+      let hasRail = !rows.isEmpty
+      // 실기기 피드백: "위치도 저기가 최선인가?" — 스택(rows)만 캔버스 세로
+      // 중앙에 놓고 문구를 그 아래 덧붙이던 것을, 문구 몫까지 포함한 블록
+      // 전체를 안전 영역(§7-1) 안에서 가운데 두도록 고쳤다(TS와 동일).
+      let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
+      let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(max(0, rows.count - 1))
+      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 : 0
+      let combinedHeight = totalHeight + captionBlockHeight
+      let safeTop = canvasSize.height * safeAreaTopRatio
+      let safeBottom = canvasSize.height * (1 - safeAreaBottomRatio)
+      let blockTop = safeTop + max(0, (safeBottom - safeTop - combinedHeight) / 2)
+      let railTop = blockTop + CGFloat(stamp.stampY)
+      var railBottom = railTop
+
+      if hasRail {
+        railBottom = railTop + totalHeight
+        fillRect(CGRect(x: railX, y: railTop, width: 3 * u, height: totalHeight), radius: 0, color: self.glowColor)
+
+        var cursorY = railTop
+        for (i, row) in rows.enumerated() {
+          let valueFont = row.big ? distValueFont : otherValueFont
+          let labelY = cursorY + labelFont * 0.85
+          let valueY = labelY + valueFont * 0.95
+          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
+          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          cursorY += rowHeights[i] + rowGap
+        }
+      }
+      if !caption.isEmpty {
+        // 실기기 피드백(2026-09-03), TS와 동일 — 원본 디자인의 오른쪽 아래 고립
+        // 배치 대신, 스택이 있으면 그 바로 아래(왼쪽 정렬)로 붙인다. 스택이 아예
+        // 없을 때만 기존 자리(안전 영역 하단, 오른쪽 정렬)로 돌아간다.
+        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + CGFloat(stamp.stampX)
+        let y = hasRail
+          ? railBottom + rowGap + captionFont * 0.8
+          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right)
+      }
+      return
+    }
+
+    if stamp.stampLayout == "line" {
+      // 2f "원 라인" — 문구(크게) 아래 짧은 구분선, 그 아래 통계를 한 줄로 이어붙인다.
+      let u = M * s
+      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + CGFloat(stamp.stampY)
+      let gap = 12 * u
+      let oneLineFont = 11 * u
+      let titleFont = 26 * u
+      let dividerW = 28 * u
+
+      var parts: [String] = []
+      if hasKey("distance") { parts.append(valueFor("distance").uppercased()) }
+      if hasKey("time") { parts.append(valueFor("time")) }
+      if hasKey("pace") { parts.append(valueFor("pace").uppercased()) }
+      if hasKey("heartRate") { parts.append(valueFor("heartRate").uppercased()) }
+      if hasKey("date") { parts.append(valueFor("date")) }
+      let oneLine = parts.joined(separator: " · ")
+
+      // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
+      // 간격까지 띄운 채였다.
+      let hasOneLine = !oneLine.isEmpty
+      let oneLineBaseline = bottomAnchor
+      let dividerY = oneLineBaseline - oneLineFont * 1.3 - gap
+      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85
+
+      if !oneLine.isEmpty {
+        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), UIFont.monospacedSystemFont(ofSize: oneLineFont, weight: .medium), .center)
+        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
+      }
+      if !caption.isEmpty {
+        draw(caption, CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
+      }
+      return
+    }
+
+    // "hero" 프리셋은 폐지됐다(2026-09-02, "크게" 삭제 요청) — 옛 저장분에 남아
+    // 있어도 아래 'row' 처리로 자연히 떨어진다(TS stampLayoutDescriptors와 동일).
+
+    // 'row' — 가운데 한 줄 + 문구는 그 위.
+    let items = keyed.map { $0.1 }
+    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
+    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
+
+    if !caption.isEmpty {
+      draw(caption, CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
+    }
+    if !items.isEmpty {
+      let fontSize: CGFloat = 28 * s
+      let gap: CGFloat = 22 * s
+      let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let widths = items.map { ($0 as NSString).size(withAttributes: attrs).width }
+      let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
+      var cursorX = centerX - totalWidth / 2
+      for (i, text) in items.enumerated() {
+        draw(text, CGPoint(x: cursorX, y: baseY), font, .left)
+        cursorX += widths[i] + gap
+      }
     }
   }
 
@@ -642,7 +1089,8 @@ public class RouteRendererModule: Module {
     totalDistance: Double,
     background: UIImage,
     stamp: RenderClipOptionsInput,
-    to outputURL: URL
+    to outputURL: URL,
+    generation: Int
   ) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try? FileManager.default.removeItem(at: outputURL)
@@ -688,7 +1136,11 @@ public class RouteRendererModule: Module {
       // 이게 없으면 360프레임 × 수십 MB가 메서드가 끝날 때까지 쌓여 jetsam이 앱을 죽인다.
       autoreleasepool {
         // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
-        if self.isCancelled {
+        // generation 불일치는 "취소 버튼"이 아니라 "더 새 renderClip 요청이 이걸
+        // 대체했다"는 뜻 — 둘 다 조용히 멈추고 미완성 파일을 지우는 건 같지만,
+        // 후자는 사용자가 취소한 게 아니므로 실패 알림을 띄우면 안 된다(아래
+        // RouteRendererError.cancelled를 JS가 똑같이 "조용한 종료"로 처리해 준다).
+        if self.isCancelled || self.currentGeneration != generation {
           thrown = RouteRendererError.cancelled
           return
         }
@@ -718,7 +1170,7 @@ public class RouteRendererModule: Module {
           return
         }
 
-        while !writerInput.isReadyForMoreMediaData && !self.isCancelled {
+        while !writerInput.isReadyForMoreMediaData && !self.isCancelled && self.currentGeneration == generation {
           Thread.sleep(forTimeInterval: 0.01)
         }
         let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
