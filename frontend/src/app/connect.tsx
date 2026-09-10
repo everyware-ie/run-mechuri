@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IDENTITY_SMOOTH, IDENTITY_STAMP, IDENTITY_TRANSFORM, RoutePreview } from '@/components/route-preview';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { markConnectedOnce } from '@/lib/connection-store';
 import type { Point } from '@/lib/route-projection';
 
@@ -125,14 +125,14 @@ const styles = StyleSheet.create({
   artWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   body: { paddingHorizontal: 30, paddingBottom: Spacing.xl, gap: Spacing.md },
   title: {
-    fontFamily: 'SpaceGrotesk_700Bold',
+    fontFamily: Fonts.sansBold,
     fontSize: 32,
     lineHeight: 38,
     letterSpacing: -0.7,
     color: Colors.text,
   },
   subtitle: {
-    fontFamily: 'SpaceGrotesk_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 13,
     lineHeight: 20,
     color: Colors.textMuted,

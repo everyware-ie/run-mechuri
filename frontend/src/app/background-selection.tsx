@@ -2,19 +2,19 @@ import { Asset } from 'expo-asset';
 import { router } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RoutePreview } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // FRD: docs/specs/frd/background-selection.md
 // v0: §1 MVP 기본 범위(기본 이미지 3장)만. 갤러리·촬영은 여유 시라 이후 — 시안 S5에는
 // "갤러리" 슬롯이 있어 자리만 두되 아직 안 붙였다.
-// 실제 이미지 3장은 아직 없음(§2-2) — frontend/src/constants/default-backgrounds.ts에서 교체.
+// 기본 이미지 3장은 frontend/src/constants/default-backgrounds.ts에서 제공한다.
 // 디자인: "3안" 시안 S5 — 배경+경로 합성 큰 카드 + 기본 이미지 가로 스와치 + 갤러리 슬롯.
 
 // 실기기 피드백(2026-09-03): "다시 편집 → 결과물을 만들지 못했어요" — Asset.localUri(캐시
@@ -43,6 +43,7 @@ async function ensurePersistentBackground(id: string, sourceUri: string): Promis
 }
 
 export default function BackgroundSelectionScreen() {
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [selectedId, setSelectedId] = useState(DEFAULT_BACKGROUNDS[0].id);
   const [localUri, setLocalUri] = useState<string | null>(null);
   const { draft, setBackground } = useCreationFlow();
@@ -62,8 +63,9 @@ export default function BackgroundSelectionScreen() {
   };
 
   const selectedBackground = DEFAULT_BACKGROUNDS.find((bg) => bg.id === selectedId);
-  const cardWidth = Dimensions.get('window').width - 48;
-  const cardHeight = Math.min(452, Dimensions.get('window').height * 0.52);
+  // 기본 배경과 같은 9:16 틀에 전체 구도를 보여준다. 높이는 기존 상한을 유지한다.
+  const cardHeight = Math.min(452, windowHeight * 0.52, (windowWidth - 48) * 16 / 9);
+  const cardWidth = cardHeight * 9 / 16;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -85,7 +87,7 @@ export default function BackgroundSelectionScreen() {
       <View style={styles.body}>
         <View style={[styles.card, { width: cardWidth, height: cardHeight }]}>
           {selectedBackground && (
-            <Image source={selectedBackground.source} style={StyleSheet.absoluteFill} resizeMode="cover" />
+            <Image source={selectedBackground.source} style={styles.backgroundImage} resizeMode="cover" />
           )}
           {draft.track && draft.selectedRun && (
             <RoutePreview
@@ -100,7 +102,7 @@ export default function BackgroundSelectionScreen() {
               viewHeight={cardHeight}
             />
           )}
-          <Text style={styles.cardTag}>9:16 · 가로 채움</Text>
+          <Text style={styles.cardTag}>9:16 · 전체 미리보기</Text>
         </View>
 
         <Text style={styles.sectionLabel}>기본 이미지 · BACKGROUND</Text>
@@ -122,8 +124,7 @@ export default function BackgroundSelectionScreen() {
         </View>
 
         <Text style={styles.note}>
-          자리표시자예요. 실제 기본 이미지 3장은 디자인이 나온 뒤 정해집니다. 갤러리에서
-          고르기는 이후에 붙습니다.
+          기본 이미지 3장 중 배경을 골라주세요. 갤러리에서 고르는 기능은 준비 중이에요.
         </Text>
       </View>
     </SafeAreaView>
@@ -132,7 +133,7 @@ export default function BackgroundSelectionScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
-  headerAction: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
+  headerAction: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accent },
   body: { flex: 1, paddingHorizontal: 24, gap: Spacing.md, alignItems: 'stretch' },
   card: {
     alignSelf: 'center',
@@ -140,17 +141,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: Colors.bgCard,
   },
+  // 번들 이미지의 기본 width/height(1080×1920)를 명시적으로 덮어쓴다.
+  // absoluteFill만 사용하면 원본 크기가 남아 카드 안에서 윗부분만 잘려 보인다.
+  backgroundImage: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
   cardTag: {
     position: 'absolute',
     top: 14,
     left: 16,
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 9.5,
     letterSpacing: 1.4,
     color: Colors.textMuted,
   },
   sectionLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
@@ -177,9 +181,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  swatchGalleryText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 9.5, color: Colors.textMuted },
+  swatchGalleryText: { fontFamily: Fonts.sans, fontSize: 9.5, color: Colors.textMuted },
   note: {
-    fontFamily: 'SpaceGrotesk_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 11,
     lineHeight: 17,
     color: Colors.textMuted,

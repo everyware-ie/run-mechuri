@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type PressableProps } from 'react-native';
 
-import { Colors, Radius } from '@/constants/theme';
+import { Colors, Fonts, Radius } from '@/constants/theme';
 
 // "1a 야간 네온" 디자인의 공용 조각. 화면마다 버튼·카드를 새로 그리지 않도록 여기 모음.
 
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
   buttonOutline: { borderWidth: 1, borderColor: Colors.borderStrong },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { opacity: 0.85 },
-  buttonText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 14 },
+  buttonText: { fontFamily: Fonts.sansBold, fontSize: 14 },
   buttonTextPrimary: { color: Colors.accentText },
   buttonTextOutline: { color: Colors.text },
   card: {
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   label: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.5,
     color: Colors.textMuted,

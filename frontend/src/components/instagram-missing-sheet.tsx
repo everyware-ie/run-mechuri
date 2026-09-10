@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 
 import { ThemedButton } from './ui';
 
@@ -56,9 +56,9 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.sm,
   },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 18, color: Colors.text },
+  title: { fontFamily: Fonts.sansBold, fontSize: 18, color: Colors.text },
   desc: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 12.5,
     color: Colors.textMuted,
     lineHeight: 18,
@@ -66,5 +66,5 @@ const styles = StyleSheet.create({
   },
   primaryButton: { marginTop: Spacing.xs },
   closeButton: { alignItems: 'center', paddingVertical: Spacing.sm },
-  closeText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13, color: Colors.textMuted },
+  closeText: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.textMuted },
 });

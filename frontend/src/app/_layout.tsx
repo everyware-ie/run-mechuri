@@ -25,6 +25,8 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
     JetBrainsMono_500Medium,
     JetBrainsMono_700Bold,
+    Pretendard_500Medium: require('@/assets/fonts/Pretendard-Medium.otf'),
+    Pretendard_700Bold: require('@/assets/fonts/Pretendard-Bold.otf'),
     // 실기기 피드백(2026-09-03): SpaceGrotesk·JetBrains Mono 둘 다 한글 글리프가
     // 없어서, 각인 "한 줄 문구"에 한글을 쓰면 조용히 시스템 폰트로 폴백돼 숫자
     // 부분(SpaceGrotesk)과 글씨체가 달라 보였다. 한글 문구 전용으로 추가.

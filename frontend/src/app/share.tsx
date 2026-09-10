@@ -8,7 +8,7 @@ import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
   },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: Colors.text },
+  title: { fontFamily: Fonts.sansBold, fontSize: 22, color: Colors.text },
   card: {
     width: CARD_SIZE,
     height: CARD_SIZE,
@@ -400,20 +400,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     left: 16,
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.6,
     color: Colors.accent,
   },
   distance: {
-    fontFamily: 'SpaceGrotesk_700Bold',
+    fontFamily: Fonts.sansBold,
     fontSize: 34,
     color: Colors.text,
     letterSpacing: -1.2,
     marginTop: Spacing.sm,
   },
-  distanceUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
-  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
+  distanceUnit: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
+  notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   shareButton: { flex: 1 },
@@ -447,14 +447,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 14,
   },
-  encPct: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 40, color: Colors.accent, letterSpacing: -1.6 },
+  encPct: { fontFamily: Fonts.sansBold, fontSize: 40, color: Colors.accent, letterSpacing: -1.6 },
   encLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10.5,
     letterSpacing: 1.2,
     color: Colors.textMuted,
   },
-  encSpec: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted, alignSelf: 'flex-start' },
+  encSpec: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, alignSelf: 'flex-start' },
   progressTrack: {
     alignSelf: 'stretch',
     height: 3,

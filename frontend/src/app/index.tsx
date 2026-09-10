@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
 import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
@@ -209,9 +209,9 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 24, paddingBottom: 40, gap: Spacing.sm },
   headerBlock: { gap: Spacing.md, paddingTop: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
+  title: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
   archiveCount: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
@@ -226,8 +226,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
-  draftLabel: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13.5, color: Colors.accent },
-  draftMeta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted, marginTop: 3 },
+  draftLabel: { fontFamily: Fonts.sansBold, fontSize: 13.5, color: Colors.accent },
+  draftMeta: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 3 },
   draftChevron: { color: Colors.accent, fontSize: 15 },
   heroCard: {
     height: HERO_SIZE,
@@ -245,10 +245,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
   },
-  heroDistance: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 34, color: Colors.text, letterSpacing: -1.2 },
-  heroUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
+  heroDistance: { fontFamily: Fonts.sansBold, fontSize: 34, color: Colors.text, letterSpacing: -1.2 },
+  heroUnit: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
   heroDate: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1,
     color: Colors.textMuted,
@@ -273,17 +273,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  emptyTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: Colors.text },
-  emptySub: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  emptyTitle: { fontFamily: Fonts.sansBold, fontSize: 16, color: Colors.text },
+  emptySub: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   sectionLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
   },
   sectionLabelEn: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     bottom: 10,
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     color: Colors.text,
   },
