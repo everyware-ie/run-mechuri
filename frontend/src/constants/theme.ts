@@ -1,5 +1,5 @@
 // 디자인: "1a 야간 네온" (2026-08-25 결정, 회의에서 확정) — 3안(전체 12화면 시안)의
-// 색상·타이포 토큰을 그대로 옮김. 화면 컴포넌트는 이 값만 참조한다.
+// 색상 토큰을 옮김. UI 글꼴은 2026-09-10 요청으로 Pretendard를 사용한다.
 
 export const Colors = {
   bg: '#0B0D10',
@@ -16,8 +16,8 @@ export const Colors = {
 } as const;
 
 export const Fonts = {
-  sans: 'SpaceGrotesk_500Medium',
-  sansBold: 'SpaceGrotesk_700Bold',
+  sans: 'Pretendard_500Medium',
+  sansBold: 'Pretendard_700Bold',
   mono: 'JetBrainsMono_500Medium',
 } as const;
 

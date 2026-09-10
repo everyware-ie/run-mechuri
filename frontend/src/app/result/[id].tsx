@@ -9,7 +9,7 @@ import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -221,9 +221,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: Colors.bgCard,
   },
-  distance: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26, color: Colors.text, marginTop: Spacing.sm },
-  meta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.textMuted },
-  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 12 },
+  distance: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, marginTop: Spacing.sm },
+  meta: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 12 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.lg },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   shareButton: { flex: 1 },

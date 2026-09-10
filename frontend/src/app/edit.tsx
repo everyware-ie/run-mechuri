@@ -6,6 +6,10 @@ import {
   Animated,
   Image,
   Keyboard,
+  KeyboardAvoidingView,
+  LayoutAnimation,
+  Platform,
+  ScrollView,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -13,11 +17,10 @@ import {
   TextInput,
   View,
   type GestureResponderEvent,
-  type KeyboardEvent,
   type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   computeFitTransform,
@@ -35,8 +38,9 @@ import {
 import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { saveDraft } from '@/lib/draft-store';
+import { fitPortraitPreview } from '@/lib/preview-layout';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 import {
   formatDistanceKm,
@@ -51,10 +55,8 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 프리셋 선택(§3), 드로잉 크기·위치·회전 제스처+초기화(§4), 미리보기 재생 규칙(§2-1),
 // 다듬기 세기(§5), 각인 편집(§7)까지 구현. 속도·색은 여전히 여유 시라 이후(목업 구현 3/6).
 //
-// 2026-09: 미리보기를 화면 전체로 키우고 아래 컨트롤은 드래그로 접었다 펼 수 있는
-// 바텀시트로 뺐다(실기기 피드백 — 작은 카드 안에 눌려 있던 걸 크게 보고 싶다는 것,
-// 그리고 그 카드가 ScrollView 안에 있어서 드래그 제스처가 스크롤과 경합하던 문제도
-// 이 구조에선 아예 없어진다 — 미리보기 영역을 감싸는 스크롤 컨테이너가 없다).
+// 2026-09-10: 도구가 캔버스를 가리지 않도록 위아래로 배치한다.
+// 도구를 접으면 남은 영역에 9:16 전체 미리보기가 더 크게 들어간다.
 
 // 시안 S6 "넣을 것" 순서. 칩에는 실제 값도 함께 보여준다(stampChipLabel).
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
@@ -65,7 +67,7 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'segment-lighting', label: '구간 점등' },
 ];
 
-const SHEET_EXPANDED_HEIGHT = 372;
+const TOOL_PANEL_HEIGHT = 252;
 
 function touchDistance(t1: { pageX: number; pageY: number }, t2: { pageX: number; pageY: number }) {
   return Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
@@ -85,9 +87,15 @@ export default function EditScreen() {
     resetTransform,
   } = useCreationFlow();
 
-  // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
-  // "3안" 시안 S7에는 드로잉/각인 토글이 없다 — [각인] 버튼이 시트(S6)를 연다.
+  // 도구 탭과 별개로 캔버스를 직접 탭해 조작 대상을 고른다.
   const [stampSheetOpen, setStampSheetOpen] = useState(false);
+  const [stampTab, setStampTab] = useState<'layout' | 'items' | 'caption'>('layout');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
   // §7-1 안전 영역 가이드 — 실기기 피드백(2026-09): 항상 떠 있으면 거슬린다는
   // 지적으로 기본 숨김·버튼으로 토글하는 방식으로 바꿨다.
   const [showSafeGuide, setShowSafeGuide] = useState(false);
@@ -103,7 +111,6 @@ export default function EditScreen() {
     const t = setTimeout(() => setIsPlaying(false), (CYCLE_SECONDS + 0.3) * 1000);
     return () => clearTimeout(t);
   }, [isPlaying]);
-  const insets = useSafeAreaInsets();
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
   const transformRef = useRef(transform);
@@ -112,7 +119,7 @@ export default function EditScreen() {
     setTransformState(t);
   };
 
-  // §5: 기본은 한 축("다듬기 세기"). 고급 설정을 열면 직선(smooth)·코너(corner)를 따로 만진다.
+  // §5: 직선(smooth)·코너(corner) 두 축을 드로잉 도구에 함께 보여준다.
   const [smoothOptions, setSmoothOptionsState] = useState<SmoothOptions>(draft.smoothOptions);
   const smoothOptionsRef = useRef(smoothOptions);
   const updateSmoothOptions = (opts: SmoothOptions) => {
@@ -300,15 +307,11 @@ export default function EditScreen() {
 
         // 뷰 픽셀 ↔ 캔버스 좌표 변환에 쓰는 fitScale — 히트테스트뿐 아니라 이번
         // 제스처 동안의 모든 dx/dy 변환(아래 move·release)에서 재사용한다.
-        // previewSize는 드래그 도중 안 바뀌므로 grant에서 한 번만 계산해 ref에
-        // 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음). 미리보기는
-        // 가이드 on/off와 무관하게 항상 'cover'라(아래 JSX) fit도 그대로 맞춘다 —
-        // 다르면 탭 위치·드래그 이동량이 실제 화면과 어긋난다.
+        // 전체 미리보기와 동일한 contain 변환을 사용해 탭과 이동량을 맞춘다.
         const { fitScale, offsetX, offsetY } = computeFitTransform(
           previewSizeRef.current.width,
           previewSizeRef.current.height,
-          'cover',
-          SHEET_EXPANDED_HEIGHT + insets.bottom
+          'contain'
         );
         gestureFitScaleRef.current = fitScale;
 
@@ -494,88 +497,28 @@ export default function EditScreen() {
     })
   ).current;
 
-  // 아래 컨트롤 패널(바텀시트) — 손잡이를 드래그해서 접었다 펼 수 있다. 접으면
-  // 미리보기가 화면 거의 전체로 보인다. 손잡이 영역에만 반응해서 슬라이더·버튼
-  // 터치와 겹치지 않는다.
-  // PanResponder는 useRef로 한 번만 만들어져서 그 콜백들이 첫 렌더의 클로저를
-  // 계속 들고 있다 — useState로 두면 갱신이 반영 안 되는 stale closure가 되므로 ref로 둔다.
   const sheetExpandedRef = useRef(true);
-  // 실기기 피드백(2026-09-02): "손잡이만 남기고 살짝 접기"로는 편집 화면을
-  // 제대로 볼 수 없다 — 아예 화면 밖으로 완전히 숨겼다가 버튼으로 다시 부를 수
-  // 있게 해달라는 요청. sheetExpanded는 그 "완전히 숨겨졌나"를 JSX(숨김 버튼
-  // 표시 여부)에서 읽으려고 ref와 같이 둔 state 버전이다.
   const [sheetExpanded, setSheetExpanded] = useState(true);
-  const sheetTranslateY = useRef(new Animated.Value(0)).current;
-  const sheetDragStart = useRef(0);
-  // 실기기 피드백(2026-09-02): 각인 시트의 "한 줄 문구" 입력창에 키보드가 뜨면
-  // 입력창을 그대로 가려서 뭘 쓰는지 안 보였다 — 키보드 높이만큼 시트를 더
-  // 밀어 올린다(끌기로 접고 펴는 sheetTranslateY와는 별개 축, 최종 위치는
-  // 두 값을 합쳐서 계산). keyboardWillShow/Hide(iOS 전용)는 키보드 자체
-  // 애니메이션 시작 전에 미리 알려줘서, 같은 duration으로 동시에 움직이면
-  // 자연스럽게 같이 올라가는 느낌이 난다. keyboardDidShow/Hide는 키보드가
-  // 다 뜬 다음에야 불려서 한 박자 늦게 따라가는 느낌이 났을 것이다.
-  const keyboardOffset = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const animateKeyboard = (e: KeyboardEvent, toValue: number) => {
-      Animated.timing(keyboardOffset, {
-        toValue,
-        duration: e.duration || 250,
-        useNativeDriver: true,
-      }).start();
-    };
-    const showSub = Keyboard.addListener('keyboardWillShow', (e) => animateKeyboard(e, e.endCoordinates.height));
-    const hideSub = Keyboard.addListener('keyboardWillHide', (e) => animateKeyboard(e, 0));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [keyboardOffset]);
-  // 시트를 끌 때도 미리보기 애니메이션을 멈춘다 — 안 멈추면 계속 도는 Skia 글로우
-  // 렌더링(RAF)과 시트 드래그의 JS 스레드 작업이 같이 돌면서 드래그가 버벅였다.
   const [isSheetDragging, setIsSheetDragging] = useState(false);
-  // 접었을 때 시트 전체(손잡이 포함)가 화면 밖으로 완전히 나가도록 내린다 —
-  // 예전엔 손잡이만 남기고 살짝 접었는데(SHEET_PEEK_HEIGHT), 그래도 편집
-  // 화면을 가린다는 피드백으로 아예 다 감추는 쪽으로 바꿨다. 시트의 실제
-  // 렌더 높이는 내용(각인 프리셋 8개가 줄바꿈되는 등)에 따라 달라져서
-  // SHEET_EXPANDED_HEIGHT는 못 믿는다 — 화면에서 이 시트보다 확실히 클
-  // 값(여기서는 previewArea 높이 전체 + 여유)만큼 내려서 내용이 얼마나
-  // 길어지든 항상 화면 밖으로 나가게 한다. insets는 화면이 떠 있는 동안 안
-  // 바뀌므로 여기서 한 번만 읽어도 안전하다(sheetPanResponder도 useRef라
-  // 마운트 시점 클로저를 쓴다).
-  const sheetCollapseDistance = Math.max(SHEET_EXPANDED_HEIGHT, previewSize.height) + insets.bottom + 60;
 
   const animateSheetTo = (expanded: boolean) => {
+    Keyboard.dismiss();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     sheetExpandedRef.current = expanded;
     setSheetExpanded(expanded);
-    Animated.spring(sheetTranslateY, {
-      toValue: expanded ? 0 : sheetCollapseDistance,
-      useNativeDriver: true,
-      bounciness: 4,
-    }).start();
   };
 
+  // 손잡이만 드래그를 받아 슬라이더 및 항목 스크롤과 경합하지 않는다.
   const sheetPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 2,
-      onPanResponderGrant: () => {
-        setIsSheetDragging(true);
-        sheetTranslateY.stopAnimation((value) => {
-          sheetDragStart.current = value;
-        });
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const next = sheetDragStart.current + gestureState.dy;
-        sheetTranslateY.setValue(Math.max(0, Math.min(sheetCollapseDistance, next)));
-      },
+      onPanResponderGrant: () => setIsSheetDragging(true),
       onPanResponderRelease: (_evt, gestureState) => {
         setIsSheetDragging(false);
-        // 40px 이상 내리면 접고, 40px 이상 올리면 펼치고, 그 사이는 원래 상태로 되돌린다.
-        const dy = gestureState.dy;
-        if (dy > 40) animateSheetTo(false);
-        else if (dy < -40) animateSheetTo(true);
-        else animateSheetTo(sheetExpandedRef.current);
+        if (gestureState.dy > 40) animateSheetTo(false);
       },
+      onPanResponderTerminate: () => setIsSheetDragging(false),
     })
   ).current;
 
@@ -624,8 +567,9 @@ export default function EditScreen() {
 
   const handlePreviewLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    previewSizeRef.current = { width, height };
-    setPreviewSize({ width, height });
+    const next = fitPortraitPreview(width, height);
+    previewSizeRef.current = next;
+    setPreviewSize(next);
   };
 
   const smoothLabel = (v: number) => (v === 0 ? '없음' : `${v} %`);
@@ -665,267 +609,197 @@ export default function EditScreen() {
     }
   };
 
-  // 끌기로 접고 펴는 위치(sheetTranslateY, 아래로 갈수록 +)에서 키보드가 뜬
-  // 만큼(keyboardOffset)을 뺀다 — 두 값이 각자 애니메이션되다가 최종
-  // translateY에서 합쳐진다.
-  const sheetY = Animated.subtract(sheetTranslateY, keyboardOffset);
-
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <ScreenHeader
-        title="편집"
-        right={
-          // 배경 선택 화면과 같은 이유(2026-09-02) — Text onPress 대신 Pressable
-          // hitSlop으로 탭 영역을 넓힌다.
-          <Pressable onPress={handleNext} hitSlop={12}>
-            <Text style={styles.headerAction}>완료</Text>
-          </Pressable>
-        }
-      />
-
-      {/* 미리보기 — 화면에서 헤더·바텀시트를 뺀 나머지 전부를 차지한다. 이 뷰 자체가
-          제스처 캡처 영역의 경계라, 시트나 헤더로 터치가 새 나갈 일이 없다. */}
-      <View style={styles.previewArea} onLayout={handlePreviewLayout}>
-        {previewSize.width > 0 && (
-          <>
-            <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, isInteracting && styles.previewActive]}>
-              <RoutePreview
-                points={draft.track.coordinates}
-                preset={draft.preset}
-                transform={transform}
-                transformShared={{
-                  x: transformXShared,
-                  y: transformYShared,
-                  scale: transformScaleShared,
-                  rotationDeg: transformRotationShared,
-                }}
-                smoothOptions={smoothOptions}
-                run={draft.selectedRun}
-                stampConfig={stampConfig}
-                showSafeAreaGuide={showSafeGuide}
-                isInteracting={isInteracting || isSheetDragging}
-                viewWidth={previewSize.width}
-                viewHeight={previewSize.height}
-                // 실기기 피드백(2026-09-07): "편집 화면이랑 갤러리 저장 후가 완전
-                // 다르다" — 인스타그램 공유가 아직 없어서(4단계 예정) 지금 v0의
-                // 유일한 결과물 경로는 "기기에 저장"인데, cover-safe는 인스타에
-                // 올렸을 때 UI에 가려질 안전 영역 밖(위·아래 각 17%)을 편집
-                // 화면에서 아예 안 보여준다 — 정작 저장된 파일(사진 앱에서 보면
-                // 인스타 UI가 없으니)에는 그 부분이 그대로 다 나오니, 편집 중
-                // 본 것과 저장 후 본 것이 서로 다른 크롭으로 보였다. 인스타 공유가
-                // 실제로 붙기 전까지는 'cover'(캔버스 전체, 화면에 맞춰 잘라내되
-                // 안전 영역 같은 임의 여백은 없음)로 맞춰 저장 결과와 일치시킨다.
-                // "인스타 스토리 영역" 버튼은 그대로 남겨 인스타에 올렸을 때
-                // 어떻게 잘릴지 미리 보고 싶을 때만 확인하게 한다.
-                //
-                // 실기기 피드백(2026-09-02): 가이드 on/off로 fit을 바꿨더니(이전엔
-                // 'cover'↔'cover-safe' 전환) 그때마다 경로·각인까지 화면에서 훅
-                // 움직여 보였다("기존 배치가 내려간다") — 미리보기는 가이드 상태와
-                // 무관하게 항상 같은 fit(지금은 'cover')으로 고정한다. 가이드
-                // 자체(아바타·닫기·답장창)는 route-preview.tsx 안에서 이 fit과
-                // 별개의, 화면 전체 기준 고정 좌표로 그린다(아래 showSafeAreaGuide
-                // 참고) — 그래야 미리보기 크롭과 무관하게 항상 같은 자리에 뜬다.
-                fit="cover"
-                // previewArea가 flex:1이라 바텀시트(펼친 상태 기준, 접으면 더
-                // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
-                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다.
-                bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
-                stampSelected={stampTargeted}
-                playing={isPlaying}
-                stampDragOffset={{ x: stampDragX, y: stampDragY }}
-              />
-            </View>
-            {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
-            <Pressable
-              onPress={() => setShowSafeGuide((v) => !v)}
-              style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
-              <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
+    <KeyboardAvoidingView style={styles.safeArea} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScreenHeader
+          title="편집"
+          right={
+            <Pressable onPress={handleNext} hitSlop={12} accessibilityRole="button">
+              <Text style={styles.headerAction}>완료</Text>
             </Pressable>
-            {/* 실기기 피드백(2026-09-02): 재생 버튼·안내 문구가 화면 아래쪽(previewArea
-                기준 bottom)에 있다 보니, 바텀시트가 절대 위치 오버레이로 그 자리를
-                거의 항상 덮고 있어서 시트를 접었을 때가 아니면 잘 안 보였다("다른
-                레이어랑 겹쳐서 잘 안 보인다"). 시트 상태와 무관하게 항상 보이도록
-                위쪽(guideToggle과 같은 줄 높이)으로 옮겼다 — 인스타 스토리 안전
-                영역 가이드를 켰을 때 오른쪽 위에 뜨는 "X 닫기" 자리와 안 겹치도록
-                왼쪽에 몰아 두고, 가운데는 guideToggle 몫으로 비워 둔다. */}
-            <View style={styles.topLeftGroup}>
-              <Pressable
-                onPress={() => setIsPlaying((v) => !v)}
-                style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
-                <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-              </Pressable>
-              <Text style={styles.cardHint}>
-                {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
-              </Text>
-            </View>
-          </>
-        )}
-      </View>
+          }
+        />
 
-      {/* 컨트롤 바텀시트 — 손잡이를 위아래로 끌면 접고 펼 수 있다. */}
-      {!stampSheetOpen && (
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
-          ]}>
-          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
-            <View style={styles.sheetHandleBar} />
-          </View>
-
-          <View style={styles.sheetContent}>
-            {/* §3 프리셋 */}
-            <Text style={styles.sectionLabel}>프리셋 · PRESET</Text>
-            <View style={styles.presetRow}>
-              {PRESETS.map((p) => {
-                const on = draft.preset === p.id;
-                return (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => handlePresetSelect(p.id)}
-                    style={[styles.presetChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            {/* §5: 결과를 보면서 조절한다. 시안 S7대로 직선·코너 두 축을 바로 노출한다
-                (FRD §5의 "기본은 한 축"과 다름 — 확인 노트에 기록). 슬라이더 범위 자체가
-                안전 구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
-            <View style={styles.sliderHead}>
-              <Text style={styles.sectionLabel}>직접 다듬기 · SMOOTH</Text>
-              <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
-            </View>
-            <Slider
-              value={smoothOptions.smooth}
-              onChange={(v) => handleSmoothAxisChange('smooth', v)}
-              onSlidingComplete={handleSmoothCommit}
-            />
-
-            <View style={styles.sliderHead}>
-              <Text style={styles.sectionLabel}>코너 반경 · CORNER</Text>
-              <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
-            </View>
-            <Slider
-              value={smoothOptions.corner}
-              onChange={(v) => handleSmoothAxisChange('corner', v)}
-              onSlidingComplete={handleSmoothCommit}
-            />
-
-            <View style={styles.outlineRow}>
-              <Pressable style={styles.outlineBtn} onPress={() => setStampSheetOpen(true)}>
-                <Text style={styles.outlineBtnText}>각인</Text>
-              </Pressable>
-              <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')}>
-                <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
-              </Pressable>
-              <Pressable style={styles.outlineBtn} onPress={handleReset}>
-                <Text style={styles.outlineBtnMuted}>초기화</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.note}>
-              적용 버튼이 없습니다. 초기화는 드로잉 조작만 되돌리고 프리셋·각인은 남습니다.
+        <View style={styles.previewToolbar}>
+          <View style={styles.playControls}>
+            <Pressable
+              onPress={() => setIsPlaying((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={isPlaying ? '미리보기 정지' : '미리보기 재생'}
+              style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
+              <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+            </Pressable>
+            <Text style={styles.cardHint}>
+              {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
             </Text>
           </View>
-        </Animated.View>
-      )}
+          <Pressable
+            onPress={() => setShowSafeGuide((v) => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: showSafeGuide }}
+            style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
+            <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>스토리 영역</Text>
+          </Pressable>
+        </View>
 
-      {/* §7 각인 시트(S6) — 프리셋·넣을 것·한 줄 문구 등 "값"을 고르는 곳. 위치·크기는
-          이제 이 시트를 열지 않아도 미리보기에서 각인을 직접 탭해 바꿀 수 있다(위
-          panResponder의 히트테스트, editTarget='stamp') — 이 시트는 텍스트 값 편집
-          전용으로 역할이 좁혀졌다. 컨트롤 바텀시트와 자리를 다투지 않도록, 열려
-          있는 동안엔 그 시트를 안 그린다(위).
-          실기기 피드백(2026-09-02): 예전엔 이 시트가 손잡이 없는 고정 View라 접을
-          수 없었다 — "화면의 반을 차지해서 각인 프리셋을 눌러도 바뀌는 게 안 보인다"는
-          불만의 원인. 컨트롤 시트와 똑같이 sheetTranslateY/sheetPanResponder를 그대로
-          공유해 끌어서 접을 수 있게 했다(두 시트가 동시에 그려지지 않으니 상태를
-          공유해도 안전하다). 내용도 sheetContent로 감싸 프리셋 시트와 같은
-          padding·gap 리듬을 쓴다 — 이전엔 항목들이 감싸는 뷰 없이 나란히 있어서
-          "글씨가 다닥다닥 붙어있다"는 불만이 있었다. */}
-      {stampSheetOpen && (
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
-          ]}>
-          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
-            <View style={styles.sheetHandleBar} />
-          </View>
-
-          <View style={styles.sheetContent}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>각인</Text>
-              <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
-                완료
-              </Text>
+        <View style={styles.previewArea} onLayout={handlePreviewLayout}>
+          {previewSize.width > 0 && (
+            <View style={[styles.previewFrame, previewSize]}>
+              <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, isInteracting && styles.previewActive]}>
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <RoutePreview
+                    points={draft.track.coordinates}
+                    preset={draft.preset}
+                    transform={transform}
+                    transformShared={{
+                      x: transformXShared,
+                      y: transformYShared,
+                      scale: transformScaleShared,
+                      rotationDeg: transformRotationShared,
+                    }}
+                    smoothOptions={smoothOptions}
+                    run={draft.selectedRun}
+                    stampConfig={stampConfig}
+                    showSafeAreaGuide={showSafeGuide}
+                    isInteracting={isInteracting || isSheetDragging}
+                    viewWidth={previewSize.width}
+                    viewHeight={previewSize.height}
+                    fit="contain"
+                    stampSelected={stampTargeted}
+                    playing={isPlaying}
+                    stampDragOffset={{ x: stampDragX, y: stampDragY }}
+                  />
+                </View>
+              </View>
             </View>
+          )}
+        </View>
 
-            {/* "배치"라는 이름 아래 묻혀 있던 걸 드로잉 프리셋과 같은 라벨 패턴으로 —
-                실기기 피드백(2026-09): 이건 단순 위치 배치가 아니라 각인을 어떤 스타일로
-                표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
-                나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
-            <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
-            {/* 실물 사진 참고(2026-09-02)로 프리셋이 2개→6개로 늘어서, flex:1로 한
-                줄에 욱여넣던 presetChip 대신 내용만큼만 너비를 차지하고 줄바꿈되는
-                칩으로 바꿨다("넣을 것" 칩과 같은 패턴). */}
-            <View style={styles.layoutChipRow}>
-              {STAMP_LAYOUTS.map((l) => {
-                const on = (stampConfig.layout ?? 'row') === l.id;
-                return (
+        {sheetExpanded ? (
+          <View style={[styles.sheet, { height: keyboardVisible ? 176 : TOOL_PANEL_HEIGHT }]}>
+            <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
+              <View style={styles.sheetHandleBar} />
+            </View>
+            <View style={styles.toolHeader}>
+              <View style={styles.toolTabs}>
+                {([false, true] as const).map((isStamp) => (
                   <Pressable
-                    key={l.id}
-                    onPress={() => handleLayoutSelect(l.id)}
-                    style={[styles.layoutChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
+                    key={String(isStamp)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: stampSheetOpen === isStamp }}
+                    onPress={() => { Keyboard.dismiss(); setStampSheetOpen(isStamp); }}
+                    style={[styles.toolTab, stampSheetOpen === isStamp && styles.toolTabOn]}>
+                    <Text style={stampSheetOpen === isStamp ? styles.toolTabTextOn : styles.toolTabText}>
+                      {isStamp ? '각인' : '드로잉'}
+                    </Text>
                   </Pressable>
-                );
-              })}
+                ))}
+              </View>
+              <Pressable onPress={() => animateSheetTo(false)} style={styles.closeTool} accessibilityRole="button">
+                <Text style={styles.headerAction}>접기</Text>
+              </Pressable>
             </View>
 
-            <Text style={styles.sectionLabel}>넣을 것</Text>
-            <View style={styles.chipRowWrap}>
-              {stampItems.map((item) => {
-                const on = stampConfig.enabled?.[item] ?? false;
-                return (
-                  <Pressable
-                    key={item}
-                    onPress={() => handleStampItemToggle(item)}
-                    style={[styles.itemChip, on && styles.itemChipOn]}>
-                    <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
+            {!stampSheetOpen ? (
+              <View style={styles.sheetContent}>
+                <View style={styles.presetRow}>
+                  {PRESETS.map((p) => (
+                    <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
+                      accessibilityRole="button" accessibilityState={{ selected: draft.preset === p.id }}
+                      style={[styles.presetChip, draft.preset === p.id && styles.presetChipOn]}>
+                      <Text style={draft.preset === p.id ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <View style={styles.sliderRow}>
+                  <Text style={styles.sliderLabel}>직선</Text>
+                  <View style={styles.sliderTrack}>
+                    <Slider value={smoothOptions.smooth} onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingComplete={handleSmoothCommit} />
+                  </View>
+                  <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
+                </View>
+                <View style={styles.sliderRow}>
+                  <Text style={styles.sliderLabel}>코너</Text>
+                  <View style={styles.sliderTrack}>
+                    <Slider value={smoothOptions.corner} onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingComplete={handleSmoothCommit} />
+                  </View>
+                  <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
+                </View>
+                <View style={styles.outlineRow}>
+                  <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')} accessibilityRole="button">
+                    <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
                   </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={styles.sectionLabel}>한 줄 문구</Text>
-            <TextInput
-              value={stampConfig.caption ?? ''}
-              onChangeText={handleCaptionChange}
-              placeholder="예) 비 오는 날의 한강"
-              placeholderTextColor={Colors.textMuted}
-              maxLength={40}
-              style={styles.captionInput}
-            />
-
-            <Text style={styles.note}>끌어서 접으면 미리보기를 보면서 고를 수 있어요.</Text>
+                  <Pressable style={styles.outlineBtn} onPress={handleReset} accessibilityRole="button">
+                    <Text style={styles.outlineBtnMuted}>드로잉 초기화</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.stampContent}>
+                <View style={styles.stampTabs}>
+                  {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '넣을 것' }, { id: 'caption', label: '문구' }] as const).map((tab) => (
+                    <Pressable key={tab.id} onPress={() => { Keyboard.dismiss(); setStampTab(tab.id); }}
+                      accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}
+                      style={styles.stampTab}>
+                      <Text style={stampTab === tab.id ? styles.headerAction : styles.toolTabText}>{tab.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <ScrollView key={stampTab} style={styles.stampScroll} contentContainerStyle={styles.stampScrollContent}
+                  keyboardShouldPersistTaps="handled">
+                  {stampTab === 'layout' && (
+                    <View style={styles.layoutChipRow}>
+                      {STAMP_LAYOUTS.map((l) => {
+                        const on = (stampConfig.layout ?? 'row') === l.id;
+                        return (
+                          <Pressable key={l.id} onPress={() => handleLayoutSelect(l.id)}
+                            accessibilityRole="button" accessibilityState={{ selected: on }}
+                            style={[styles.layoutChip, on && styles.presetChipOn]}>
+                            <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                  {stampTab === 'items' && (
+                    <View style={styles.chipRowWrap}>
+                      {stampItems.map((item) => {
+                        const on = stampConfig.enabled?.[item] ?? false;
+                        return (
+                          <Pressable key={item} onPress={() => handleStampItemToggle(item)}
+                            accessibilityRole="button" accessibilityState={{ selected: on }}
+                            style={[styles.itemChip, on && styles.itemChipOn]}>
+                            <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                  {stampTab === 'caption' && (
+                    <View style={styles.captionGroup}>
+                      <Text style={styles.sectionLabel}>한 줄 문구</Text>
+                      <TextInput value={stampConfig.caption ?? ''} onChangeText={handleCaptionChange}
+                        placeholder="예) 비 오는 날의 한강" placeholderTextColor={Colors.textMuted}
+                        accessibilityLabel="각인 한 줄 문구" maxLength={40} style={styles.captionInput}
+                        returnKeyType="done" onSubmitEditing={Keyboard.dismiss} />
+                      <Text style={styles.note}>입력한 문구가 미리보기에 바로 반영됩니다.</Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </View>
+            )}
           </View>
-        </Animated.View>
-      )}
-
-      {/* 실기기 피드백(2026-09-02): 시트를 접어도 손잡이가 편집 화면을 가린다는
-          지적 — 접힌 동안(sheetExpanded===false)은 시트를 화면 밖으로 완전히
-          숨기고, 이 버튼 하나만 남겨 다시 부를 수 있게 한다. */}
-      {!sheetExpanded && (
-        <Pressable
-          onPress={() => animateSheetTo(true)}
-          style={[styles.sheetReopenButton, { bottom: 16 + insets.bottom }]}>
-          <Text style={styles.sheetReopenText}>편집 도구 열기</Text>
-        </Pressable>
-      )}
-    </SafeAreaView>
+        ) : (
+          <View style={styles.reopenBar}>
+            <Pressable onPress={() => animateSheetTo(true)} style={styles.sheetReopenButton} accessibilityRole="button">
+              <Text style={styles.sheetReopenText}>편집 도구 열기</Text>
+            </Pressable>
+          </View>
+        )}
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -933,182 +807,63 @@ const CHIP_ON_BG = 'rgba(255,90,43,0.12)';
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
-  center: {
-    flex: 1,
-    backgroundColor: Colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-  },
-  headerAction: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
-  previewArea: { flex: 1, backgroundColor: Colors.bgCard, overflow: 'hidden' },
-  // 조작 중임을 눈으로도 알 수 있게 — "터치 경계가 명확하지 않다"는 피드백 대응.
-  previewActive: { borderWidth: 2, borderColor: Colors.accent },
-  guideToggle: {
-    position: 'absolute',
-    top: 14,
-    alignSelf: 'center',
-    height: 32,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-    backgroundColor: 'rgba(11,13,16,0.55)',
-  },
+  center: { flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  headerAction: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accent },
+  previewToolbar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 4 },
+  playControls: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  previewArea: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.bg },
+  previewFrame: { backgroundColor: Colors.bgCard, overflow: 'hidden', borderRadius: 12 },
+  previewActive: { outlineWidth: 1, outlineColor: Colors.accent },
+  guideToggle: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 18, borderWidth: 1, borderColor: Colors.borderStrong },
   guideToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
-  guideToggleText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
-  guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
-  // 재생 버튼 + 안내 문구를 왼쪽 위에 묶어 둔다 — guideToggle(가운데 위)과
-  // 안전 영역 가이드의 "X 닫기" 자리(오른쪽 위)를 둘 다 피한 자리.
-  // 실기기 피드백(2026-09-02): guideToggle("인스타 스토리 영역", 가운데 위)과
-  // 같은 줄(top:14)에 뒀더니 가운데로 뻗어 나오면서 글씨가 겹쳤다 — guideToggle
-  // 바로 아래 줄(높이 32 + 여백 8)로 내려 세로로 분리했다.
-  topLeftGroup: {
-    position: 'absolute',
-    top: 54,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    maxWidth: '55%',
-  },
-  // 시트를 완전히 숨겼을 때만 뜨는 버튼 — 화면 맨 아래 가운데.
-  sheetReopenButton: {
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-    height: 40,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    backgroundColor: Colors.accent,
-  },
-  sheetReopenText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
-  cardHint: {
-    flexShrink: 1,
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 9.5,
-    letterSpacing: 1,
-    color: Colors.textMuted,
-  },
-  // 재생/정지 토글 — topLeftGroup 안에서 cardHint 왼쪽에 나란히 놓인다.
-  playToggle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(11,13,16,0.55)',
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-  },
+  guideToggleText: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
+  guideToggleTextOn: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.accent },
+  reopenBar: { alignItems: 'center', paddingVertical: 8 },
+  sheetReopenButton: { height: 40, justifyContent: 'center', paddingHorizontal: 18, borderRadius: 20, backgroundColor: Colors.accent },
+  sheetReopenText: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accentText },
+  cardHint: { flex: 1, fontFamily: Fonts.sans, fontSize: 10, lineHeight: 15, color: Colors.textMuted },
+  playToggle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.borderStrong },
   playToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
   playToggleIcon: { fontSize: 12, color: Colors.text },
-  sectionLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
+  sectionLabel: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
   presetRow: { flexDirection: 'row', gap: 8 },
-  chipRow: { flexDirection: 'row', gap: 8 },
   chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  captionInput: {
-    fontFamily: 'SpaceGrotesk_500Medium',
-    fontSize: 15,
-    color: Colors.text,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderStrong,
-    paddingVertical: 8,
-  },
-  presetChip: {
-    flex: 1,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.border,
-  },
+  captionGroup: { gap: 8 },
+  captionInput: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.text, borderBottomWidth: 1, borderBottomColor: Colors.borderStrong, paddingVertical: 8 },
+  presetChip: { flex: 1, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
   presetChipOn: { backgroundColor: Colors.accent },
-  presetChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  presetChipTextOn: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.accentText },
-  // 각인 프리셋(6개, 2026-09-02)용 — presetChip과 달리 flex:1로 한 줄에 욱여넣지
-  // 않고 내용만큼만 차지하며 줄바꿈된다.
+  presetChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  presetChipTextOn: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accentText },
   layoutChipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  layoutChip: {
-    height: 40,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.border,
-  },
-  sliderHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginTop: 8,
-  },
-  sliderValue: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
-  itemChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-  },
+  layoutChip: { minHeight: 40, paddingHorizontal: 16, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
+  sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 36 },
+  sliderLabel: { width: 30, fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  sliderTrack: { flex: 1 },
+  sliderValue: { width: 46, textAlign: 'right', fontFamily: Fonts.sans, fontSize: 12, color: Colors.accent },
+  itemChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 19, borderWidth: 1, borderColor: Colors.borderStrong },
   itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
-  itemChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  itemChipTextOn: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accent },
-  outlineRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
-  outlineBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outlineBtnText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.text },
-  outlineBtnMuted: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  note: {
-    fontFamily: 'SpaceGrotesk_500Medium',
-    fontSize: 11,
-    lineHeight: 17,
-    color: Colors.textMuted,
-    marginTop: 6,
-  },
-  hint: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11 },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: Colors.bgCard,
-    borderTopLeftRadius: Radius.pill,
-    borderTopRightRadius: Radius.pill,
-    borderTopWidth: 1,
-    borderColor: Colors.border,
-  },
-  sheetHandleArea: {
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  sheetHandleBar: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.borderStrong,
-  },
-  sheetContent: { paddingHorizontal: 24, gap: 12 },
-  // 각인 시트에서 sheetContent(패딩·gap 포함)의 첫 자식으로 쓴다 — 가로 패딩·위
-  // 여백은 부모(sheetContent·sheetHandleArea)가 이미 주므로 여기서는 두지 않는다.
-  sheetHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sheetTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: Colors.text },
+  itemChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  itemChipTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
+  outlineRow: { flexDirection: 'row', gap: 8 },
+  outlineBtn: { flex: 1, height: 36, borderRadius: 18, borderWidth: 1, borderColor: Colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
+  outlineBtnText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.text },
+  outlineBtnMuted: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
+  hint: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 11 },
+  sheet: { flexShrink: 0, backgroundColor: Colors.bgCard, borderTopLeftRadius: Radius.pill, borderTopRightRadius: Radius.pill, borderTopWidth: 1, borderColor: Colors.border },
+  sheetHandleArea: { alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
+  sheetHandleBar: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderStrong },
+  toolHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 8 },
+  toolTabs: { flexDirection: 'row', gap: 16 },
+  toolTab: { minHeight: 36, justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  toolTabOn: { borderBottomColor: Colors.accent },
+  toolTabText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  toolTabTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.text },
+  closeTool: { minHeight: 36, justifyContent: 'center', paddingLeft: 16 },
+  sheetContent: { paddingHorizontal: 20, gap: 8 },
+  stampContent: { flex: 1 },
+  stampTabs: { flexDirection: 'row', paddingHorizontal: 20, gap: 24 },
+  stampTab: { minHeight: 32, justifyContent: 'center' },
+  stampScroll: { flex: 1 },
+  stampScrollContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
 });

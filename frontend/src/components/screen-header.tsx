@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Colors } from '@/constants/theme';
+import { Colors, Fonts } from '@/constants/theme';
 
 // "3안" 시안의 화면 상단 행 — 네이티브 내비 바 대신 쓴다(_layout.tsx headerShown: false).
 // 왼쪽 뒤로가기(←)·가운데 제목·오른쪽 슬롯. 시안 기준: ← 는 #7C8894 17px,
@@ -49,5 +49,5 @@ const styles = StyleSheet.create({
   side: { minWidth: 40, justifyContent: 'center' },
   sideRight: { alignItems: 'flex-end' },
   back: { fontSize: 20, color: Colors.textMuted, lineHeight: 22 },
-  title: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 13, color: Colors.text },
+  title: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
 });

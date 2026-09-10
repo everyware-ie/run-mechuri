@@ -4,7 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/screen-header';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { formatDistanceKm, formatDuration, formatHeartRate, formatPace } from '@/lib/stamp-format';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -227,8 +227,8 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   refresh: { fontSize: 18, color: Colors.textMuted },
-  emptyTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: Colors.text, textAlign: 'center' },
-  emptyBody: { fontFamily: 'SpaceGrotesk_500Medium', color: Colors.textMuted, textAlign: 'center', fontSize: 13 },
+  emptyTitle: { fontFamily: Fonts.sansBold, fontSize: 16, color: Colors.text, textAlign: 'center' },
+  emptyBody: { fontFamily: Fonts.sans, color: Colors.textMuted, textAlign: 'center', fontSize: 13 },
   retryBtn: {
     marginTop: Spacing.sm,
     paddingHorizontal: 18,
@@ -239,9 +239,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  retryBtnText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.text },
+  retryBtnText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.text },
   sourceLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.6,
     color: Colors.textMuted,
@@ -270,15 +270,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   thumbFailed: { backgroundColor: 'rgba(255,90,43,0.10)' },
-  thumbGlyph: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 18, color: Colors.textMuted },
+  thumbGlyph: { fontFamily: Fonts.sans, fontSize: 18, color: Colors.textMuted },
   thumbGlyphFailed: { color: Colors.accent },
   rowMain: { flex: 1, gap: 4 },
-  rowTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 15, color: Colors.text },
+  rowTitle: { fontFamily: Fonts.sansBold, fontSize: 15, color: Colors.text },
   rowTitleMuted: { color: Colors.textMuted },
-  rowMeta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10.5, color: Colors.textMuted, lineHeight: 16 },
-  retryInline: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
+  rowMeta: { fontFamily: Fonts.sans, fontSize: 10.5, color: Colors.textMuted, lineHeight: 16 },
+  retryInline: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.accent },
   footerNote: {
-    fontFamily: 'SpaceGrotesk_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 11,
     lineHeight: 17,
     color: Colors.textMuted,
