@@ -150,6 +150,7 @@ export default function ShareScreen() {
           smoothOptions: draft.smoothOptions,
           stampConfig: draft.stampConfig,
           backgroundImagePath,
+          backgroundPhoto: draft.backgroundPhoto,
           outputPath: result.outputPath,
           createdAt: new Date().toISOString(),
         });

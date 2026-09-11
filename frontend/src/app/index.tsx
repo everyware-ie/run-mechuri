@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
@@ -17,10 +17,13 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 결과물 목록(있으면) → 쇼케이스(§4, 여유 시라 v0는 생략)
 //
 // 디자인: "3안" 시안 S1 — "메추리 / ARCHIVE · N" 헤더 + 최근 결과물 큰 카드(하단
-// 오버레이 + ▶) + "내가 만든 것" 2열 그리드. 시안의 하단 탭(보관함/가져오기)은
+// 메타정보 + ▶) + "내가 만든 것" 2열 그리드. 시안의 하단 탭(보관함/가져오기)은
 // 2026-08-25 결정("하단 탭을 쓰지 않는다")으로 빠지고, "새로 만들기"가 그 자리를 맡는다.
 
 export default function HomeScreen() {
+  const { width } = useWindowDimensions();
+  const heroSize = Math.max(1, width - 48);
+  const gridSize = Math.max(1, (heroSize - Spacing.sm) / 2);
   const [results, setResults] = useState<SavedResult[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [checkedConnection, setCheckedConnection] = useState(false);
@@ -75,6 +78,8 @@ export default function HomeScreen() {
           text: '확인',
           onPress: () => {
             loadDraft({
+              backgroundImagePath: null,
+              backgroundPhoto: undefined,
               selectedRun: draft.run,
               track: draft.track,
               preset: draft.preset,
@@ -92,6 +97,7 @@ export default function HomeScreen() {
       selectedRun: draft.run,
       track: draft.track,
       backgroundImagePath: draft.backgroundImagePath,
+      backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
@@ -138,20 +144,17 @@ export default function HomeScreen() {
 
             {hero ? (
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
-                {/* 실기기 피드백(2026-09-02): run/stampConfig을 넘기면 RouteThumbnail이
-                    사용자가 고른 각인 프리셋을 원래 크기·자리 그대로 그려서, 바로
-                    아래 heroOverlay(이 화면 전용, 항상 같은 자리에 거리+날짜만
-                    보여주는 고정 표시)와 겹쳐 두 개의 서로 다른 스타일 텍스트가
-                    같이 보였다("위에껀 km+날짜인데 밑에껀 작은 글씨로 km만"도 이
-                    두 표시가 겹친 것). 각인은 편집·공유 화면에서 보여줄 대상이라
-                    홈 목록에서는 안 넘긴다 — 경로 선만 그려진다. */}
                 <RouteThumbnail
                   points={hero.track.coordinates}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
-                  size={HERO_SIZE}
+                  size={heroSize}
+                  run={hero.run}
+                  stampConfig={hero.stampConfig}
+                  backgroundImagePath={hero.backgroundImagePath}
+                  framing="content"
                 />
-                <View style={styles.heroOverlay}>
+                <View style={styles.heroMeta}>
                   <View>
                     <Text style={styles.heroDistance}>
                       {(hero.distanceMeters / 1000).toFixed(2)}
@@ -182,17 +185,22 @@ export default function HomeScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <Pressable style={styles.cell} onPress={() => router.push(`/result/${item.id}`)}>
+          <Pressable style={{ width: gridSize }} onPress={() => router.push(`/result/${item.id}`)}>
             <View style={styles.gridThumb}>
-              {/* 위 heroCard와 같은 이유로 run/stampConfig 안 넘김 — gridLabel(항상
-                  km만)과 각인이 겹쳐 보이지 않게. */}
               <RouteThumbnail
                 points={item.track.coordinates}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
-                size={GRID_SIZE}
+                size={gridSize}
+                run={item.run}
+                stampConfig={item.stampConfig}
+                backgroundImagePath={item.backgroundImagePath}
+                framing="content"
               />
+            </View>
+            <View style={styles.gridMeta}>
               <Text style={styles.gridLabel}>{(item.distanceMeters / 1000).toFixed(2)} km</Text>
+              <Text style={styles.gridDate}>{item.runDate.slice(0, 10)}</Text>
             </View>
           </Pressable>
         )}
@@ -202,7 +210,6 @@ export default function HomeScreen() {
 }
 
 const HERO_SIZE = 330;
-const GRID_SIZE = 168;
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
@@ -230,17 +237,14 @@ const styles = StyleSheet.create({
   draftMeta: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 3 },
   draftChevron: { color: Colors.accent, fontSize: 15 },
   heroCard: {
-    height: HERO_SIZE,
     borderRadius: Radius.card,
     overflow: 'hidden',
     backgroundColor: Colors.bgCard,
     alignItems: 'center',
   },
-  heroOverlay: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 18,
+  heroMeta: {
+    width: '100%',
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
@@ -289,7 +293,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   row: { gap: Spacing.sm },
-  cell: { flex: 1 },
   gridThumb: {
     width: '100%',
     aspectRatio: 1,
@@ -299,10 +302,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  gridMeta: { paddingTop: 8, paddingBottom: 8, gap: 3 },
+  gridDate: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
   gridLabel: {
-    position: 'absolute',
-    left: 12,
-    bottom: 10,
     fontFamily: Fonts.sans,
     fontSize: 10,
     color: Colors.text,

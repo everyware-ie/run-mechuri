@@ -135,3 +135,12 @@ tags: [running, mvp, scope, stamp, roles, font, testflight]
 - [ ] Pretendard 적용
 - [ ] 편집 화면 상단 재생 버튼 글씨 (phs00)
 - [ ] 성능 개선 리서치 (jminkkk, JiEung2)
+
+## 2026-09-11 사진 배경 구현 시 보완
+
+phs00이 갤러리·촬영 사진 구현을 요청하며 두 가지를 확인했다.
+
+- 다시 열어서 구도를 바꿀 수 있도록 편집용 사진과 조정값을 앱 안에 보관한다. 사진 원본을 복사하지 않던 규칙은 사진에 한해 개정한다.
+- 정확한 iCloud 다운로드 진행률은 사용자 경험상 유리하지만, MVP 단계와 공수를 고려해 이번에는 시스템 안내와 앱의 작업 안내·취소를 사용한다. 정확한 진행률은 후속 개선 대상으로 문서화한다.
+
+정본은 [배경 선택 §4 사진 처리·§6 불러오기와 대기](../specs/frd/background-selection.md), 구현 및 후속 항목은 [사진 배경 구현 노트](../product/features/photo-backgrounds.md)에 둔다.

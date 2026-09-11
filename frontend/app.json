@@ -15,11 +15,16 @@
         "NSHealthUpdateUsageDescription": "메추리 런은 건강 데이터를 읽기만 하며 새로 쓰거나 수정하지 않습니다.",
         "NSLocationWhenInUseUsageDescription": "러닝 경로가 어느 지역인지 알아내 '장소' 각인에 넣는 데만 씁니다. 위치를 추적하거나 저장하지 않습니다.",
         "ITSAppUsesNonExemptEncryption": false,
-        "LSApplicationQueriesSchemes": ["instagram-stories", "instagram"],
+        "LSApplicationQueriesSchemes": [
+          "instagram-stories",
+          "instagram"
+        ],
         "FacebookAppID": "1057312323881185",
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["fb1057312323881185"]
+            "CFBundleURLSchemes": [
+              "fb1057312323881185"
+            ]
           }
         ]
       },
@@ -64,10 +69,18 @@
       [
         "expo-media-library",
         {
-          "savePhotosPermission": "결과물 클립을 사진 앱에 저장하는 데 사용합니다."
+          "savePhotosPermission": "완성한 영상과 직접 촬영한 사진을 사진 앱에 저장합니다."
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": false,
+          "cameraPermission": "사진을 직접 찍어 러닝 드로잉의 배경으로 사용합니다.",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
