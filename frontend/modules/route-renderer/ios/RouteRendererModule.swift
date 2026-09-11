@@ -610,8 +610,8 @@ public class RouteRendererModule: Module {
     return String(format: "%d'%02d\"/km", total / 60, total % 60)
   }
 
-  private func formatHeartRate(_ bpm: Double) -> String {
-    String(format: "%.0fbpm", bpm)
+  private func formatHeartRate(_ bpm: Double, includeUnit: Bool = true) -> String {
+    String(format: "%.0f", bpm) + (includeUnit ? "bpm" : "")
   }
 
   /// 러닝한 날 (ISO) → "MM.dd". route-preview.tsx formatStampDate와 같은 규칙.
@@ -629,6 +629,30 @@ public class RouteRendererModule: Module {
     return String(format: "%02d.%02d", m, day)
   }
 
+  // TS stamp-columns.ts와 동일한 보수적 글자 폭. 통계 칸 배치에만 사용한다.
+  private func estimateStampTextWidth(_ text: String, _ size: CGFloat) -> CGFloat {
+    text.unicodeScalars.reduce(CGFloat.zero) { sum, char in
+      let em: CGFloat = char.value > 127 || "mMwW@".unicodeScalars.contains(char)
+        ? 1.05 : " .,:;\'\"/".unicodeScalars.contains(char) ? 0.45 : 0.72
+      return sum + size * em
+    }
+  }
+
+  // TS fitStampColumns와 동일: 간격을 확보하고 통계 글자를 함께 축소한다.
+  private func fitStampColumns(_ widths: [CGFloat], _ availableWidth: CGFloat, _ minGap: CGFloat) -> (scale: CGFloat, offsets: [CGFloat]) {
+    let gaps = CGFloat(max(0, widths.count - 1))
+    let total = widths.reduce(0, +)
+    let scale = min(1, max(1, availableWidth - gaps * minGap) / max(1, total))
+    let gap = gaps > 0 ? (availableWidth - total * scale) / gaps : 0
+    var cursor: CGFloat = 0
+    let offsets = widths.map { width -> CGFloat in
+      let x = cursor
+      cursor += width * scale + gap
+      return x
+    }
+    return (scale, offsets)
+  }
+
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
     let isComplete = progressFraction >= 1
     if stamp.stampMode == "hidden" { return }
@@ -644,7 +668,10 @@ public class RouteRendererModule: Module {
       if !s.isEmpty { keyed.append(("date", s)) }
     }
     if stamp.stampItems.place && !stamp.placeName.isEmpty { keyed.append(("place", stamp.placeName)) }
-    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { keyed.append(("heartRate", formatHeartRate(hr))) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate {
+      let hasUnitLabel = ["bar", "corner", "glass", "rail"].contains(stamp.stampLayout)
+      keyed.append(("heartRate", formatHeartRate(hr, includeUnit: !hasUnitLabel)))
+    }
 
     let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
     if keyed.isEmpty && caption.isEmpty { return }
@@ -723,6 +750,10 @@ public class RouteRendererModule: Module {
     let heroKeys = ["distance", "time", "pace"]
     func hasKey(_ k: String) -> Bool { keyed.contains { $0.0 == k } }
     func valueFor(_ k: String) -> String { keyed.first { $0.0 == k }?.1 ?? "" }
+    func finalValueFor(_ k: String) -> String {
+      k == "distance" ? formatDistanceKm(stamp.distanceMeters)
+        : k == "time" ? formatDuration(stamp.durationSeconds) : valueFor(k)
+    }
     // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
     func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
       let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
@@ -777,13 +808,13 @@ public class RouteRendererModule: Module {
       }
 
       if !metaItems.isEmpty {
-        let font = UIFont.monospacedSystemFont(ofSize: metaFont, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        var cursorX = leftX
-        for (key, val) in metaItems {
-          let text = key == "heartRate" ? "\(val)BPM" : val
-          draw(text, CGPoint(x: cursorX, y: metaBaseline), font, .left)
-          cursorX += (text as NSString).size(withAttributes: attrs).width + 14 * u
+        let metaGap = 14 * u
+        let widths = metaItems.map { estimateStampTextWidth(finalValueFor($0.0), metaFont) }
+        let rowWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + metaGap * CGFloat(metaItems.count - 1))
+        let fitted = fitStampColumns(widths, rowWidth, min(metaGap, 12 * M))
+        let font = UIFont.monospacedSystemFont(ofSize: metaFont * fitted.scale, weight: .medium)
+        for (i, item) in metaItems.enumerated() {
+          draw(item.1, CGPoint(x: leftX + fitted.offsets[i], y: metaBaseline), font, .left)
         }
       }
       if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
@@ -801,7 +832,6 @@ public class RouteRendererModule: Module {
       let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
       let dateText = valueFor("date")
       let statOrder = ["distance", "time", "pace", "heartRate"].filter(hasKey)
-      let statWeight: [String: CGFloat] = ["distance": 1.3, "time": 1, "pace": 1, "heartRate": 0.9]
 
       let headerFont = 15 * u
       let labelFont = 9 * u
@@ -822,15 +852,23 @@ public class RouteRendererModule: Module {
         fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
       }
       if !statOrder.isEmpty {
-        let totalWeight = statOrder.reduce(0) { $0 + (statWeight[$1] ?? 1) }
+        let widths = statOrder.map { key -> CGFloat in
+          let finalValue = key == "distance" ? formatDistanceKm(stamp.distanceMeters)
+            : key == "time" ? formatDuration(stamp.durationSeconds) : valueFor(key)
+          return max(estimateStampTextWidth(statLabel[key] ?? "", labelFont),
+            estimateStampTextWidth(finalValue, (key == "distance" ? 22 : 18) * u))
+        }
         let totalWidth = rightX - leftX
+        let total = widths.reduce(0, +)
+        let gaps = CGFloat(max(0, statOrder.count - 1))
+        let fittedScale = min(1, max(1, totalWidth - gaps * 12 * M) / max(1, total))
+        let gap = gaps > 0 ? (totalWidth - total * fittedScale) / gaps : 0
         var cursorX = leftX
-        for key in statOrder {
-          let colWidth = (statWeight[key] ?? 1) / totalWeight * totalWidth
+        for (index, key) in statOrder.enumerated() {
           let isDist = key == "distance"
-          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u, weight: .bold), .left)
-          cursorX += colWidth
+          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont * fittedScale, weight: .medium), .left, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u * fittedScale, weight: .bold), .left)
+          cursorX += widths[index] * fittedScale + gap
         }
       }
       return
@@ -883,7 +921,8 @@ public class RouteRendererModule: Module {
       let dateText = valueFor("date")
       let hasHeader = !caption.isEmpty || !dateText.isEmpty
 
-      let padX = 20 * u
+      let panelWidth = canvasSize.width - 32 * M
+      let padX = min(20 * u, panelWidth * 0.15)
       let padY = 20 * u
       let gap = 14 * u
       let headerFont = 13 * u
@@ -900,18 +939,14 @@ public class RouteRendererModule: Module {
       if !statItems.isEmpty { inner += (hero != nil ? gap : hasHeader ? gap : 0) + statLineH }
       let panelHeight = inner + padY * 2
 
-      // route-preview.tsx와 같은 이유 — 고정 균등폭 칸이 "장소"처럼 긴 값과
-      // "페이스"를 겹쳐 보이게 했다. 실제 글자 폭(추정)만큼만 차지하는 커서
-      // 방식으로 바꿔 절대 안 겹치게 하고, 필요하면 패널을 넓힌다.
-      let statWidths: [CGFloat] = statItems.map { (pair: (String, String)) -> CGFloat in
-        let labelW = CGFloat((statLabel[pair.0] ?? "").count) * labelFont * 0.62
-        let valueW = CGFloat(pair.1.count) * valueFont * 0.62
-        return max(labelW, valueW)
+      // 카드 너비를 유지하고 내부 통계만 가용 폭에 맞춘다(TS와 동일).
+      let contentWidth = panelWidth - padX * 2
+      let statWidths: [CGFloat] = statItems.map { pair in
+        max(estimateStampTextWidth(statLabel[pair.0] ?? "", labelFont),
+          estimateStampTextWidth(finalValueFor(pair.0), valueFont))
       }
-      let statRowWidth = statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1))
-      let nominalContentWidth = canvasSize.width - 32 * M - padX * 2
-      let contentWidth = max(nominalContentWidth, statRowWidth)
-      let panelWidth = contentWidth + padX * 2
+      let rowWidth = min(contentWidth, statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1)))
+      let fitted = fitStampColumns(statWidths, rowWidth, min(colGap, 12 * M))
 
       let panelLeft = 16 * M + CGFloat(stamp.stampX)
       let panelRight = panelLeft + panelWidth
@@ -940,11 +975,10 @@ public class RouteRendererModule: Module {
       if !statItems.isEmpty {
         cursor += (hero != nil ? gap : hasHeader ? gap : 0) + labelFont * 0.85
         let valueY = cursor + valueFont * 1.05
-        var colX = panelLeft + padX
         for (i, item) in statItems.enumerated() {
-          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
-          colX += statWidths[i] + colGap
+          let colX = panelLeft + padX + fitted.offsets[i]
+          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont * fitted.scale, weight: .medium), .left, color: mutedColor)
+          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont * fitted.scale, weight: .bold), .left)
         }
       }
       return
@@ -1063,14 +1097,12 @@ public class RouteRendererModule: Module {
     if !items.isEmpty {
       let fontSize: CGFloat = 28 * s
       let gap: CGFloat = 22 * s
-      let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
-      let widths = items.map { ($0 as NSString).size(withAttributes: attrs).width }
-      let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
-      var cursorX = centerX - totalWidth / 2
+      let widths = keyed.map { estimateStampTextWidth(finalValueFor($0.0), fontSize) }
+      let totalWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + gap * CGFloat(items.count - 1))
+      let fitted = fitStampColumns(widths, totalWidth, min(gap, 12 * M))
+      let font = UIFont.monospacedSystemFont(ofSize: fontSize * fitted.scale, weight: .bold)
       for (i, text) in items.enumerated() {
-        draw(text, CGPoint(x: cursorX, y: baseY), font, .left)
-        cursorX += widths[i] + gap
+        draw(text, CGPoint(x: centerX - totalWidth / 2 + fitted.offsets[i], y: baseY), font, .left)
       }
     }
   }

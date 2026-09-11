@@ -1,3 +1,4 @@
+import { estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import { Animated, View } from 'react-native';
@@ -1087,10 +1088,14 @@ function stampLayoutDescriptors(
       case 'place':
         return config.placeName;
       case 'heartRate':
-        return run.averageHeartRate !== undefined ? formatHeartRate(run.averageHeartRate) : '';
+        return run.averageHeartRate !== undefined
+          ? formatHeartRate(run.averageHeartRate, !['bar', 'corner', 'glass', 'rail'].includes(config.layout ?? 'row'))
+          : '';
     }
   };
 
+  const finalValue = (item: StampItem) => item === 'distance' ? formatDistanceKm(run.distanceMeters)
+    : item === 'time' ? formatDuration(run.durationSeconds) : value(item);
   const caption = (config.caption ?? '').trim();
   const layout: StampLayout = config.layout ?? 'row';
   const ALL_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
@@ -1160,12 +1165,13 @@ function stampLayoutDescriptors(
 
     if (hasMeta) {
       const metaGap = 14 * u;
-      const charW = metaFont * 0.62;
-      let cursorX = leftX;
+      const widths = metaItems.map(item => estimateStampTextWidth(finalValue(item), metaFont));
+      const rowWidth = Math.min(CANVAS_WIDTH - 48 * M,
+        widths.reduce((a, b) => a + b, 0) + metaGap * (metaItems.length - 1));
+      const fitted = fitStampColumns(widths, rowWidth, Math.min(metaGap, 12 * M));
       metaItems.forEach((item, i) => {
-        const text = item === 'heartRate' ? `${value(item)}BPM` : value(item);
-        nodes.push({ key: `meta-${i}`, x: cursorX, y: metaBaseline, size: metaFont, family: 'JetBrainsMono_500Medium', text, anchor: 'start' });
-        cursorX += text.length * charW + metaGap;
+        const text = value(item);
+        nodes.push({ key: `meta-${i}`, x: leftX + fitted.columns[i].x, y: metaBaseline, size: metaFont * fitted.scale, family: 'JetBrainsMono_500Medium', text, anchor: 'start' });
       });
     }
     if (heroKey) {
@@ -1187,7 +1193,6 @@ function stampLayoutDescriptors(
     const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y;
     const dateText = has('date') ? value('date') : '';
     const statOrder = (['distance', 'time', 'pace', 'heartRate'] as StampItem[]).filter(has);
-    const statWeight: Partial<Record<StampItem, number>> = { distance: 1.3, time: 1, pace: 1, heartRate: 0.9 };
 
     const headerFont = 15 * u;
     const dateFont = 11 * u;
@@ -1214,23 +1219,26 @@ function stampLayoutDescriptors(
       rects.push({ key: 'divider', x: leftX, y: dividerY, width: rightX - leftX, height: Math.max(1, 1 * u), rx: 0, fill: 'rgba(255,255,255,0.28)' });
     }
     if (statOrder.length > 0) {
-      const totalWeight = statOrder.reduce((sum, item) => sum + (statWeight[item] ?? 1), 0);
-      const totalWidth = rightX - leftX;
-      let cursorX = leftX;
-      statOrder.forEach((item) => {
-        const colWidth = ((statWeight[item] ?? 1) / totalWeight) * totalWidth;
+      const widths = statOrder.map(item => {
+        const finalValue = item === 'distance' ? formatDistanceKm(run.distanceMeters)
+          : item === 'time' ? formatDuration(run.durationSeconds) : value(item);
+        return Math.max(estimateStampTextWidth(STAT_LABEL[item], labelFont),
+          estimateStampTextWidth(finalValue, (item === 'distance' ? 22 : 18) * u));
+      });
+      const fitted = fitStampColumns(widths, rightX - leftX, 12 * M);
+      statOrder.forEach((item, index) => {
+        const cursorX = leftX + fitted.columns[index].x;
         const isDist = item === 'distance';
-        nodes.push({ key: `label-${item}`, x: cursorX, y: labelBaseline, size: labelFont, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
+        nodes.push({ key: `label-${item}`, x: cursorX, y: labelBaseline, size: labelFont * fitted.scale, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
         nodes.push({
           key: `value-${item}`,
           x: cursorX,
           y: valueBaseline,
-          size: (isDist ? 22 : 18) * u,
+          size: (isDist ? 22 : 18) * u * fitted.scale,
           family: 'SpaceGrotesk_700Bold',
           text: value(item),
           anchor: 'start',
         });
-        cursorX += colWidth;
       });
     }
     return { texts: nodes, rects };
@@ -1299,7 +1307,8 @@ function stampLayoutDescriptors(
     const dateText = has('date') ? value('date') : '';
     const hasHeader = !!caption || !!dateText;
 
-    const padX = 20 * u;
+    const panelWidth = CANVAS_WIDTH - 32 * M;
+    const padX = Math.min(20 * u, panelWidth * 0.15);
     const padY = 20 * u;
     const gap = 14 * u;
     const headerFont = 13 * u;
@@ -1316,21 +1325,14 @@ function stampLayoutDescriptors(
     if (statItems.length > 0) inner += (heroKey ? gap : hasHeader ? gap : 0) + statLineH;
     const panelHeight = inner + padY * 2;
 
-    // 실기기 피드백(2026-09-02): 통계 칸을 고정 폭으로 균등 분할했더니 "장소"처럼
-    // 값이 긴 항목이 옆 칸("페이스")과 겹쳐 보였다. 칸마다 실제 글자 폭(추정)만큼만
-    // 차지하고 그 뒤에 최소 간격을 두는 커서 방식으로 바꿔서 절대 안 겹치게 한다.
-    // 그 대신 항목이 많거나 값이 아주 길면 패널이 원래 여백보다 넓어질 수 있다 —
-    // 겹치는 것보다는 낫다는 판단.
-    const statWidths = statItems.map((item) => {
-      const labelW = STAT_LABEL[item].length * labelFont * 0.62;
-      const valueW = value(item).length * valueFont * 0.62;
-      return Math.max(labelW, valueW);
-    });
-    const statRowWidth = statWidths.reduce((a, b) => a + b, 0) + colGap * Math.max(0, statItems.length - 1);
-
-    const nominalContentWidth = CANVAS_WIDTH - 32 * M - padX * 2;
-    const contentWidth = Math.max(nominalContentWidth, statRowWidth);
-    const panelWidth = contentWidth + padX * 2;
+    // 카드가 화면 밖으로 커지지 않도록 내부 통계만 가용 폭에 맞춘다.
+    const contentWidth = panelWidth - padX * 2;
+    const statWidths = statItems.map(item => Math.max(
+      estimateStampTextWidth(STAT_LABEL[item], labelFont),
+      estimateStampTextWidth(finalValue(item), valueFont)));
+    const rowWidth = Math.min(contentWidth,
+      statWidths.reduce((a, b) => a + b, 0) + colGap * Math.max(0, statItems.length - 1));
+    const fitted = fitStampColumns(statWidths, rowWidth, Math.min(colGap, 12 * M));
 
     const panelLeft = 16 * M + config.position.x;
     const panelRight = panelLeft + panelWidth;
@@ -1376,11 +1378,10 @@ function stampLayoutDescriptors(
     if (statItems.length > 0) {
       cursor += (heroKey ? gap : hasHeader ? gap : 0) + labelFont * 0.85;
       const valueY = cursor + valueFont * 1.05;
-      let colX = panelLeft + padX;
       statItems.forEach((item, i) => {
-        nodes.push({ key: `stat-label-${item}`, x: colX, y: cursor, size: labelFont, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
-        nodes.push({ key: `stat-value-${item}`, x: colX, y: valueY, size: valueFont, family: 'SpaceGrotesk_700Bold', text: value(item), anchor: 'start' });
-        colX += statWidths[i] + colGap;
+        const colX = panelLeft + padX + fitted.columns[i].x;
+        nodes.push({ key: `stat-label-${item}`, x: colX, y: cursor, size: labelFont * fitted.scale, family: 'JetBrainsMono_500Medium', text: STAT_LABEL[item], anchor: 'start', muted: true });
+        nodes.push({ key: `stat-value-${item}`, x: colX, y: valueY, size: valueFont * fitted.scale, family: 'SpaceGrotesk_700Bold', text: value(item), anchor: 'start' });
       });
     }
     return { texts: nodes, rects };
@@ -1518,21 +1519,20 @@ function stampLayoutDescriptors(
   if (items.length > 0) {
     const fontSize = 28 * s;
     const gap = 22 * s;
-    const charWidth = fontSize * 0.62;
-    const widths = items.map((str) => str.length * charWidth);
-    const totalWidth = widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1);
-    let cursorX = centerX - totalWidth / 2;
+    const widths = activeItems.map(item => estimateStampTextWidth(finalValue(item), fontSize));
+    const totalWidth = Math.min(CANVAS_WIDTH - 48 * M,
+      widths.reduce((a, b) => a + b, 0) + gap * (items.length - 1));
+    const fitted = fitStampColumns(widths, totalWidth, Math.min(gap, 12 * M));
     items.forEach((text, i) => {
       nodes.push({
         key: `item-${i}`,
-        x: cursorX,
+        x: centerX - totalWidth / 2 + fitted.columns[i].x,
         y: baseY,
-        size: fontSize,
+        size: fontSize * fitted.scale,
         family: 'JetBrainsMono_700Bold',
         text,
         anchor: 'start',
       });
-      cursorX += widths[i] + gap;
     });
   }
 
@@ -1632,7 +1632,7 @@ export type CanvasRect = { x: number; y: number; width: number; height: number }
 // 자리·대략적인 크기는 거의 안 변하므로, 히트테스트·선택 박스 목적으로는 완주
 // 시점(progressFraction=1) 값으로 고정 계산해도 충분하다 — 매 프레임 재계산할
 // 필요가 없다.
-export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasRect | null {
+export function computeStampBounds(run: RunRecord, config: StampConfig, forThumbnail = false): CanvasRect | null {
   const { texts, rects } = stampLayoutDescriptors(run, config, 1);
   if (texts.length === 0 && rects.length === 0) return null;
 
@@ -1641,13 +1641,17 @@ export function computeStampBounds(run: RunRecord, config: StampConfig): CanvasR
   let right = -Infinity;
   let top = Infinity;
   let bottom = -Infinity;
+  // 썸네일은 한글 문구·폭이 넓은 영문도 잘리지 않도록 보수적으로 추정한다.
+  const textWidth = (text: string, size: number) => forThumbnail
+    ? Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 || /[MW@%]/.test(char) ? 1.1 : 0.7), 0)
+    : text.length * size * 0.62;
   for (const n of texts) {
     const width = n.parts
-      ? n.parts.reduce((sum, p) => sum + p.text.length * p.size * 0.62, 0)
-      : n.text.length * n.size * 0.62;
+      ? n.parts.reduce((sum, p) => sum + textWidth(p.text, p.size), 0)
+      : textWidth(n.text, n.size);
     const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
     const nodeRight = nodeLeft + width;
-    const nodeTop = n.y - n.size * 0.85; // 대략적인 ascent
+    const nodeTop = n.y - n.size * (forThumbnail ? 1.2 : 0.85);
     const nodeBottom = n.y + n.size * 0.3; // 대략적인 descent
     left = Math.min(left, nodeLeft);
     right = Math.max(right, nodeRight);
