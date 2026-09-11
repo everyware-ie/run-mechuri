@@ -60,7 +60,7 @@
 - **값의 움직임**(§7-3): "항상" 모드는 `progressFraction`(0~1)에 따라 거리·시간이 0에서 최종값까지 카운트업. 거리는 그려진 선 길이가 아니라 `run.distanceMeters`를 씀 — 다듬기 세기를 바꿔도 표시 거리가 안 흔들림
 - **페이스·심박의 근사**: FRD는 "그 구간 값"/"그 시점 bpm"을 요구하지만, `RunRecord`가 평균값(`averagePaceSecPerKm`/`averageHeartRate`)만 갖고 있어(HealthKit 브릿지가 시계열을 안 읽어옴) 두 값 다 진행 내내 평균값으로 고정 표시한다. 시계열 데이터를 나중에 붙이면 이 근사를 없앨 수 있다
 - **안전 영역 가이드**(§7-1): `route-preview.tsx`의 `SafeAreaGuide` — 상단 14%·하단 20%(제안값, `[확인 필요]`) 띠를 편집 중에만 보여준다(`showSafeAreaGuide` prop, `edit.tsx`에서만 켬). 결과물(Swift 렌더러)에는 안 그림. 드로잉에도 같은 가이드가 적용됨(같은 Svg 안이라 자연히 함께 보임)
-- **레이아웃**: 가로 한 줄, 하단 안전 영역 위 기본 자리(§7-5 제안 그대로)에서 사용자가 끌어서 옮긴 오프셋을 더함. 모노스페이스 가정으로 문자 수×고정폭 너비를 추정해 가운데 정렬 — TS(`route-preview.tsx` StampLayer)·Swift(`drawStamps`) 양쪽 동일 수식
+- **레이아웃**: 가로 한 줄, 하단 안전 영역 위 기본 자리(§7-5 제안 그대로)에서 사용자가 끌어서 옮긴 오프셋을 더함. 문자 종류별 폭을 추정하고 가용 너비에 맞춰 가운데 정렬 — TS(`route-preview.tsx` StampLayer)·Swift(`drawStamps`) 양쪽 동일 수식(2026-09-11 보완, [각인 너비 수정](stamp-layout-fixes.md))
 - **폰트 불일치(v0 근사)**: 미리보기는 로드된 JetBrains Mono, Swift 최종 렌더러는 시스템 모노스페이스(`UIFont.monospacedSystemFont`) — 폰트 파일을 네이티브 자산으로 번들링하는 파이프라인이 아직 없어서. 프리셋 글로우 반경 근사와 같은 종류의 타협
 - **값 저장**: `CreationDraft`·`Draft`·`SavedResult`에 `stampConfig` 추가, 기존 저장분은 `IDENTITY_STAMP`(항상·넷 다 켜짐·오프셋 0)로 기본값을 채움. 보관함 썸네일(`RouteThumbnail`)·결과물 상세에도 완주 시점(`progressFraction=1`) 상태로 함께 그림
 

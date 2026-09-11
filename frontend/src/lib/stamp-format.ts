@@ -27,8 +27,8 @@ export function formatPace(secPerKm: number): string {
   return `${m}'${String(s).padStart(2, '0')}"/km`;
 }
 
-export function formatHeartRate(bpm: number): string {
-  return `${Math.round(bpm)}bpm`;
+export function formatHeartRate(bpm: number, includeUnit = true): string {
+  return `${Math.round(bpm)}${includeUnit ? 'bpm' : ''}`;
 }
 
 /** 러닝한 날 (ISO) → "MM.dd". 시안 S6/S8b 표기. */
