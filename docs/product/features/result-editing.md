@@ -72,7 +72,7 @@
 - **넣을 것 칩에 값을 함께 표시**: "거리 5.23km" "시간 28:14" "페이스 5'42"" "날짜 08.21" "장소 한강" "심박 152bpm". 켜면 accent 채움
 - **날짜(date)**: `run.date`(ISO) → `formatStampDate` "MM.dd". TS·Swift 양쪽 구현
 - **장소(place)**: `edit.tsx`에서 트랙 가운데 좌표를 `expo-location`의 `reverseGeocodeAsync`로 한 번 역지오코딩해 `StampConfig.placeName`에 채운다(district→city→subregion→name 순). 실패하면 빈 문자열 — 칩은 "장소"로만 보이고 켜도 안 그려진다. `expo-location` 의존성 추가(prebuild+재빌드 필요), `NSLocationWhenInUseUsageDescription` 추가
-- **한 줄 문구(caption)**: `StampConfig.caption` 자유 텍스트 40자. 미리보기·썸네일·최종 mp4 모두 항목 줄 위에 Space Grotesk로 가운데 그림(Swift는 폰트 없어 시스템 폰트 대체). 빈 문자열이면 안 그림
+- **문구(caption)**: `StampConfig.caption`에 직접 입력한 원문을 저장한다. 2026-09-11 FRD 정합성 수정으로 임의의 40자 제한을 제거하고 미리보기 기준 최대 3줄 입력·어절 우선 자동 줄바꿈을 적용했다. 프리셋별 서체와 앵커는 유지하며 새 영상에도 같은 행을 전달한다. 빈 문자열이면 그리지 않는다. 세부 구현은 [문구 줄바꿈](caption-wrapping.md)에 둔다.
 - **표시 모드(항상/완성후만/숨김) UI 제거**: 시안 S6에 없어서 뺐다 — `mode`는 데이터엔 남아 'always' 고정. §7-3 "완성 후만"이 UI에서 사라짐 (아래 어긋남 기록)
 - **"자리(위/아래/없음)" 선택기**: 시안엔 있지만 이번엔 안 만듦("자리만 빼고" 요청). 기존 자유 드래그 위치가 그대로 남음
 - **각인 프리셋**(2026-09-01 추가, 2026-09-02 라벨 정정, 2026-09-02 hero 가운데 정렬로 재조정, 2026-09-02 hero 삭제): `StampConfig.layout` — 기본 `'row'`(가운데 한 줄, 간결). 처음엔 각인 시트에 "배치"라는 라벨을 썼는데, 이게 위치 배치가 아니라 표현 스타일을 고르는 프리셋이라는 피드백을 받아 드로잉 프리셋과 같은 라벨 패턴("각인 프리셋 · PRESET")으로 바꿨다. `'hero'`(큰 거리+문구+메타, 가운데 정렬)는 한동안 기본값이었으나 실기기 피드백으로 삭제됐다("크게 삭제해줘") — 옛 저장분에 `layout:'hero'`가 남아 있어도 TS(`stampLayoutDescriptors`)·Swift(`drawStamps`) 둘 다 자연히 `'row'`로 떨어진다(더 이상 분기가 없어서). `StampLayout`은 확장 가능한 유니온이라 프리셋이 늘어도 이 자리만 늘리면 됨
