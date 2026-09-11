@@ -7,6 +7,7 @@ import {
   type RouteTransform,
   type StampConfig,
 } from '@/components/route-preview';
+import { resolveBackgroundPath, resolvePhotoBackground, type PhotoBackground } from './background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
@@ -22,6 +23,7 @@ export type Draft = {
   run: RunRecord;
   track: Track;
   backgroundImagePath: string;
+  backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
   /** result-editing FRD §5. v1 저장분엔 없을 수 있어 getDraft에서 기본값을 채운다. */
@@ -38,7 +40,10 @@ export async function getDraft(): Promise<Draft | null> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   const parsed = JSON.parse(raw);
-  return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed };
+  return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed,
+    backgroundImagePath: resolveBackgroundPath(parsed.backgroundImagePath),
+    backgroundPhoto: resolvePhotoBackground(parsed.backgroundPhoto),
+  };
 }
 
 export async function saveDraft(draft: Omit<Draft, 'lastEditedAt'>): Promise<void> {

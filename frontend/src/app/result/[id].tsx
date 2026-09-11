@@ -50,6 +50,8 @@ export default function ResultDetailScreen() {
           text: '확인',
           onPress: () => {
             loadDraft({
+              backgroundImagePath: null,
+              backgroundPhoto: undefined,
               selectedRun: result.run,
               track: result.track,
               preset: result.preset,
@@ -68,6 +70,7 @@ export default function ResultDetailScreen() {
       selectedRun: result.run,
       track: result.track,
       backgroundImagePath: result.backgroundImagePath,
+      backgroundPhoto: result.backgroundPhoto,
       preset: result.preset,
       transform: result.transform,
       smoothOptions: result.smoothOptions,

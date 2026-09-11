@@ -1,13 +1,15 @@
 import { Canvas, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
-import { useMemo } from 'react';
-import { View } from 'react-native';
+import { memo, useMemo, useState } from 'react';
+import { Image, StyleSheet, View } from 'react-native';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-native-svg';
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
+import { computeThumbnailFrame } from '@/lib/thumbnail-framing';
+import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
-import { IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RouteTransform, type StampConfig } from './route-preview';
+import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RouteTransform, type StampConfig } from './route-preview';
 
 // FRD: docs/specs/frd/home-and-library.md §2-1 "썸네일: 결과물의 한 장면"
 //
@@ -25,15 +27,20 @@ type Props = {
   smoothOptions?: SmoothOptions;
   run?: RunRecord;
   stampConfig?: StampConfig;
+  /** 홈 목록에서는 경로와 각인을 모두 담고 저장된 배경도 함께 표시한다. */
+  framing?: 'center' | 'content';
+  backgroundImagePath?: string;
 };
 
-export function RouteThumbnail({
+export const RouteThumbnail = memo(function RouteThumbnail({
   points,
   transform,
   size,
   smoothOptions = IDENTITY_SMOOTH,
   run,
   stampConfig = IDENTITY_STAMP,
+  framing = 'center',
+  backgroundImagePath,
 }: Props) {
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
@@ -41,11 +48,14 @@ export function RouteThumbnail({
     () => Skia.Path.MakeFromSVGString(toSvgPath(projected)) ?? Skia.Path.Make(),
     [projected]
   );
-  if (projected.length < 2) return <View style={{ width: size, height: size }} />;
+  const frame = useMemo(() => framing === 'content'
+    ? computeThumbnailFrame(projected, transform, run ? computeStampBounds(run, stampConfig, true) : null)
+    : { x: 0, y: (CANVAS_HEIGHT - CANVAS_WIDTH) / 2, width: CANVAS_WIDTH, height: CANVAS_WIDTH },
+  [framing, projected, transform, run, stampConfig]);
 
-  const fitScale = Math.max(size / CANVAS_WIDTH, size / CANVAS_HEIGHT); // slice(꽉 채움)
-  const offsetX = (size - CANVAS_WIDTH * fitScale) / 2;
-  const offsetY = (size - CANVAS_HEIGHT * fitScale) / 2;
+  const fitScale = size / frame.width;
+  const offsetX = -frame.x * fitScale;
+  const offsetY = -frame.y * fitScale;
 
   const groupTransform = [
     { translateX: offsetX },
@@ -60,7 +70,11 @@ export function RouteThumbnail({
   ];
 
   return (
-    <View style={{ width: size, height: size }}>
+    <View style={{ width: size, height: size, overflow: 'hidden' }}>
+      {framing === 'content' && (
+        <ThumbnailBackground key={backgroundImagePath ?? 'default'} path={backgroundImagePath}
+          size={size} left={offsetX} top={offsetY} scale={fitScale} />
+      )}
       <Canvas style={{ flex: 1 }}>
         <Group transform={groupTransform}>
           <Path
@@ -81,8 +95,7 @@ export function RouteThumbnail({
           style={{ position: 'absolute', top: 0, left: 0 }}
           width={size}
           height={size}
-          viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-          preserveAspectRatio="xMidYMid slice">
+          viewBox={`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}>
           <Defs>
             <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
               <FeGaussianBlur stdDeviation="6" result="b" />
@@ -95,6 +108,25 @@ export function RouteThumbnail({
           <StampLayer run={run} config={stampConfig} progressFraction={1} />
         </Svg>
       )}
+    </View>
+  );
+});
+
+function ThumbnailBackground({ path, size, left, top, scale }: {
+  path?: string; size: number; left: number; top: number; scale: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  // 기본 배경은 앱 업데이트로 컨테이너 경로가 달라져도 원래 소재를 복원한다.
+  const bundled = DEFAULT_BACKGROUNDS.find(bg => path?.endsWith(`/backgrounds/${bg.id}.jpg`));
+  const source = bundled?.source ?? (path && !failed
+    ? { uri: path.startsWith('/') ? `file://${path}` : path }
+    : DEFAULT_BACKGROUNDS[0].source);
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Image source={source} blurRadius={20} resizeMode="cover"
+        style={{ width: size, height: size, opacity: 0.5 }} onError={() => setFailed(true)} />
+      <Image source={source} resizeMode="cover" onError={() => setFailed(true)}
+        style={{ position: 'absolute', left, top, width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }} />
     </View>
   );
 }

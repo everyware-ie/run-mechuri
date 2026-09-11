@@ -7,6 +7,7 @@ import {
   type RouteTransform,
   type StampConfig,
 } from '@/components/route-preview';
+import { resolveBackgroundPath, resolvePhotoBackground, type PhotoBackground } from './background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
@@ -32,6 +33,7 @@ export type SavedResult = {
   stampConfig: StampConfig;
   /** 배경은 참조가 약하다(§2-3) — 파일이 사라지면 화면에서 기본 이미지로 되돌린다 */
   backgroundImagePath: string;
+  backgroundPhoto?: PhotoBackground;
   outputPath: string;
   createdAt: string;
 };
@@ -44,6 +46,8 @@ export async function listResults(): Promise<SavedResult[]> {
   const results: SavedResult[] = JSON.parse(raw);
   const withDefaults = results.map((r) => ({
     ...r,
+    backgroundImagePath: resolveBackgroundPath(r.backgroundImagePath),
+    backgroundPhoto: resolvePhotoBackground(r.backgroundPhoto),
     smoothOptions: r.smoothOptions ?? IDENTITY_SMOOTH,
     stampConfig: r.stampConfig ?? IDENTITY_STAMP,
   }));

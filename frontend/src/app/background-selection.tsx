@@ -1,191 +1,312 @@
 import { Asset } from 'expo-asset';
-import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PhotoBackgroundPreview } from '@/components/photo-background-preview';
 import { RoutePreview } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
-import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { useBackgroundTask } from '@/hooks/use-background-task';
+import { BACKGROUNDS_DIR, persistBackground, type PhotoBackground } from '@/lib/background-storage';
+import { INITIAL_PHOTO_CROP, type PhotoCrop } from '@/lib/photo-crop';
+import { preparePhoto, renderPhotoBackground } from '@/lib/photo-processing';
 import { useCreationFlow } from '@/state/creation-flow';
 
-// FRD: docs/specs/frd/background-selection.md
-// v0: §1 MVP 기본 범위(기본 이미지 3장)만. 갤러리·촬영은 여유 시라 이후 — 시안 S5에는
-// "갤러리" 슬롯이 있어 자리만 두되 아직 안 붙였다.
-// 기본 이미지 3장은 frontend/src/constants/default-backgrounds.ts에서 제공한다.
-// 디자인: "3안" 시안 S5 — 배경+경로 합성 큰 카드 + 기본 이미지 가로 스와치 + 갤러리 슬롯.
+type PhotoSelection = { kind: 'photo'; photo: PhotoBackground; rawUri?: string; saved?: boolean };
+type Selection = { kind: 'default'; id: string } | { kind: 'existing'; uri: string } | PhotoSelection;
+const removeFiles = (paths: string[]) => Promise.all(paths.map(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})));
 
-// 실기기 피드백(2026-09-03): "다시 편집 → 결과물을 만들지 못했어요" — Asset.localUri(캐시
-// 디렉터리, 또는 앱 번들 안 경로)는 iOS 컨테이너 UUID에 묶여 있어서, 앱을 다시
-// 설치(새 dev-client 빌드 등)하면 그 절대경로가 더 이상 존재하지 않는다. 저장된
-// 결과물(SavedResult)의 backgroundImagePath는 만든 그 순간의 경로를 그대로 문자열로
-// 들고 있다가 "다시 편집" 때 재사용하는데, 그 사이 재설치가 있었으면 그 파일을 못
-// 찾아 렌더러가 실패한다(캐시 디렉터리는 저장공간 부족 시 iOS가 알아서 지우기도
-// 해서, 재설치 없이도 이론상 같은 문제가 날 수 있다). documentDirectory(앱이 직접
-// 관리하는, iOS가 함부로 안 지우는 자리)에 한 번 복사해 두고 그 경로를 쓰면 최소한
-// "같은 설치가 유지되는 동안"은 안전해진다 — 완전 재설치까지는 못 막지만, 훨씬
-// 흔한 "저장공간 부족으로 캐시 삭제" 케이스는 막는다.
-const BACKGROUNDS_DIR = `${FileSystem.documentDirectory}backgrounds/`;
-
-async function ensurePersistentBackground(id: string, sourceUri: string): Promise<string> {
-  const dest = `${BACKGROUNDS_DIR}${id}.jpg`;
-  const info = await FileSystem.getInfoAsync(dest);
-  if (info.exists) return dest;
-  try {
-    await FileSystem.makeDirectoryAsync(BACKGROUNDS_DIR, { intermediates: true });
-  } catch {
-    // 이미 있으면 무시 — intermediates:true라도 네이티브 쪽에서 예외를 던질 수 있어 방어적으로 감싼다.
-  }
-  await FileSystem.copyAsync({ from: sourceUri, to: dest });
-  return dest;
-}
-
+// FRD: 배경 선택 §3 사진 선택·촬영, §4 빈틈없는 9:16 조정, §6 취소 시 앞선 선택 유지.
 export default function BackgroundSelectionScreen() {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const [selectedId, setSelectedId] = useState(DEFAULT_BACKGROUNDS[0].id);
-  const [localUri, setLocalUri] = useState<string | null>(null);
   const { draft, setBackground } = useCreationFlow();
-
-  useEffect(() => {
-    const selected = DEFAULT_BACKGROUNDS.find((bg) => bg.id === selectedId);
-    if (!selected) return;
-    const asset = Asset.fromModule(selected.source);
-    asset.downloadAsync().then(() => setLocalUri(asset.localUri));
-  }, [selectedId]);
-
-  const handleConfirm = async () => {
-    if (!localUri) return;
-    const persistentUri = await ensurePersistentBackground(selectedId, localUri);
-    setBackground(persistentUri);
-    router.push('/edit');
-  };
-
-  const selectedBackground = DEFAULT_BACKGROUNDS.find((bg) => bg.id === selectedId);
-  // 기본 배경과 같은 9:16 틀에 전체 구도를 보여준다. 높이는 기존 상한을 유지한다.
-  const cardHeight = Math.min(452, windowHeight * 0.52, (windowWidth - 48) * 16 / 9);
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const [selection, setSelection] = useState<Selection>(() => draft.backgroundPhoto
+    ? { kind: 'photo', photo: draft.backgroundPhoto }
+    : draft.backgroundImagePath ? { kind: 'existing', uri: draft.backgroundImagePath }
+      : { kind: 'default', id: DEFAULT_BACKGROUNDS[0].id });
+  // 새 사진이 마음에 들지 않으면 기존 배경으로 되돌아갈 수 있게 별도로 둔다.
+  const [candidate, setCandidate] = useState<PhotoSelection | null>(null);
+  const [showSources, setShowSources] = useState(!draft.backgroundPhoto);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [resetKey, setResetKey] = useState(0);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const saveLock = useRef(false);
+  const task = useBackgroundTask();
+  const active = candidate ?? selection;
+  const photo = active.kind === 'photo' ? active.photo : null;
+  const editingPhoto = !!photo && !showSources;
+  const disabled = task.busy || savingPhoto;
+  const cardHeight = Math.max(1, Math.min(previewSize.height, previewSize.width * 16 / 9));
   const cardWidth = cardHeight * 9 / 16;
+
+  const sourceUri = photo?.sourceUri;
+  useEffect(() => {
+    if (!sourceUri?.startsWith(BACKGROUNDS_DIR)) return;
+    let current = true;
+    void (async () => {
+      if ((await FileSystem.getInfoAsync(sourceUri)).exists || !current) return;
+      const existingPath = draft.backgroundImagePath;
+      const hasCrop = existingPath && (await FileSystem.getInfoAsync(existingPath)).exists;
+      if (!current) return;
+      setShowSources(true);
+      setSelection(hasCrop ? { kind: 'existing', uri: existingPath } : { kind: 'default', id: DEFAULT_BACKGROUNDS[0].id });
+      Alert.alert('편집용 사진을 찾을 수 없어요', hasCrop
+        ? '확정했던 배경은 그대로 사용할 수 있어요. 구도를 바꾸려면 사진을 다시 골라주세요.'
+        : '기본 배경으로 표시했어요. 다른 편집 내용은 유지됩니다.');
+    })().catch(() => {
+      if (current) Alert.alert('사진을 확인하지 못했어요', '갤러리에서 다시 고르거나 기본 이미지를 사용해 주세요.');
+    });
+    return () => { current = false; };
+  }, [sourceUri, draft.backgroundImagePath]);
+
+  function permissionNotice(camera: boolean) {
+    Alert.alert(camera ? '카메라 접근이 필요해요' : '사진 저장 권한이 필요해요',
+      camera ? '설정에서 카메라를 허용하거나, 갤러리 또는 기본 이미지로 계속할 수 있어요.' : '설정에서 사진 추가를 허용하면 저장할 수 있어요. 저장하지 않고 배경으로 사용해도 괜찮아요.',
+      [{ text: '닫기', style: 'cancel' }, { text: '설정 열기', onPress: () => { void Linking.openSettings(); } }]);
+  }
+
+  function pickPhoto(origin: 'gallery' | 'camera') {
+    if (disabled) return;
+    void task.run('사진을 불러오고 있어요', async isActive => {
+      if (origin === 'camera') {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!isActive()) return null;
+        if (!permission.granted) { permissionNotice(true); return null; }
+      }
+      const options: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ['images'], allowsEditing: false, allowsMultipleSelection: false, quality: 1,
+        exif: false, base64: false,
+      };
+      // allowsEditing:false + 사진만 선택 → iOS PHPicker, 갤러리 읽기 권한 불필요.
+      const result = origin === 'camera'
+        ? await ImagePicker.launchCameraAsync(options)
+        : await ImagePicker.launchImageLibraryAsync(options);
+      if (result.canceled || !isActive()) return null;
+      const asset = result.assets[0];
+      if (!asset || asset.width <= 0 || asset.height <= 0) throw new Error('Invalid photo');
+      const prepared = await preparePhoto(asset.uri, asset.width, asset.height);
+      return { kind: 'photo', rawUri: asset.uri, photo: {
+        sourceUri: prepared.uri, width: prepared.width, height: prepared.height,
+        origin, crop: INITIAL_PHOTO_CROP,
+      } } satisfies PhotoSelection;
+    }, result => { if (result) { setCandidate(result); setShowSources(false); } }, async result => {
+      if (result) await removeFiles([result.photo.sourceUri]);
+    });
+  }
+
+  function cancelPhotoSelection() {
+    setCandidate(null);
+    setShowSources(true);
+  }
+
+  function updateCrop(crop: PhotoCrop) {
+    if (!photo) return;
+    if (candidate) setCandidate(previous => previous?.photo.sourceUri === photo.sourceUri
+      ? { ...previous, photo: { ...previous.photo, crop } } : previous);
+    else setSelection(previous => previous.kind === 'photo' && previous.photo.sourceUri === photo.sourceUri
+      ? { ...previous, photo: { ...previous.photo, crop } } : previous);
+  }
+
+  async function saveCameraPhoto() {
+    if (active.kind !== 'photo' || active.saved || disabled || saveLock.current) return;
+    saveLock.current = true; setSavingPhoto(true);
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (!permission.granted) { permissionNotice(false); return; }
+      const { saveToLibraryAsync } = await import('expo-media-library/legacy');
+      await saveToLibraryAsync(active.rawUri ?? active.photo.sourceUri);
+      if (candidate) setCandidate(previous => previous ? { ...previous, saved: true } : previous);
+      else setSelection(previous => previous.kind === 'photo' ? { ...previous, saved: true } : previous);
+      Alert.alert('사진 앱에 저장했어요');
+    } catch { Alert.alert('사진을 저장하지 못했어요', '다시 시도해 주세요. 배경으로는 계속 사용할 수 있어요.'); }
+    finally { saveLock.current = false; setSavingPhoto(false); }
+  }
+
+  function handleConfirm() {
+    if (disabled) return;
+    void task.run('배경을 준비하고 있어요', async () => {
+      const created: string[] = [];
+      try {
+        if (active.kind === 'default') {
+          const background = DEFAULT_BACKGROUNDS.find(bg => bg.id === active.id)!;
+          const asset = await Asset.fromModule(background.source).downloadAsync();
+          const path = await persistBackground(asset.localUri ?? asset.uri, `${background.id}.jpg`);
+          return { path, photo: undefined, created };
+        }
+        if (active.kind === 'existing') {
+          if (!(await FileSystem.getInfoAsync(active.uri)).exists) throw new Error('Missing background');
+          return { path: active.uri, photo: undefined, created };
+        }
+        const id = `photo-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        let sourceUri = active.photo.sourceUri;
+        if (!sourceUri.startsWith(BACKGROUNDS_DIR)) {
+          sourceUri = await persistBackground(sourceUri, `${id}-source.jpg`);
+          created.push(sourceUri);
+        }
+        const savedPhoto = { ...active.photo, sourceUri };
+        const rendered = await renderPhotoBackground(savedPhoto);
+        try {
+          const path = await persistBackground(rendered.uri, `${id}-crop.jpg`);
+          created.push(path);
+          return { path, photo: savedPhoto, created };
+        } finally { await removeFiles([rendered.uri]); }
+      } catch (error) { await removeFiles(created); throw error; }
+    }, result => {
+      setBackground(result.path, result.photo);
+      // 편집에서 배경을 다시 열었다면 기존 편집 화면으로 돌아간다.
+      if (returnTo === 'edit') router.back();
+      else router.push('/edit');
+    }, async result => { await removeFiles(result.created); });
+  }
+
+  const route = draft.track && draft.selectedRun ? (
+    <RoutePreview points={draft.track.coordinates} preset={draft.preset} transform={draft.transform}
+      smoothOptions={draft.smoothOptions} run={draft.selectedRun} stampConfig={draft.stampConfig}
+      isInteracting={false} fit="contain" viewWidth={cardWidth} viewHeight={cardHeight} />
+  ) : null;
+  const backgroundSource = active.kind === 'default'
+    ? DEFAULT_BACKGROUNDS.find(bg => bg.id === active.id)!.source
+    : active.kind === 'existing' ? { uri: active.uri } : undefined;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScreenHeader
-        title="배경"
-        right={
-          localUri ? (
-            // 실기기 피드백(2026-09-02): "다음 버튼 인식이 잘 안 된다" — Text에
-            // onPress를 바로 건 예전 방식은 실제 렌더된 글자 크기(12px)만큼만
-            // 탭 영역이 잡힌다. 헤더의 뒤로가기(Pressable hitSlop)와 같은
-            // 방식으로 맞춘다.
-            <Pressable onPress={handleConfirm} hitSlop={12}>
-              <Text style={styles.headerAction}>다음</Text>
-            </Pressable>
-          ) : undefined
-        }
-      />
-
+      <View style={styles.content} accessibilityElementsHidden={task.indicator !== 'hidden'}
+        importantForAccessibility={task.indicator !== 'hidden' ? 'no-hide-descendants' : 'auto'}>
+      <ScreenHeader title="배경" onBack={() => {
+        if (savingPhoto) return;
+        if (task.busy) task.cancel();
+        else if (candidate) cancelPhotoSelection();
+        else router.back();
+      }} right={<Pressable onPress={handleConfirm} disabled={disabled} hitSlop={12} accessibilityRole="button">
+        <Text style={[styles.headerAction, disabled && styles.disabled]}>다음</Text>
+      </Pressable>} />
       <View style={styles.body}>
-        <View style={[styles.card, { width: cardWidth, height: cardHeight }]}>
-          {selectedBackground && (
-            <Image source={selectedBackground.source} style={styles.backgroundImage} resizeMode="cover" />
-          )}
-          {draft.track && draft.selectedRun && (
-            <RoutePreview
-              points={draft.track.coordinates}
-              preset={draft.preset}
-              transform={draft.transform}
-              smoothOptions={draft.smoothOptions}
-              run={draft.selectedRun}
-              stampConfig={draft.stampConfig}
-              isInteracting={false}
-              viewWidth={cardWidth}
-              viewHeight={cardHeight}
-            />
-          )}
-          <Text style={styles.cardTag}>9:16 · 전체 미리보기</Text>
+        <View style={styles.previewStage} onLayout={({ nativeEvent: { layout } }) => {
+          setPreviewSize(previous => previous.width === layout.width && previous.height === layout.height
+            ? previous : { width: layout.width, height: layout.height });
+        }}>
+        {previewSize.width > 0 && previewSize.height > 0 && <View
+          style={[styles.card, { width: cardWidth, height: cardHeight }]}
+          pointerEvents={disabled || !editingPhoto ? 'none' : 'auto'}>
+          {photo ? (
+            <PhotoBackgroundPreview key={`${photo.sourceUri}-${resetKey}`} uri={photo.sourceUri}
+              imageWidth={photo.width} imageHeight={photo.height} width={cardWidth} height={cardHeight}
+              initialCrop={photo.crop} onChange={updateCrop}>{route}</PhotoBackgroundPreview>
+          ) : <>
+            <Image source={backgroundSource} style={styles.backgroundImage} resizeMode="cover" />
+            {route}
+          </>}
+        </View>}
         </View>
-
-        <Text style={styles.sectionLabel}>기본 이미지 · BACKGROUND</Text>
-        <View style={styles.swatchRow}>
-          {DEFAULT_BACKGROUNDS.map((bg) => {
-            const on = bg.id === selectedId;
-            return (
-              <Pressable
-                key={bg.id}
-                onPress={() => setSelectedId(bg.id)}
-                style={[styles.swatch, on && styles.swatchOn]}>
-                <Image source={bg.source} style={styles.swatchImg} resizeMode="cover" />
+        <View style={styles.controls}>
+        {editingPhoto && photo && <>
+          <Text style={styles.note}>드래그로 이동 · 두 손가락으로 확대</Text>
+          <View style={styles.photoTools}>
+            <Pressable disabled={disabled} onPress={() => { updateCrop(INITIAL_PHOTO_CROP); setResetKey(key => key + 1); }}
+              accessibilityRole="button" accessibilityLabel="사진 구도 초기화" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              <SymbolView name="arrow.counterclockwise" size={14} tintColor={Colors.textMuted} />
+              <Text style={styles.toolLabel}>초기화</Text>
+            </Pressable>
+            <Pressable disabled={disabled} onPress={cancelPhotoSelection}
+              accessibilityRole="button" accessibilityLabel="사진 선택 취소, 이전 배경으로 돌아가기" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              <SymbolView name="xmark" size={13} tintColor={Colors.textMuted} />
+              <Text style={styles.toolLabel}>선택 취소</Text>
+            </Pressable>
+            {photo.origin === 'camera' && <>
+              <Pressable disabled={disabled} onPress={() => pickPhoto('camera')}
+                accessibilityRole="button" accessibilityLabel="사진 다시 찍기" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+                <SymbolView name="camera.rotate" size={15} tintColor={Colors.textMuted} />
+                <Text style={styles.toolLabel}>다시 찍기</Text>
               </Pressable>
-            );
-          })}
-          <View style={[styles.swatch, styles.swatchGallery]}>
-            <Text style={styles.swatchGalleryText}>갤러리</Text>
+              <Pressable disabled={disabled || (active.kind === 'photo' && active.saved)} onPress={saveCameraPhoto}
+                accessibilityRole="button" accessibilityLabel={active.kind === 'photo' && active.saved ? '사진 앱에 저장 완료' : '촬영한 원본 사진을 내 갤러리에 저장'}
+                style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+                {savingPhoto ? <ActivityIndicator size="small" color={Colors.accent} />
+                  : <SymbolView name={active.kind === 'photo' && active.saved ? 'checkmark' : 'square.and.arrow.down'} size={14}
+                    tintColor={active.kind === 'photo' && active.saved ? Colors.accent : Colors.textMuted} />}
+                <Text style={styles.toolLabel}>{savingPhoto ? '저장 중…' : active.kind === 'photo' && active.saved ? '저장 완료' : '사진 저장'}</Text>
+              </Pressable>
+            </>}
+          </View>
+        </>}
+        {!editingPhoto && <>
+        <Text style={styles.sectionLabel}>기본 이미지</Text>
+        <View style={styles.swatchRow}>
+          {DEFAULT_BACKGROUNDS.map(bg => <Pressable key={bg.id} disabled={disabled}
+            onPress={() => { setCandidate(null); setSelection({ kind: 'default', id: bg.id }); setShowSources(true); }}
+            accessibilityRole="button" accessibilityLabel={`${bg.label} 배경`}
+            accessibilityState={{ selected: active.kind === 'default' && active.id === bg.id }}
+            style={[styles.swatch, active.kind === 'default' && active.id === bg.id && styles.swatchOn]}>
+            <Image source={bg.source} style={styles.swatchImg} resizeMode="cover" />
+          </Pressable>)}
+          <Pressable disabled={disabled} onPress={() => pickPhoto('gallery')} accessibilityRole="button" style={[styles.swatch, styles.sourceButton]}>
+            <Text style={styles.buttonText}>갤러리</Text>
+          </Pressable>
+          <Pressable disabled={disabled} onPress={() => pickPhoto('camera')} accessibilityRole="button" style={[styles.swatch, styles.sourceButton]}>
+            <Text style={styles.buttonText}>사진 촬영</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.note}>기본 이미지를 고르거나 내 사진을 배경으로 사용해 보세요.</Text>
+        </>}
+        {editingPhoto && candidate && <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button" style={[styles.confirm, disabled && styles.disabled]}>
+          <Text style={styles.confirmText}>이 사진으로 진행</Text>
+        </Pressable>}
+        </View>
+      </View>
+      </View>
+      {task.indicator !== 'hidden' && (
+        <View style={styles.loadingOverlay} accessibilityViewIsModal importantForAccessibility="yes">
+          <View style={styles.loadingCard} accessibilityLiveRegion="polite">
+            <View style={styles.loadingIcon}><ActivityIndicator size="large" color={Colors.accent} /></View>
+            <Text style={styles.loadingTitle}>{task.label}</Text>
+            <Text style={styles.loadingDescription}>잠시만 기다려 주세요</Text>
+            {task.indicator === 'long' && <Pressable onPress={task.cancel} accessibilityRole="button"
+              style={({ pressed }) => [styles.loadingCancel, pressed && styles.toolPressed]}>
+              <Text style={styles.loadingCancelText}>취소</Text>
+            </Pressable>}
           </View>
         </View>
-
-        <Text style={styles.note}>
-          기본 이미지 3장 중 배경을 골라주세요. 갤러리에서 고르는 기능은 준비 중이에요.
-        </Text>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
+  content: { flex: 1 },
   headerAction: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accent },
-  body: { flex: 1, paddingHorizontal: 24, gap: Spacing.md, alignItems: 'stretch' },
-  card: {
-    alignSelf: 'center',
-    borderRadius: Radius.card,
-    overflow: 'hidden',
-    backgroundColor: Colors.bgCard,
-  },
-  // 번들 이미지의 기본 width/height(1080×1920)를 명시적으로 덮어쓴다.
-  // absoluteFill만 사용하면 원본 크기가 남아 카드 안에서 윗부분만 잘려 보인다.
+  disabled: { opacity: 0.4 },
+  body: { flex: 1, minHeight: 0, paddingHorizontal: 24, paddingBottom: 8, gap: Spacing.md },
+  previewStage: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
+  controls: { flexShrink: 0, gap: Spacing.sm },
+  card: { alignSelf: 'center', borderRadius: Radius.card, overflow: 'hidden', backgroundColor: Colors.bgCard },
   backgroundImage: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
-  cardTag: {
-    position: 'absolute',
-    top: 14,
-    left: 16,
-    fontFamily: Fonts.sans,
-    fontSize: 9.5,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
-  sectionLabel: {
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
+  sectionLabel: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 4 },
   swatchRow: { flexDirection: 'row', gap: 9 },
-  // 실기기 피드백(2026-09-02): 배경 사진은 9:16 세로 사진인데 스와치는 가로로
-  // 납작한 64px 높이라, cover로 채우면 사진의 아주 좁은 가로 띠만 보이고 대부분이
-  // 잘려 나갔다. 스와치 자체를 사진과 같은 9:16 비율로 만들면 cover를 유지해도
-  // 사진 전체가 실제 구도 그대로 보인다.
-  swatch: {
-    flex: 1,
-    aspectRatio: 9 / 16,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.bgCard,
-  },
+  swatch: { flex: 1, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard },
   swatchOn: { borderColor: Colors.accent },
   swatchImg: { width: '100%', height: '100%' },
-  swatchGallery: {
-    borderStyle: 'dashed',
-    borderColor: Colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchGalleryText: { fontFamily: Fonts.sans, fontSize: 9.5, color: Colors.textMuted },
-  note: {
-    fontFamily: Fonts.sans,
-    fontSize: 11,
-    lineHeight: 17,
-    color: Colors.textMuted,
-  },
+  sourceButton: { borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
+  photoTools: { flexDirection: 'row', marginTop: -4 },
+  photoTool: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', paddingVertical: 8, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 8 },
+  toolPressed: { backgroundColor: Colors.border },
+  toolLabel: { flexShrink: 1, fontFamily: Fonts.sans, fontSize: 10.5, color: Colors.textMuted, textAlign: 'center' },
+  buttonText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.text },
+  loadingOverlay: { ...StyleSheet.absoluteFill, zIndex: 20, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 32 },
+  loadingCard: { width: '100%', maxWidth: 300, alignItems: 'center', backgroundColor: Colors.bgCard, borderRadius: Radius.card, borderWidth: 1, borderColor: Colors.borderStrong, padding: 24 },
+  loadingIcon: { padding: 10, marginBottom: 12 },
+  loadingTitle: { fontFamily: Fonts.sansBold, fontSize: 16, color: Colors.text, textAlign: 'center' },
+  loadingDescription: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted, marginTop: 8 },
+  loadingCancel: { minHeight: 44, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 12, borderWidth: 1, borderColor: Colors.borderStrong },
+  loadingCancelText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
+  confirm: { alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 14, padding: 15 },
+  confirmText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
 });

@@ -8,6 +8,7 @@ import {
   type RouteTransform,
   type StampConfig,
 } from '@/components/route-preview';
+import type { PhotoBackground } from '@/lib/background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
@@ -19,6 +20,7 @@ type CreationDraft = {
   selectedRun: RunRecord | null;
   track: Track | null;
   backgroundImagePath: string | null;
+  backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
   /** result-editing FRD §5 다듬기 세기 */
@@ -30,7 +32,7 @@ type CreationDraft = {
 type CreationFlowContextValue = {
   draft: CreationDraft;
   setSelectedRun: (run: RunRecord, track: Track) => void;
-  setBackground: (path: string) => void;
+  setBackground: (path: string, photo?: PhotoBackground) => void;
   setPreset: (preset: RoutePreset) => void;
   setTransform: (transform: RouteTransform) => void;
   setSmoothOptions: (smoothOptions: SmoothOptions) => void;
@@ -61,7 +63,7 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
     () => ({
       draft,
       setSelectedRun: (run, track) => setDraft((prev) => ({ ...prev, selectedRun: run, track })),
-      setBackground: (path) => setDraft((prev) => ({ ...prev, backgroundImagePath: path })),
+      setBackground: (path, photo) => setDraft((prev) => ({ ...prev, backgroundImagePath: path, backgroundPhoto: photo })),
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
       setTransform: (transform) => setDraft((prev) => ({ ...prev, transform })),
       setSmoothOptions: (smoothOptions) => setDraft((prev) => ({ ...prev, smoothOptions })),

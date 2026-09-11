@@ -531,6 +531,7 @@ export default function EditScreen() {
       run: draft.selectedRun,
       track: draft.track,
       backgroundImagePath: draft.backgroundImagePath,
+      backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
@@ -540,6 +541,7 @@ export default function EditScreen() {
     draft.selectedRun,
     draft.track,
     draft.backgroundImagePath,
+    draft.backgroundPhoto,
     draft.preset,
     draft.transform,
     draft.smoothOptions,
@@ -728,7 +730,7 @@ export default function EditScreen() {
                   <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
                 </View>
                 <View style={styles.outlineRow}>
-                  <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')} accessibilityRole="button">
+                  <Pressable style={styles.outlineBtn} onPress={() => router.push({ pathname: '/background-selection', params: { returnTo: 'edit' } })} accessibilityRole="button">
                     <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
                   </Pressable>
                   <Pressable style={styles.outlineBtn} onPress={handleReset} accessibilityRole="button">
