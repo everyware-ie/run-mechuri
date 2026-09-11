@@ -1,6 +1,6 @@
-import { Canvas, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
+import { Blur, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { memo, useMemo, useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-native-svg';
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
@@ -119,14 +119,22 @@ function ThumbnailBackground({ path, size, left, top, scale }: {
   // 기본 배경은 앱 업데이트로 컨테이너 경로가 달라져도 원래 소재를 복원한다.
   const bundled = DEFAULT_BACKGROUNDS.find(bg => path?.endsWith(`/backgrounds/${bg.id}.jpg`));
   const source = bundled?.source ?? (path && !failed
-    ? { uri: path.startsWith('/') ? `file://${path}` : path }
+    ? (path.startsWith('/') ? `file://${path}` : path)
     : DEFAULT_BACKGROUNDS[0].source);
+  const image = useImage(source, () => setFailed(true));
+  const backgroundRect = { x: left, y: top, width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Image source={source} blurRadius={20} resizeMode="cover"
-        style={{ width: size, height: size, opacity: 0.5 }} onError={() => setFailed(true)} />
-      <Image source={source} resizeMode="cover" onError={() => setFailed(true)}
-        style={{ position: 'absolute', left, top, width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale }} />
+      <Canvas style={{ width: size, height: size }}>
+        {image && <>
+          {/* 원본과 같은 좌표에서 가장자리 색을 연장한다. 반투명·별도 확대 때문에 생기던 띠를 없앤다. */}
+          <Fill>
+            <ImageShader image={image} rect={backgroundRect} fit="cover" tx="clamp" ty="clamp" />
+            <Blur blur={size * 0.025} mode="clamp" />
+          </Fill>
+          <SkiaImage image={image} {...backgroundRect} fit="cover" />
+        </>}
+      </Canvas>
     </View>
   );
 }

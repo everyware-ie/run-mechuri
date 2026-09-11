@@ -177,6 +177,8 @@ export default function ResultDetailScreen() {
             smoothOptions={result.smoothOptions}
             run={result.run}
             stampConfig={result.stampConfig}
+            backgroundImagePath={result.backgroundImagePath}
+            framing="content"
             size={270}
           />
         </View>
