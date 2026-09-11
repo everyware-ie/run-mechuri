@@ -49,6 +49,8 @@ export type RenderClipOptions = {
   stampScale?: number;
   /** 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다. */
   caption: string;
+  /** 미리보기와 공유하는 자동/직접 줄바꿈 결과. 원문 저장과는 별개다. */
+  captionLines?: string[];
   /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */
   placeName: string;
   /** '날짜' 각인 값 계산용 — 러닝한 날 (ISO). */

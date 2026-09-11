@@ -10,6 +10,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
+import { captionLines } from '@/lib/caption-layout';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -127,6 +128,7 @@ export default function ShareScreen() {
       stampY: draft.stampConfig.position.y,
       stampScale: draft.stampConfig.scale ?? 1,
       caption: draft.stampConfig.caption ?? '',
+      captionLines: captionLines(draft.stampConfig.caption ?? '', draft.stampConfig),
       placeName: draft.stampConfig.placeName ?? '',
       runDate: selectedRun.date,
       distanceMeters: selectedRun.distanceMeters,

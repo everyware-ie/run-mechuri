@@ -74,6 +74,7 @@ struct RenderClipOptionsInput: Record {
   @Field var stampScale: Double = 1
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
+  @Field var captionLines: [String]? = nil
   /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
   @Field var placeName: String = ""
   /// '날짜' 각인 값 계산용 — 러닝한 날 (ISO 8601).
@@ -673,7 +674,7 @@ public class RouteRendererModule: Module {
       keyed.append(("heartRate", formatHeartRate(hr, includeUnit: !hasUnitLabel)))
     }
 
-    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : stamp.caption
     if keyed.isEmpty && caption.isEmpty { return }
 
     // route-preview.tsx SAFE_AREA_TOP/BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
@@ -772,6 +773,31 @@ public class RouteRendererModule: Module {
     // 옮긴 것이다(2026-09-02, route-preview.tsx stampLayoutDescriptors와 같은 수식).
     // 목업은 300x533 캔버스라 M=3.6을 곱해 1080x1920으로 옮긴다.
     let M: CGFloat = 3.6
+    // JS의 caption-layout.ts에서 계산한 행을 받아 결과물의 줄 구성을 동일하게 유지한다.
+    let captionLines = caption.isEmpty ? [] : (stamp.captionLines ?? caption.components(separatedBy: "\n"))
+    let captionSize: CGFloat = stamp.stampLayout == "row" ? 34 * s
+      : (stamp.stampLayout == "line" ? 26 : stamp.stampLayout == "bar" ? 15 : 13) * M * s
+    let captionLineHeight = captionSize * 1.3
+    let captionExtra = CGFloat(max(0, captionLines.count - 1)) * captionLineHeight
+    let captionMargin = canvasSize.width * 0.08
+    let captionPanelWidth = canvasSize.width - 32 * M
+    let captionLeft = stamp.stampLayout == "glass"
+      ? max(captionMargin, 16 * M + min(20 * M * s, captionPanelWidth * 0.15)) : captionMargin
+    let captionRight = canvasSize.width - captionLeft
+    let captionDateSpace = stamp.stampItems.date && ["bar", "corner", "glass"].contains(stamp.stampLayout)
+      ? estimateStampTextWidth("00.00", 11 * M * s) + 12 * M : 0
+    let captionWidth = max(captionSize, captionRight - captionLeft - captionDateSpace)
+    func drawCaption(_ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, fromTop: Bool = false) {
+      let half: CGFloat = align == .center ? captionWidth / 2 : 0
+      let minX = captionLeft + (align == .right ? captionWidth : half)
+      let maxX = captionRight - (align == .left ? captionWidth : half)
+      let x = min(maxX, max(minX, origin.x - CGFloat(stamp.stampX))) + CGFloat(stamp.stampX)
+      for (i, line) in captionLines.enumerated() {
+        let y = origin.y + CGFloat(i) * captionLineHeight - (fromTop ? 0 : captionExtra)
+        draw(line, CGPoint(x: x, y: y), font, align)
+      }
+    }
+
 
     if stamp.stampLayout == "stack" {
       // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
@@ -819,7 +845,7 @@ public class RouteRendererModule: Module {
       }
       if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
       if !caption.isEmpty {
-        draw(caption, CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
+        drawCaption(CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
       }
       return
     }
@@ -846,7 +872,7 @@ public class RouteRendererModule: Module {
       let dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor
       let headerBaseline = dividerY - dividerGap - headerFont * 0.3
 
-      if !caption.isEmpty { draw(caption, CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
       if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
       if !caption.isEmpty || !dateText.isEmpty {
         fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
@@ -882,7 +908,7 @@ public class RouteRendererModule: Module {
       let headerFont = 13 * u
       let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
 
-      if !caption.isEmpty { draw(caption, CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left, fromTop: true) }
       let dateText = valueFor("date")
       if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
 
@@ -891,7 +917,7 @@ public class RouteRendererModule: Module {
         let labelFont = 9 * u
         let valueFont = 19 * u
         let rowGap = 14 * u
-        var cursorY = headerBaseline + 72 * M
+        var cursorY = headerBaseline + 72 * M + captionExtra
         for key in statItems {
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 1.05
@@ -931,7 +957,7 @@ public class RouteRendererModule: Module {
       let valueFont = 16 * u
       let colGap = 20 * u // 통계 칸 사이 최소 간격(겹침 방지)
 
-      let headerLineH = hasHeader ? headerFont * 1.3 : 0
+      let headerLineH = hasHeader ? headerFont * 1.3 + captionExtra : 0
       let heroLineH = hero != nil ? heroSize * 1.05 : 0
       let statLineH = !statItems.isEmpty ? labelFont * 1.3 + valueFont * 1.15 : 0
       var inner = headerLineH
@@ -965,9 +991,10 @@ public class RouteRendererModule: Module {
       var cursor = panelTop + padY
       if hasHeader {
         cursor += headerFont * 0.85
-        if !caption.isEmpty { draw(caption, CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+        if !caption.isEmpty { drawCaption(CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left, fromTop: true) }
         if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
       }
+      cursor += captionExtra
       if let hero {
         cursor += (hasHeader ? gap : 0) + heroSize * 0.92
         drawHeroValue(hero.1, CGPoint(x: panelLeft + padX, y: cursor), heroSize, align: .left)
@@ -1013,7 +1040,7 @@ public class RouteRendererModule: Module {
       // 전체를 안전 영역(§7-1) 안에서 가운데 두도록 고쳤다(TS와 동일).
       let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
       let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(max(0, rows.count - 1))
-      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 : 0
+      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 + captionExtra : 0
       let combinedHeight = totalHeight + captionBlockHeight
       let safeTop = canvasSize.height * safeAreaTopRatio
       let safeBottom = canvasSize.height * (1 - safeAreaBottomRatio)
@@ -1043,7 +1070,7 @@ public class RouteRendererModule: Module {
         let y = hasRail
           ? railBottom + rowGap + captionFont * 0.8
           : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
-        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right)
+        drawCaption(CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right, fromTop: hasRail)
       }
       return
     }
@@ -1078,7 +1105,7 @@ public class RouteRendererModule: Module {
         fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
       }
       if !caption.isEmpty {
-        draw(caption, CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
+        drawCaption(CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
       }
       return
     }
@@ -1092,7 +1119,7 @@ public class RouteRendererModule: Module {
     let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
 
     if !caption.isEmpty {
-      draw(caption, CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
+      drawCaption(CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
     }
     if !items.isEmpty {
       let fontSize: CGFloat = 28 * s

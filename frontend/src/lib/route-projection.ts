@@ -11,7 +11,7 @@ export type CanvasPoint = { x: number; y: number };
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
-const MARGIN_RATIO = 0.08; // §4 제안값: 짧은 축 기준 8%
+export const MARGIN_RATIO = 0.08; // §4 제안값: 짧은 축 기준 8%
 
 export function projectPoints(points: Point[]): CanvasPoint[] {
   if (points.length === 0) return [];

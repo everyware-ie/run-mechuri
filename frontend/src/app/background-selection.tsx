@@ -255,9 +255,12 @@ export default function BackgroundSelectionScreen() {
         </View>
         <Text style={styles.note}>기본 이미지를 고르거나 내 사진을 배경으로 사용해 보세요.</Text>
         </>}
-        {editingPhoto && candidate && <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button" style={[styles.confirm, disabled && styles.disabled]}>
-          <Text style={styles.confirmText}>이 사진으로 진행</Text>
-        </Pressable>}
+        <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          accessibilityLabel={returnTo === 'edit' ? '배경 적용하고 편집으로 돌아가기' : '다음: 드로잉 편집'}
+          style={({ pressed }) => [styles.confirm, (disabled || pressed) && styles.disabled]}>
+          <Text style={styles.confirmText}>{returnTo === 'edit' ? '배경 적용' : '다음 · 드로잉 →'}</Text>
+        </Pressable>
         </View>
       </View>
       </View>
@@ -285,7 +288,7 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   body: { flex: 1, minHeight: 0, paddingHorizontal: 24, paddingBottom: 8, gap: Spacing.md },
   previewStage: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
-  controls: { flexShrink: 0, gap: Spacing.sm },
+  controls: { flexShrink: 0, gap: 8 },
   card: { alignSelf: 'center', borderRadius: Radius.card, overflow: 'hidden', backgroundColor: Colors.bgCard },
   backgroundImage: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
   sectionLabel: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 4 },
@@ -307,6 +310,6 @@ const styles = StyleSheet.create({
   loadingDescription: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted, marginTop: 8 },
   loadingCancel: { minHeight: 44, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center', marginTop: 20, borderRadius: 12, borderWidth: 1, borderColor: Colors.borderStrong },
   loadingCancelText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
-  confirm: { alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 14, padding: 15 },
-  confirmText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
+  confirm: { minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.accent, borderRadius: 22, paddingHorizontal: 16 },
+  confirmText: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accentText },
 });

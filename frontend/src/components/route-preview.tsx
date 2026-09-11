@@ -1,3 +1,4 @@
+import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
 import { estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { Fragment, memo, useEffect, useMemo, useState } from 'react';
@@ -61,7 +62,7 @@ export type StampConfig = {
   /** 배치 프리셋. 기존 저장분엔 없어 렌더 시 'row'로 방어. */
   layout: StampLayout;
   enabled: Record<StampItem, boolean>;
-  /** 시안 S6 "한 줄 문구" — 결과물에 얹는 자유 텍스트 한 줄. 빈 문자열이면 안 그린다. */
+  /** 시안 S6 "한 줄 문구" — 결과물에 얹는 자유 텍스트. 직접 개행만 저장하고 자동 개행은 렌더 시 계산한다. 빈 문자열이면 안 그린다. */
   caption: string;
   /** '장소' 각인 값 — 트랙 좌표를 역지오코딩해 채운다(edit.tsx). 비면 장소 항목은 안 나온다. */
   placeName: string;
@@ -1096,7 +1097,8 @@ function stampLayoutDescriptors(
 
   const finalValue = (item: StampItem) => item === 'distance' ? formatDistanceKm(run.distanceMeters)
     : item === 'time' ? formatDuration(run.durationSeconds) : value(item);
-  const caption = (config.caption ?? '').trim();
+  const rawCaption = normalizeCaption(config.caption ?? '');
+  const caption = rawCaption.trim() ? rawCaption : '';
   const layout: StampLayout = config.layout ?? 'row';
   const ALL_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
   const activeItems = ALL_ITEMS.filter(has);
@@ -1119,6 +1121,19 @@ function stampLayoutDescriptors(
   // 배수(0.85/0.92/1.05 등)로 줄 간격을 쌓아서, 실기기에서 보고 미세 조정이
   // 필요할 수 있다.
   const M = 3.6;
+  const captionStyle = captionMetrics(config);
+  const wrappedCaption = caption ? captionLines(caption, config) : [];
+  const captionExtra = Math.max(0, wrappedCaption.length - 1) * captionStyle.lineHeight;
+  const addCaption = (node: StampTextDescriptor, fromTop = false) => {
+    const offset = config.position.x;
+    const half = node.anchor === 'middle' ? captionStyle.width / 2 : 0;
+    const minX = captionStyle.left + (node.anchor === 'end' ? captionStyle.width : half);
+    const maxX = captionStyle.right - (node.anchor === 'start' ? captionStyle.width : half);
+    const x = Math.min(maxX, Math.max(minX, node.x - offset)) + offset;
+    wrappedCaption.forEach((text, i) => nodes.push({ ...node, key: `caption-${i}`, text, x,
+      y: node.y + i * captionStyle.lineHeight - (fromTop ? 0 : captionExtra) }));
+  };
+
 
   if (layout === 'stack') {
     // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄,
@@ -1179,7 +1194,7 @@ function stampLayoutDescriptors(
       nodes.push({ key: 'hero', x: leftX, y: heroBaseline, size: heroSize, family: 'SpaceGrotesk_700Bold', text: heroText, anchor: 'start', parts: splitHeroValue(heroText, heroSize) });
     }
     if (caption) {
-      nodes.push({ key: 'caption', x: leftX, y: captionBaseline, size: titleFont, family: 'NotoSansKR_500Medium', text: caption, anchor: 'start' });
+      addCaption({ key: 'caption', x: leftX, y: captionBaseline, size: titleFont, family: 'NotoSansKR_500Medium', text: caption, anchor: 'start' });
     }
     return { texts: nodes, rects };
   }
@@ -1210,7 +1225,7 @@ function stampLayoutDescriptors(
     const headerBaseline = dividerY - dividerGap - headerFont * 0.3;
 
     if (caption) {
-      nodes.push({ key: 'caption', x: leftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
+      addCaption({ key: 'caption', x: leftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
     }
     if (dateText) {
       nodes.push({ key: 'date', x: rightX, y: headerBaseline, size: dateFont, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
@@ -1254,7 +1269,7 @@ function stampLayoutDescriptors(
     const headerBaseline = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO + 24 * M + headerFont * 0.85 + config.position.y;
 
     if (caption) {
-      nodes.push({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
+      addCaption({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' }, true);
     }
     const dateText = has('date') ? value('date') : '';
     if (dateText) {
@@ -1266,7 +1281,7 @@ function stampLayoutDescriptors(
       const labelFont = 9 * u;
       const valueFont = 19 * u;
       const rowGap = 14 * u;
-      let cursorY = headerBaseline + 72 * M; // 시안 top:96 - top:24
+      let cursorY = headerBaseline + 72 * M + captionExtra; // 시안 top:96 - top:24
       statItems.forEach((item, i) => {
         const labelY = cursorY + labelFont * 0.85;
         const valueY = labelY + valueFont * 1.05;
@@ -1317,7 +1332,7 @@ function stampLayoutDescriptors(
     const valueFont = 16 * u;
     const colGap = 20 * u; // 통계 칸 사이 최소 간격(겹침 방지)
 
-    const headerLineH = hasHeader ? headerFont * 1.3 : 0;
+    const headerLineH = hasHeader ? headerFont * 1.3 + captionExtra : 0;
     const heroLineH = heroKey ? heroSize * 1.05 : 0;
     const statLineH = statItems.length > 0 ? labelFont * 1.3 + valueFont * 1.15 : 0;
     let inner = headerLineH;
@@ -1355,12 +1370,13 @@ function stampLayoutDescriptors(
     if (hasHeader) {
       cursor += headerFont * 0.85;
       if (caption) {
-        nodes.push({ key: 'caption', x: panelLeft + padX, y: cursor, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' });
+        addCaption({ key: 'caption', x: panelLeft + padX, y: cursor, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' }, true);
       }
       if (dateText) {
         nodes.push({ key: 'date', x: panelRight - padX, y: cursor, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
       }
     }
+    cursor += captionExtra;
     if (heroKey) {
       cursor += (hasHeader ? gap : 0) + heroSize * 0.92;
       const heroText = value(heroKey);
@@ -1422,7 +1438,7 @@ function stampLayoutDescriptors(
     // 나음).
     const rowHeights = rows.map((r) => labelFont * 1.2 + (r.big ? distValueFont : otherValueFont) * 1.05);
     const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + rowGap * Math.max(0, rows.length - 1);
-    const captionBlockHeight = caption && hasRail ? rowGap + captionFont * 1.15 : 0;
+    const captionBlockHeight = caption && hasRail ? rowGap + captionFont * 1.15 + captionExtra : 0;
     const combinedHeight = totalHeight + captionBlockHeight;
     const safeTop = CANVAS_HEIGHT * SAFE_AREA_TOP_RATIO;
     const safeBottom = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO);
@@ -1445,7 +1461,7 @@ function stampLayoutDescriptors(
       });
     }
     if (caption) {
-      nodes.push({
+      addCaption({
         key: 'caption',
         x: hasRail ? railX + railPadLeft : CANVAS_WIDTH - 22 * M + config.position.x,
         y: hasRail
@@ -1455,7 +1471,7 @@ function stampLayoutDescriptors(
         family: 'NotoSansKR_700Bold',
         text: caption,
         anchor: hasRail ? 'start' : 'end',
-      });
+      }, hasRail);
     }
     return { texts: nodes, rects };
   }
@@ -1495,7 +1511,7 @@ function stampLayoutDescriptors(
       rects.push({ key: 'divider', x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: Math.max(1, 2 * u), rx: 0, fill: 'rgba(255,255,255,0.5)' });
     }
     if (caption) {
-      nodes.push({ key: 'caption', x: centerX, y: titleBaseline, size: titleFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'middle' });
+      addCaption({ key: 'caption', x: centerX, y: titleBaseline, size: titleFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'middle' });
     }
     return { texts: nodes, rects };
   }
@@ -1506,7 +1522,7 @@ function stampLayoutDescriptors(
   const items = activeItems.map(value);
 
   if (caption) {
-    nodes.push({
+    addCaption({
       key: 'caption',
       x: centerX,
       y: baseY - 58 * s,
@@ -1646,7 +1662,9 @@ export function computeStampBounds(run: RunRecord, config: StampConfig, forThumb
     ? Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 || /[MW@%]/.test(char) ? 1.1 : 0.7), 0)
     : text.length * size * 0.62;
   for (const n of texts) {
-    const width = n.parts
+    const width = n.key.startsWith('caption-')
+      ? Math.max(textWidth(n.text, n.size), estimateStampTextWidth(n.text, n.size))
+      : n.parts
       ? n.parts.reduce((sum, p) => sum + textWidth(p.text, p.size), 0)
       : textWidth(n.text, n.size);
     const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
