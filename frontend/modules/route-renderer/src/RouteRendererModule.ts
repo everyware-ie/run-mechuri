@@ -15,6 +15,8 @@ declare class RouteRendererModule extends NativeModule<RouteRendererEvents> {
   renderClip(options: RenderClipOptions): Promise<RenderClipResult>;
   /** export-and-share FRD §2-3·F2. 진행 중인 renderClip을 취소한다(응답은 reject로 온다). */
   cancelRender(): void;
+  /** 보관함 저장까지 끝난 뒤 백그라운드 실행 권한을 반환한다. */
+  finishRender(jobId: string, persisted: boolean): void;
 }
 
 export default requireNativeModule<RouteRendererModule>('RouteRenderer');

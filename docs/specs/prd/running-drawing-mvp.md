@@ -3,7 +3,7 @@ title: 러닝 드로잉 MVP 제품 요구 문서 (PRD)
 product: running
 type: prd
 status: draft
-updated: 2026-09-02
+updated: 2026-09-13
 related: [../../decisions/2026-08-18-native-ios-and-mvp-scope.md, ../../decisions/2026-08-25-react-native-expo-stack.md, ../../decisions/2026-09-01-frd-over-mockup.md]
 code_repo: https://github.com/everyware-ie/run-mechuri
 ---
@@ -71,6 +71,8 @@ code_repo: https://github.com/everyware-ie/run-mechuri
 2. **배경 위 경로 오버레이 렌더링.** 배경의 세 갈래는 §1과 §6에 있다
 3. **드로잉 결과물 편집.** 크기·위치 수정
 4. **인스타그램에 바로 공유.** 공유 API를 쓴다. 결과물 파일 저장도 함께 제공한다
+
+2026-09-13 인코딩 개선: 사용자가 시작한 결과물 만들기는 앱 전환·화면 잠금 중에도 시스템이 허용하는 범위에서 계속한다. 중단 시 편집값을 유지하며, 기존 영상 품질을 낮추지 않고 대기 시간을 줄인다. 상세 정책은 [내보내기·공유 FRD](../frd/export-and-share.md) §2-5 앱 전환·화면 잠금 중 인코딩에 둔다.
 
 심박이 있으면 함께 읽는다. bpm과 함께 보는 페이스·거리·시간은 러너가 실제로 중요하게 보는 정보이고, 같은 워크아웃에서 같이 나오므로 나중에 데이터 경로를 다시 뚫는 것보다 지금 담아두는 편이 싸다. 다만 **없는 기록이 흔하다.** 팀 GPX 6건에는 하나도 없었다([경로 렌더링 FRD](../frd/route-rendering.md) §2-3). **심박에 의존하는 표현은 "있을 때만" 동작해야 한다.**
 

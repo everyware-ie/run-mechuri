@@ -26,6 +26,12 @@
               "fb1057312323881185"
             ]
           }
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.mechuri.runmechuri.render.*"
+        ],
+        "UIBackgroundModes": [
+          "processing"
         ]
       },
       "entitlements": {

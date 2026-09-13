@@ -1,4 +1,5 @@
 import AVFoundation
+import BackgroundTasks
 import CoreGraphics
 import ExpoModulesCore
 import UIKit
@@ -90,6 +91,7 @@ struct RenderClipOptionsInput: Record {
 
 struct RenderClipResultPayload: Record {
   @Field var outputPath: String = ""
+  @Field var jobId: String = ""
 }
 
 enum RouteRendererError: Error, LocalizedError {
@@ -97,6 +99,8 @@ enum RouteRendererError: Error, LocalizedError {
   case backgroundImageNotFound
   case writerSetupFailed
   case pixelBufferPoolMissing
+  case encodingFailed
+  case backgroundExpired
   /// export-and-share FRD §2-4·F2: 취소는 실패가 아니다. JS 쪽은 이 케이스를 문자열로
   /// 구분하지 않고, 취소 버튼을 누른 시점을 자체적으로 기억해뒀다가 구분한다(share.tsx).
   case cancelled
@@ -111,6 +115,10 @@ enum RouteRendererError: Error, LocalizedError {
       return "비디오 인코더 초기화에 실패했습니다"
     case .pixelBufferPoolMissing:
       return "프레임 버퍼 풀을 만들지 못했습니다"
+    case .encodingFailed:
+      return "영상 파일을 완성하지 못했습니다"
+    case .backgroundExpired:
+      return "백그라운드 처리 시간이 종료됐어요. 편집 내용은 유지됩니다."
     case .cancelled:
       return "취소했습니다"
     }
@@ -123,71 +131,215 @@ private enum RoutePreset: String {
   case segmentLighting = "segment-lighting"
 }
 
+// 취소 상태는 JS 호출, 시스템 만료, 렌더 큐가 함께 읽으므로 작업별로 잠근다.
+private final class RenderJob {
+  let id = UUID().uuidString
+  let outputFileName: String
+  private let lock = NSLock()
+  private var cancellation: RouteRendererError?
+
+  init(outputFileName: String) { self.outputFileName = outputFileName }
+  func cancel(_ reason: RouteRendererError = .cancelled) {
+    lock.lock(); defer { lock.unlock() }
+    if cancellation == nil { cancellation = reason }
+  }
+  func checkCancellation() throws {
+    lock.lock(); let reason = cancellation; lock.unlock()
+    if let reason { throw reason }
+  }
+}
+
+// 모든 메서드는 main queue에서 호출한다. 프레임 생성은 별도 serial queue에서 실행한다.
+// 보관함 저장 ACK까지 유지해, 네이티브 Promise 반환 직후 JS가 중단되는 틈을 막는다.
+private final class RenderBackgroundLease {
+  let job: RenderJob
+  private var legacyTask: UIBackgroundTaskIdentifier = .invalid
+  private var task: BGTask?
+  private var work: (() -> Void)?
+  private var started = false
+  private var finished = false
+  var onFinish: (() -> Void)?
+
+  init(job: RenderJob) { self.job = job }
+
+  deinit {
+    let remainingLegacy = legacyTask
+    let remainingTask = task
+    if remainingLegacy != .invalid || remainingTask != nil {
+      DispatchQueue.main.async {
+        remainingTask?.setTaskCompleted(success: false)
+        if remainingLegacy != .invalid { UIApplication.shared.endBackgroundTask(remainingLegacy) }
+      }
+    }
+  }
+
+  func start(_ work: @escaping () -> Void) {
+    self.work = work
+    legacyTask = UIApplication.shared.beginBackgroundTask(withName: "러닝 영상 만들기") { [weak self] in
+      guard let self else { return }
+      self.job.cancel(.backgroundExpired)
+      self.runOnce()
+      self.finish(success: false)
+    }
+    if #available(iOS 26.0, *) {
+      let identifier = "\(Bundle.main.bundleIdentifier!).render.\(job.id)"
+      // 각 작업의 ID를 한 번만 등록한다. 늦게 오는 콜백이 새 작업에 붙지 않는다.
+      let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
+        guard let self, !self.finished, let task = task as? BGContinuedProcessingTask else {
+          task.setTaskCompleted(success: false)
+          return
+        }
+        self.task = task
+        task.progress.totalUnitCount = Int64(ClipSpec.totalFrames + 1)
+        task.expirationHandler = { [weak self] in
+          self?.job.cancel(.backgroundExpired)
+        }
+        self.endLegacyTask()
+        self.runOnce()
+      }
+      if registered {
+        let request = BGContinuedProcessingTaskRequest(
+          identifier: identifier, title: "러닝 영상 만들기", subtitle: "완성하면 보관함에 저장해요"
+        )
+        request.strategy = .fail
+        do {
+          try BGTaskScheduler.shared.submit(request)
+          return
+        } catch {
+          // 장시간 실행을 받을 수 없으면 기존 OS와 같은 유한한 실행 시간을 사용한다.
+          NSLog("[encoding] continued processing unavailable; using finite background time")
+        }
+      }
+    }
+    runOnce()
+  }
+
+  private func runOnce() {
+    guard !started else { return }
+    started = true
+    let callback = work
+    work = nil
+    callback?()
+  }
+
+  func updateProgress(_ frames: Int) {
+    guard !finished else { return }
+    if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
+      task.progress.completedUnitCount = Int64(frames)
+    }
+  }
+
+  func didEncode() {
+    updateProgress(ClipSpec.totalFrames)
+    // JS reload/종료로 ACK가 사라져도 백그라운드 권한을 계속 붙들지 않는다.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+      self?.finish(success: false)
+    }
+  }
+
+  func finish(success: Bool) {
+    guard !finished else { return }
+    finished = true
+    if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask, success {
+      task.progress.completedUnitCount = task.progress.totalUnitCount
+    }
+    task?.setTaskCompleted(success: success)
+    task = nil
+    endLegacyTask()
+    onFinish?()
+    onFinish = nil
+  }
+
+  private func endLegacyTask() {
+    if legacyTask != .invalid {
+      UIApplication.shared.endBackgroundTask(legacyTask)
+      legacyTask = .invalid
+    }
+  }
+}
+
 public class RouteRendererModule: Module {
-  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제였는데,
-  // 실기기 피드백(2026-09-08) "퍼센트가 늘었다줄었다한다" — 그 전제가 실제로는 보장돼
-  // 있지 않았다. 편집 화면을 벗어나도 인코딩은 계속되는 게 의도된 동작(§2-3 "이 화면을
-  // 벗어나도 계속")인데, 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전 renderClip이
-  // 안 멈춘 채로 새 renderClip이 하나 더 시작돼 두 개가 동시에 프레임을 그리며 각자
-  // onRenderProgress를 쐈다 — 새로 뜬 공유 화면의 리스너는 둘을 구분 못 하고 둘 다
-  // 받아서, 최신 것(낮은 값에서 시작)과 이전 것(더 진행된 값)이 번갈아 들어와
-  // 퍼센트가 오르내리는 것처럼 보였다. isCancelled 하나로는 "취소 버튼"과 "새
-  // 요청이 이전 걸 대체"를 구분 못 해 세대 번호(generation)를 따로 둔다 — 새
-  // renderClip이 시작되면 이전 세대의 프레임 루프는 다음 프레임에서 스스로 멈춘다.
-  private var isCancelled = false
-  private var currentGeneration = 0
+  private let renderQueue = DispatchQueue(label: "com.mechuri.runmechuri.encoding", qos: .userInitiated)
+  private let jobLock = NSLock()
+  private var activeJob: RenderJob?
+  // main queue에서만 접근한다.
+  private var leases: [String: RenderBackgroundLease] = [:]
 
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
-
-    // export-and-share FRD §2-3: 인코딩 진행률.
     Events("onRenderProgress")
 
     Function("cancelRender") {
-      self.isCancelled = true
+      self.jobLock.lock(); let job = self.activeJob; self.jobLock.unlock()
+      job?.cancel()
+    }
+
+    Function("finishRender") { (jobId: String, persisted: Bool) in
+      DispatchQueue.main.async { self.leases[jobId]?.finish(success: persisted) }
     }
 
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
-      self.isCancelled = false
-      self.currentGeneration &+= 1
-      let generation = self.currentGeneration
-      guard options.points.count >= 2 else {
-        throw RouteRendererError.notEnoughPoints
+      let job = self.replaceActiveJob(outputFileName: options.outputFileName)
+      return try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.main.async {
+          let lease = RenderBackgroundLease(job: job)
+          self.leases[job.id] = lease
+          lease.onFinish = { [weak self] in self?.leases.removeValue(forKey: job.id) }
+          lease.start {
+            self.renderQueue.async {
+              do {
+                let result = try self.render(options, job: job)
+                DispatchQueue.main.async { lease.didEncode() }
+                continuation.resume(returning: result)
+              } catch {
+                DispatchQueue.main.async { lease.finish(success: false) }
+                continuation.resume(throwing: error)
+              }
+            }
+          }
+        }
       }
-      guard let background = self.loadImage(path: options.backgroundImagePath) else {
-        throw RouteRendererError.backgroundImageNotFound
-      }
-      let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
-
-      let baseProjected = self.projectPoints(options.points)
-      // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 편집
-      // 화면 미리보기(route-preview.tsx)의 순서(projectPoints → applySmoothing → transform)와 맞춘다.
-      let smoothed = self.applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
-      let projected = self.applyTransform(smoothed, transform: options.transform)
-      // 다듬기가 점 개수·위치를 바꾸므로 원본 위경도 기반 누적 거리와 대응이 깨진다.
-      // §5-4 진행률은 항상 비율(targetDistance = total * fraction)로만 쓰이므로
-      // 캔버스 유클리드 거리로 다시 계산해도 결과가 같다(route-projection.ts와 동일).
-      let cumulativeDistances = self.cumulativeCanvasDistances(projected)
-      let totalDistance = cumulativeDistances.last ?? 0
-
-      let outputURL = self.outputURL(named: options.outputFileName)
-      try self.writeClip(
-        preset: preset,
-        projectedPoints: projected,
-        cumulativeDistances: cumulativeDistances,
-        totalDistance: totalDistance,
-        background: background,
-        stamp: options,
-        to: outputURL,
-        generation: generation
-      )
-
-      self.sendEvent("onRenderProgress", ["progress": 1.0])
-
-      var result = RenderClipResultPayload()
-      result.outputPath = outputURL.absoluteString
-      return result
     }
+  }
+
+  private func replaceActiveJob(outputFileName: String) -> RenderJob {
+    jobLock.lock(); defer { jobLock.unlock() }
+    activeJob?.cancel()
+    let job = RenderJob(outputFileName: outputFileName)
+    activeJob = job
+    return job
+  }
+
+  private func reportProgress(_ frames: Int, job: RenderJob) {
+    jobLock.lock(); let current = activeJob === job; jobLock.unlock()
+    guard current else { return }
+    sendEvent("onRenderProgress", [
+      "progress": Double(frames) / Double(ClipSpec.totalFrames),
+      "outputFileName": job.outputFileName,
+    ])
+    DispatchQueue.main.async { self.leases[job.id]?.updateProgress(frames) }
+  }
+
+  private func render(_ options: RenderClipOptionsInput, job: RenderJob) throws -> RenderClipResultPayload {
+    try job.checkCancellation()
+    guard options.points.count >= 2 else { throw RouteRendererError.notEnoughPoints }
+    guard let background = loadImage(path: options.backgroundImagePath) else {
+      throw RouteRendererError.backgroundImageNotFound
+    }
+    let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
+    let baseProjected = projectPoints(options.points)
+    let smoothed = applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
+    let projected = applyTransform(smoothed, transform: options.transform)
+    let distances = cumulativeCanvasDistances(projected)
+    let output = outputURL(named: options.outputFileName)
+    try writeClip(preset: preset, projectedPoints: projected, cumulativeDistances: distances,
+                  totalDistance: distances.last ?? 0, background: background, stamp: options,
+                  to: output, job: job)
+    reportProgress(ClipSpec.totalFrames, job: job)
+    var result = RenderClipResultPayload()
+    result.outputPath = output.absoluteString
+    result.jobId = job.id
+    return result
   }
 
   // MARK: - 좌표 처리
@@ -501,10 +653,10 @@ public class RouteRendererModule: Module {
     cumulativeDistances: [Double],
     totalDistance: Double,
     progressFraction: Double,
-    stamp: RenderClipOptionsInput
+    stamp: RenderClipOptionsInput,
+    renderer: UIGraphicsImageRenderer
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
-    let renderer = UIGraphicsImageRenderer(size: size)
     let targetDistance = totalDistance * progressFraction
 
     return renderer.image { _ in
@@ -1162,10 +1314,15 @@ public class RouteRendererModule: Module {
     background: UIImage,
     stamp: RenderClipOptionsInput,
     to outputURL: URL,
-    generation: Int
+    job: RenderJob
   ) throws {
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try? FileManager.default.removeItem(at: outputURL)
+    }
+
+    var completed = false
+    defer {
+      if !completed { try? FileManager.default.removeItem(at: outputURL) }
     }
 
     guard let writer = try? AVAssetWriter(outputURL: outputURL, fileType: .mp4) else {
@@ -1195,73 +1352,71 @@ public class RouteRendererModule: Module {
     }
     writer.add(writerInput)
 
-    writer.startWriting()
+    guard writer.startWriting() else { throw writer.error ?? RouteRendererError.writerSetupFailed }
     writer.startSession(atSourceTime: .zero)
-
-    // 배경은 프레임마다 안 바뀐다 — 화면 크기로 한 번만 크롭·스케일해 둔다.
-    // (매 프레임 원본을 다시 그리면 디코딩·스케일 비용 + 임시 버퍼가 쌓인다.)
-    let preparedBackground = self.prepareBackground(background)
-
-    var thrown: Error?
-    for frameIndex in 0..<ClipSpec.totalFrames {
-      // 각 프레임의 임시 할당(UIImage·CGImage·CoreGraphics 그림자 버퍼)을 즉시 반환한다.
-      // 이게 없으면 360프레임 × 수십 MB가 메서드가 끝날 때까지 쌓여 jetsam이 앱을 죽인다.
-      autoreleasepool {
-        // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
-        // generation 불일치는 "취소 버튼"이 아니라 "더 새 renderClip 요청이 이걸
-        // 대체했다"는 뜻 — 둘 다 조용히 멈추고 미완성 파일을 지우는 건 같지만,
-        // 후자는 사용자가 취소한 게 아니므로 실패 알림을 띄우면 안 된다(아래
-        // RouteRendererError.cancelled를 JS가 똑같이 "조용한 종료"로 처리해 준다).
-        if self.isCancelled || self.currentGeneration != generation {
-          thrown = RouteRendererError.cancelled
-          return
+    let start = CFAbsoluteTimeGetCurrent()
+    var rasterSeconds = 0.0, copySeconds = 0.0, waitSeconds = 0.0
+    var renderedFrames = 0
+    do {
+      let preparedBackground = prepareBackground(background)
+      // 기존 format/scale 유지. 렌더러만 재사용하고 품질 설정은 바꾸지 않는다.
+      let renderer = UIGraphicsImageRenderer(size: CGSize(width: ClipSpec.width, height: ClipSpec.height))
+      var completedFrame: CVPixelBuffer?
+      for frameIndex in 0..<ClipSpec.totalFrames {
+        try autoreleasepool {
+          try job.checkCancellation()
+          guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
+          let pixelBuffer: CVPixelBuffer
+          if let cached = completedFrame {
+            pixelBuffer = cached
+          } else {
+            let rasterStart = CFAbsoluteTimeGetCurrent()
+            let image = drawFrame(
+              preset: preset, background: preparedBackground, projectedPoints: projectedPoints,
+              cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
+              progressFraction: min(1, Double(frameIndex) / Double(ClipSpec.drawFrames)),
+              stamp: stamp, renderer: renderer
+            )
+            rasterSeconds += CFAbsoluteTimeGetCurrent() - rasterStart
+            let copyStart = CFAbsoluteTimeGetCurrent()
+            guard let buffer = self.pixelBuffer(from: image, pool: adaptor.pixelBufferPool) else {
+              throw RouteRendererError.pixelBufferPoolMissing
+            }
+            pixelBuffer = buffer
+            copySeconds += CFAbsoluteTimeGetCurrent() - copyStart
+            renderedFrames += 1
+            // 마지막 3초는 모든 프리셋·각인이 정지한다. 같은 버퍼를 수정 없이 전달한다.
+            if frameIndex == ClipSpec.drawFrames { completedFrame = buffer }
+          }
+          let waitStart = CFAbsoluteTimeGetCurrent()
+          while !writerInput.isReadyForMoreMediaData {
+            try job.checkCancellation()
+            guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
+            Thread.sleep(forTimeInterval: 0.002)
+          }
+          waitSeconds += CFAbsoluteTimeGetCurrent() - waitStart
+          try job.checkCancellation()
+          guard adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)) else {
+            throw writer.error ?? RouteRendererError.encodingFailed
+          }
+          if frameIndex % 6 == 0 { reportProgress(frameIndex, job: job) }
         }
-        // 매 프레임 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다.
-        if frameIndex % 6 == 0 {
-          self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
-        }
-
-        let progressFraction: Double
-        if frameIndex < ClipSpec.drawFrames {
-          progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
-        } else {
-          progressFraction = 1.0 // 정지 구간: 완성된 경로 유지 (§5-3)
-        }
-        let frameImage = self.drawFrame(
-          preset: preset,
-          background: preparedBackground,
-          projectedPoints: projectedPoints,
-          cumulativeDistances: cumulativeDistances,
-          totalDistance: totalDistance,
-          progressFraction: progressFraction,
-          stamp: stamp
-        )
-
-        guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {
-          thrown = RouteRendererError.pixelBufferPoolMissing
-          return
-        }
-
-        while !writerInput.isReadyForMoreMediaData && !self.isCancelled && self.currentGeneration == generation {
-          Thread.sleep(forTimeInterval: 0.01)
-        }
-        let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
-        adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
       }
-
-      if let error = thrown {
-        writer.cancelWriting()
-        try? FileManager.default.removeItem(at: outputURL)
-        throw error
-      }
+      writerInput.markAsFinished()
+      let semaphore = DispatchSemaphore(value: 0)
+      writer.finishWriting { semaphore.signal() }
+      while semaphore.wait(timeout: .now() + 0.05) == .timedOut { try job.checkCancellation() }
+      try job.checkCancellation()
+      guard writer.status == .completed else { throw writer.error ?? RouteRendererError.encodingFailed }
+      completed = true
+      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f rendered=%d encoded=%d scale=%.1f",
+            CFAbsoluteTimeGetCurrent() - start, rasterSeconds, copySeconds, waitSeconds,
+            renderedFrames, ClipSpec.totalFrames, (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
+    } catch {
+      if writer.status == .writing { writer.cancelWriting() }
+      try? FileManager.default.removeItem(at: outputURL)
+      throw error
     }
-
-    writerInput.markAsFinished()
-    let semaphore = DispatchSemaphore(value: 0)
-    writer.finishWriting {
-      semaphore.signal()
-    }
-    semaphore.wait()
   }
 
   private func pixelBuffer(from image: UIImage, pool: CVPixelBufferPool?) -> CVPixelBuffer? {
@@ -1273,7 +1428,7 @@ public class RouteRendererModule: Module {
     CVPixelBufferLockBaseAddress(pixelBuffer, [])
     defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
 
-    let context = CGContext(
+    guard let context = CGContext(
       data: CVPixelBufferGetBaseAddress(pixelBuffer),
       width: ClipSpec.width,
       height: ClipSpec.height,
@@ -1281,10 +1436,10 @@ public class RouteRendererModule: Module {
       bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
       space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
-    )
+    ) else { return nil }
 
     guard let cgImage = image.cgImage else { return nil }
-    context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: ClipSpec.width, height: ClipSpec.height))
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: ClipSpec.width, height: ClipSpec.height))
 
     return pixelBuffer
   }
