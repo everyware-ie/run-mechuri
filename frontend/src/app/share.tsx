@@ -1,3 +1,4 @@
+import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -134,6 +135,7 @@ export default function ShareScreen() {
       distanceMeters: selectedRun.distanceMeters,
       durationSeconds: selectedRun.durationSeconds,
       averagePaceSecPerKm: selectedRun.averagePaceSecPerKm,
+      paceSamples: buildPaceTimeline(track.coordinates, selectedRun.averagePaceSecPerKm),
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {

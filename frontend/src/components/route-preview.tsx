@@ -1,8 +1,10 @@
+import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
 import { estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
+import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
-import { Fragment, memo, useEffect, useMemo, useState } from 'react';
-import { Animated, View } from 'react-native';
+import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { Animated, AppState, View } from 'react-native';
 import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
@@ -13,11 +15,6 @@ import {
   Svg,
   Text as SvgText,
   TSpan,
-  Defs,
-  Filter,
-  FeGaussianBlur,
-  FeMerge,
-  FeMergeNode,
 } from 'react-native-svg';
 
 import {
@@ -47,13 +44,13 @@ export type StampMode = 'always' | 'after' | 'hidden';
 export type StampLayout = 'row' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
 export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
-  { id: 'row', label: '간결' },
-  { id: 'stack', label: '스택' }, // 2a 좌하단 스택
-  { id: 'bar', label: '스탯바' }, // 2b 하단 스탯 바
   { id: 'corner', label: '코너' }, // 2c 코너 분산
   { id: 'glass', label: '글래스' }, // 2d 글래스 플레이트
   { id: 'rail', label: '레일' }, // 2e 사이드 레일
+  { id: 'stack', label: '스택' }, // 2a 좌하단 스택
+  { id: 'bar', label: '스탯바' }, // 2b 하단 스탯 바
   { id: 'line', label: '원라인' }, // 2f 원 라인
+  { id: 'row', label: '간결' },
 ];
 
 export type StampConfig = {
@@ -147,16 +144,10 @@ const DRAW_SECONDS = 9;
 const HOLD_SECONDS = 3;
 // 재생 버튼(2026-09-02)이 "한 번 재생하고 자동으로 멈춘다"의 길이를 재려고 밖에서도 씀.
 export const CYCLE_SECONDS = DRAW_SECONDS + HOLD_SECONDS;
-// 실기기 피드백(2026-09-03): "일정 거리 이동하고 멈추고, 이동하고 멈추고 한다" —
-// 경로 자체(Skia Path의 end)는 SharedValue라 프레임마다 네이티브에서 계속
-// 갱신되지만(진짜 30fps로 고정된 게 아니다), 각인 숫자(거리·시간·페이스 카운트업)는
-// react-native-svg라 SharedValue를 못 쓰고 이 값이 바뀔 때마다 실제로 리렌더가
-// 필요하다 — 그 리렌더가 DRAW_SECONDS/STAMP_SYNC_STEPS 간격(이전엔 30이라
-// 9/30=0.3초마다)으로 규칙적으로 일어나는 게 경로가 규칙적으로 살짝씩 멎어
-// 보이는 원인일 가능성이 높다(같은 JS 스레드를 잠깐씩 쓰므로). 30 → 12로 낮춰
-// 그 간격을 0.75초로 늘렸다 — 숫자가 그정도 빈도로 올라가도 눈에는 여전히
-// 매끄럽게 세는 것처럼 보이면서, 리렌더 빈도는 40% 수준으로 줄어든다.
-const STAMP_SYNC_STEPS = 12;
+// 최종 영상(30fps)과 같은 시간 간격으로 각인 숫자를 샘플링한다.
+// 경로는 UI 스레드의 매 프레임 진행률을 그대로 사용한다.
+const STAMP_SAMPLE_FPS = 30;
+const STAMP_SYNC_STEPS = DRAW_SECONDS * STAMP_SAMPLE_FPS;
 
 // 시안 neon 테마 팔레트.
 const LINE_WARM = '#FFF3EC';
@@ -274,6 +265,15 @@ export function RoutePreview({
   playing = true,
   stampDragOffset,
 }: Props) {
+  const isFocused = useIsFocused();
+  const [appState, setAppState] = useState(AppState.currentState);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState);
+    return () => subscription.remove();
+  }, []);
+  // 스택에 남은 이전 화면과 비활성 앱은 재생 설정을 바꾸지 않고 작업만 멈춘다.
+  const pauseAnimation = isInteracting || !isFocused || appState !== 'active';
+
   // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다.
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(
@@ -282,16 +282,17 @@ export function RoutePreview({
   );
   const cumulative = useMemo(() => cumulativeCanvasDistances(projected), [projected]);
   const totalDistance = cumulative[cumulative.length - 1] ?? 0;
+  const paceTimeline = useMemo(() => buildPaceTimeline(points, run.averagePaceSecPerKm),
+    [points, run.averagePaceSecPerKm]);
 
   const rawFullPath = useMemo(() => skPath(rawProjected), [rawProjected]);
   const fullPath = useMemo(() => skPath(projected), [projected]);
 
   // 실기기 피드백(2026-09-02): 세 프리셋 다 이제 진행률을 Reanimated
-  // SharedValue(UI 스레드)로 들고 있어서(아래 useUIThreadProgress·
-  // LightRunnerLayer), 여기 JS 쪽엔 "그리기 자체"를 위한 진행률 state가 더 이상
+  // SharedValue(UI 스레드)로 들고 있어서(아래 useUIThreadProgress), 여기 JS 쪽엔 "그리기 자체"를 위한 진행률 state가 더 이상
   // 없다 — 각인(거리·시간·페이스) 카운트업 숫자를 SVG로 그리는 데만 이 값이
   // 필요해서, 어느 프리셋이 켜져 있든 그 프리셋 레이어가 onProgressSample로
-  // 대략 STAMP_SYNC_STEPS단계마다만 낮춰서 여기로 올려준다(JS 리렌더가 드묾).
+  // 영상과 같은 30fps 샘플을 올린다. 고정 각인은 별도 memo 경계로 갱신을 건너뛴다.
   const [uiStampProgress, setUiStampProgress] = useState(0);
 
   // §3: 프리셋을 바꾸면 처음부터 재생 — prop이 바뀐 렌더에서 상태만 리셋(React 권장 패턴,
@@ -302,13 +303,8 @@ export function RoutePreview({
     setUiStampProgress(0);
   }
 
-  // 재생 버튼(2026-09-02): 정지(playing=false) → 재생(true)으로 바뀔 때마다
-  // 처음부터 다시 재생한다. light-runner는 진행률을 LightRunnerLayer 내부의
-  // Reanimated SharedValue(UI 스레드)가 들고 있어서, playToken을 바꿔 그
-  // 컴포넌트를 강제로 다시 마운트시켜 리셋한다(프리셋이 바뀔 때 자연히 새로
-  // 마운트되며 리셋되는 것과 같은 방식). 나머지 둘(useUIThreadProgress)은
-  // playing 값 자체가 바뀌는 걸 보고 훅 안에서 직접 리셋하므로 재마운트가
-  // 필요 없다.
+  // 재생을 다시 시작하면 각인 숫자와 불빛 러너의 파생값도 처음 상태로 맞춘다.
+  // 세 프리셋의 시간 초기화는 공통 useUIThreadProgress가 처리한다.
   const [playToken, setPlayToken] = useState(0);
   const [seenPlaying, setSeenPlaying] = useState(playing);
   if (seenPlaying !== playing) {
@@ -380,7 +376,7 @@ export function RoutePreview({
     { translateY: -CANVAS_HEIGHT / 2 },
   ]);
 
-  if (projected.length < 2) return <View style={{ width: viewWidth, height: viewHeight }} />;
+  if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
   // 썸네일이 "완성된 순간"만 보여주는 것과 같은 원칙.
@@ -402,46 +398,12 @@ export function RoutePreview({
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
-      <Canvas style={{ flex: 1 }}>
-        <Group transform={groupTransform}>
-          {preset === 'segment-lighting' && (
-            <SegmentLayer
-              projected={projected}
-              cumulative={cumulative}
-              totalDistance={totalDistance}
-              fullPath={fullPath}
-              isInteracting={isInteracting}
-              playing={playing}
-              blurScale={blurScale}
-              onProgressSample={setUiStampProgress}
-            />
-          )}
-          {preset === 'light-runner' && (
-            <LightRunnerLayer
-              // 재생 버튼을 다시 누를 때마다(playToken 증가) 새로 마운트돼
-              // 내부 Reanimated SharedValue(elapsed)가 0부터 다시 시작한다.
-              key={playToken}
-              projected={projected}
-              cumulative={cumulative}
-              totalDistance={totalDistance}
-              fullPath={fullPath}
-              rawFullPath={rawFullPath}
-              isInteracting={isInteracting}
-              playing={playing}
-              blurScale={blurScale}
-              onProgressSample={setUiStampProgress}
-            />
-          )}
-          {preset === 'default-drawing' && (
-            <DefaultDrawingLayer
-              fullPath={fullPath}
-              isInteracting={isInteracting}
-              playing={playing}
-              onProgressSample={setUiStampProgress}
-            />
-          )}
-        </Group>
-      </Canvas>
+      <RouteDrawingCanvas
+        preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance}
+        fullPath={fullPath} rawFullPath={rawFullPath} groupTransform={groupTransform}
+        pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
+        playToken={playToken} onProgressSample={setUiStampProgress}
+      />
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
           설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), content와는
@@ -472,37 +434,81 @@ export function RoutePreview({
             ? { transform: [{ translateX: stampDragOffset.x }, { translateY: stampDragOffset.y }] }
             : null,
         ]}>
-        <Svg width={viewWidth} height={viewHeight}>
-          <Defs>
-            <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
-              <FeGaussianBlur stdDeviation="6" result="b" />
-              <FeMerge>
-                <FeMergeNode in="b" />
-                <FeMergeNode in="SourceGraphic" />
-              </FeMerge>
-            </Filter>
-          </Defs>
+        <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+          fitScale={fitScale} offsetX={offsetX} offsetY={offsetY} viewWidth={viewWidth} viewHeight={viewHeight} />
+        {stampBounds && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
           <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-            <StampLayerSvg run={run} config={stampConfig} progressFraction={stampProgressFraction} />
-            {stampBounds && (
-              <SvgRect
-                x={stampBounds.x}
-                y={stampBounds.y}
-                width={stampBounds.width}
-                height={stampBounds.height}
-                rx={16}
-                stroke={GLOW}
-                strokeWidth={3}
-                strokeDasharray="10,8"
-                fill="none"
-              />
-            )}
+            <SvgRect x={stampBounds.x} y={stampBounds.y} width={stampBounds.width} height={stampBounds.height}
+              rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
           </G>
-        </Svg>
+        </Svg>}
       </Animated.View>
     </View>
   );
 }
+
+// 각인 숫자만 바뀔 때 Canvas children이 새로 생기면 Skia root.render가 다시 실행된다.
+// 프리셋 내부 memo 외에 Canvas 자체도 경계 안에 둬 경로 트리 갱신을 건너뛴다.
+const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
+  preset, projected, cumulative, totalDistance, fullPath, rawFullPath, groupTransform,
+  pauseAnimation, playing, blurScale, playToken, onProgressSample,
+}: {
+  preset: RoutePreset;
+  projected: CanvasPoint[];
+  cumulative: number[];
+  totalDistance: number;
+  fullPath: ReturnType<typeof skPath>;
+  rawFullPath: ReturnType<typeof skPath>;
+  groupTransform: ComponentProps<typeof Group>['transform'];
+  pauseAnimation: boolean;
+  playing: boolean;
+  blurScale: number;
+  playToken: number;
+  onProgressSample: (progress: number) => void;
+}) {
+  return (
+    <Canvas style={{ flex: 1 }}>
+      <Group transform={groupTransform}>
+        {preset === 'segment-lighting' && (
+          <SegmentLayer
+            projected={projected}
+            cumulative={cumulative}
+            totalDistance={totalDistance}
+            fullPath={fullPath}
+            isInteracting={pauseAnimation}
+            playing={playing}
+            blurScale={blurScale}
+            onProgressSample={onProgressSample}
+          />
+        )}
+        {preset === 'light-runner' && (
+          <LightRunnerLayer
+            // 재생 버튼을 다시 누를 때마다(playToken 증가) 새로 마운트돼
+            // 내부 Reanimated SharedValue(elapsed)가 0부터 다시 시작한다.
+            key={playToken}
+            projected={projected}
+            cumulative={cumulative}
+            totalDistance={totalDistance}
+            fullPath={fullPath}
+            rawFullPath={rawFullPath}
+            isInteracting={pauseAnimation}
+            playing={playing}
+            blurScale={blurScale}
+            onProgressSample={onProgressSample}
+          />
+        )}
+        {preset === 'default-drawing' && (
+          <DefaultDrawingLayer
+            fullPath={fullPath}
+            isInteracting={pauseAnimation}
+            playing={playing}
+            onProgressSample={onProgressSample}
+          />
+        )}
+      </Group>
+    </Canvas>
+  );
+});
 
 // default-drawing — 시안 "plain" 그대로: 따뜻한 흰색 선, 글로우 없음(paint()의
 // mode==='plain' 분기는 shadowBlur를 걸지 않는다). 다만 시안의 plain은 정지 화면이고
@@ -547,12 +553,16 @@ const DefaultDrawingLayer = memo(function DefaultDrawingLayer({
 // 출력과 같은 1080px 폭이라 그 비율(~3.13배)로 스케일한 값을 쓴다. 옅은 원본 + 지나온
 // 길(+글로우) + 최근 잔광(강한 글로우) + 머리 점, 순서로 쌓는다.
 //
-// 실기기 피드백(2026-09-02) "기본 드로잉/구간 점등도 여전히 느리다" — light-runner만
-// Reanimated(UI 스레드)로 옮겨져 있었고, 나머지 둘은 아직 elapsed를 React state로 두고
-// 매 프레임 setState → 리렌더 → Skia가 새 트리를 받는 왕복을 거쳤다(위 light-runner
-// 주석과 같은 문제). 이 훅이 그 왕복을 없앤 "진행률" 하나를 세 프리셋이 공통으로
-// 쓸 수 있게 뽑아낸 것 — light-runner는 targetDistance·잔광 등 자기만의 파생값이
-// 많아 자기 것을 그대로 두고, DefaultDrawingLayer·SegmentLayer가 이걸 쓴다.
+// 세 프리셋은 같은 UI 스레드 시계를 사용하고, 각자의 경로/잔광 파생값만 다르다.
+// 개발 중 성능 측정: 경로 좌표나 건강 값은 출력하지 않는다.
+function reportPreviewFrames(stats: { frames: number; totalMs: number; maxMs: number; over34: number; over100: number; worstProgress: number }) {
+  if (__DEV__) console.info('[preview-performance]', JSON.stringify({
+    stampRenderer: 'native-shadow-pace', stampFps: STAMP_SAMPLE_FPS, frames: stats.frames, meanMs: Number((stats.totalMs / Math.max(1, stats.frames)).toFixed(2)),
+    maxMs: Number(stats.maxMs.toFixed(2)), over34: stats.over34, over100: stats.over100,
+    worstProgress: Number(stats.worstProgress.toFixed(3)),
+  }));
+}
+
 function useUIThreadProgress(
   isInteracting: boolean,
   playing: boolean,
@@ -561,14 +571,31 @@ function useUIThreadProgress(
   const elapsed = useSharedValue(0);
   const progress = useDerivedValue(() => Math.min(elapsed.value / DRAW_SECONDS, 1));
 
+  const frameStats = useSharedValue({ frames: 0, totalMs: 0, maxMs: 0, over34: 0, over100: 0, worstProgress: 0 });
   const frameCallback = useFrameCallback((frameInfo) => {
     if (frameInfo.timeSincePreviousFrame === null) return;
-    const delta = Math.min(0.1, frameInfo.timeSincePreviousFrame / 1000);
-    elapsed.value = (elapsed.value + delta) % CYCLE_SECONDS;
-  });
+    const ms = frameInfo.timeSincePreviousFrame;
+    const before = elapsed.value;
+    const delta = Math.min(0.1, ms / 1000);
+    elapsed.value = (before + delta) % CYCLE_SECONDS;
+    if (__DEV__) {
+      if (before < DRAW_SECONDS) {
+        frameStats.modify((stats) => {
+          stats.frames++; stats.totalMs += ms;
+          if (ms > stats.maxMs) { stats.maxMs = ms; stats.worstProgress = before / DRAW_SECONDS; }
+          if (ms > 34) stats.over34++;
+          if (ms > 100) stats.over100++;
+          return stats;
+        });
+      }
+      if (before < DRAW_SECONDS && elapsed.value >= DRAW_SECONDS) scheduleOnRN(reportPreviewFrames, { ...frameStats.value });
+      if (elapsed.value < before) frameStats.value = { frames: 0, totalMs: 0, maxMs: 0, over34: 0, over100: 0, worstProgress: 0 };
+    }
+  }, false);
 
   useEffect(() => {
     frameCallback.setActive(!isInteracting && playing);
+    return () => frameCallback.setActive(false);
   }, [isInteracting, playing, frameCallback]);
 
   // 재생 버튼(2026-09-02): 정지 상태(playing=false)에선 완성된 모습을 보여주고
@@ -576,16 +603,16 @@ function useUIThreadProgress(
   // 처음부터 다시 그린다 — light-runner처럼 key={playToken}으로 컴포넌트를
   // 통째로 다시 마운트시키지 않고, 이 훅 안에서 직접 elapsed를 리셋한다.
   useEffect(() => {
-    elapsed.value = playing ? 0 : DRAW_SECONDS;
-  }, [playing, elapsed]);
+    elapsed.set(playing ? 0 : DRAW_SECONDS);
+    if (__DEV__) frameStats.set({ frames: 0, totalMs: 0, maxMs: 0, over34: 0, over100: 0, worstProgress: 0 });
+  }, [playing, elapsed, frameStats]);
 
-  // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
-  // STAMP_SYNC_STEPS단계로만 낮춰서 JS 쪽에 넘긴다(light-runner와 같은 이유).
+  // 30fps 영상의 프레임 진행률과 맞춘다. 끝 값 1과 반복 시작 0도 전달한다.
   useAnimatedReaction(
     () => Math.floor(progress.value * STAMP_SYNC_STEPS),
     (bucket, prevBucket) => {
       if (bucket !== prevBucket) {
-        scheduleOnRN(onProgressSample, progress.value);
+        scheduleOnRN(onProgressSample, bucket / STAMP_SYNC_STEPS);
       }
     }
   );
@@ -628,8 +655,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   blurScale: number;
   onProgressSample: (progress: number) => void;
 }) {
-  const elapsed = useSharedValue(0);
-  const progress = useDerivedValue(() => Math.min(elapsed.value / DRAW_SECONDS, 1));
+  const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
   const targetDistance = useDerivedValue(() => totalDistance * progress.value);
 
   // 잔광 길이는 "총 거리의 비율"이 아니라 캔버스 픽셀 고정값을 쓴다(2026-09,
@@ -647,40 +673,6 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   // React 리렌더가 다시 필요해진다) opacity로 켜고 끈다 — 항상 같은 엘리먼트 트리를 유지.
   const runningOpacity = useDerivedValue(() => (progress.value >= 1 ? 0 : 1));
   const completeOpacity = useDerivedValue(() => (progress.value >= 1 ? 1 : 0));
-
-  const frameCallback = useFrameCallback((frameInfo) => {
-    if (frameInfo.timeSincePreviousFrame === null) return;
-    const delta = Math.min(0.1, frameInfo.timeSincePreviousFrame / 1000);
-    elapsed.value = (elapsed.value + delta) % CYCLE_SECONDS;
-  });
-
-  useEffect(() => {
-    frameCallback.setActive(!isInteracting && playing);
-  }, [isInteracting, playing, frameCallback]);
-
-  // 재생 버튼(2026-09-02): 정지 상태에선 완성된 모습(정지 글로우)을 보여준다 —
-  // key={playToken}로 재생을 다시 누를 때마다 이 컴포넌트가 통째로 새로
-  // 마운트되어 elapsed가 0부터 시작하지만, "정지"로 바뀌는 순간에는 마운트가
-  // 그대로 유지되므로(멈춘 자리에 얼어붙지 않고) elapsed를 완주 지점으로
-  // 직접 옮겨 다른 두 프리셋과 같은 "정지=완성" 원칙을 지킨다.
-  useEffect(() => {
-    if (!playing) {
-      elapsed.value = DRAW_SECONDS;
-    }
-  }, [playing, elapsed]);
-
-  // 각인(거리·시간·페이스) 카운트업 숫자는 매 프레임까지 정밀할 필요가 없다 — 대략
-  // STAMP_SYNC_STEPS단계(진행률 0→1 구간을 그만큼 칸으로 나눈 정도)로만 낮춰서
-  // JS 쪽에 넘긴다. Skia 캔버스 자체(아래 SharedValue들)는 이 동기화와 무관하게
-  // 계속 UI 스레드에서 그려진다.
-  useAnimatedReaction(
-    () => Math.floor(progress.value * STAMP_SYNC_STEPS),
-    (bucket, prevBucket) => {
-      if (bucket !== prevBucket) {
-        scheduleOnRN(onProgressSample, progress.value);
-      }
-    }
-  );
 
   return (
     <Group>
@@ -1064,7 +1056,8 @@ function splitHeroValue(text: string, size: number): StampTextPart[] {
 function stampLayoutDescriptors(
   run: RunRecord,
   config: StampConfig,
-  progressFraction: number
+  progressFraction: number,
+  paceSeconds = run.averagePaceSecPerKm
 ): { texts: StampTextDescriptor[]; rects: StampRectDescriptor[] } {
   const isComplete = progressFraction >= 1;
   if (config.mode === 'hidden') return { texts: [], rects: [] };
@@ -1083,7 +1076,7 @@ function stampLayoutDescriptors(
       case 'time':
         return formatDuration(run.durationSeconds * progressFraction);
       case 'pace':
-        return formatPace(run.averagePaceSecPerKm);
+        return formatPace(paceSeconds);
       case 'date':
         return formatStampDate(run.date);
       case 'place':
@@ -1096,7 +1089,8 @@ function stampLayoutDescriptors(
   };
 
   const finalValue = (item: StampItem) => item === 'distance' ? formatDistanceKm(run.distanceMeters)
-    : item === 'time' ? formatDuration(run.durationSeconds) : value(item);
+    : item === 'time' ? formatDuration(run.durationSeconds)
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
   const rawCaption = normalizeCaption(config.caption ?? '');
   const caption = rawCaption.trim() ? rawCaption : '';
   const layout: StampLayout = config.layout ?? 'row';
@@ -1236,7 +1230,8 @@ function stampLayoutDescriptors(
     if (statOrder.length > 0) {
       const widths = statOrder.map(item => {
         const finalValue = item === 'distance' ? formatDistanceKm(run.distanceMeters)
-          : item === 'time' ? formatDuration(run.durationSeconds) : value(item);
+          : item === 'time' ? formatDuration(run.durationSeconds)
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
         return Math.max(estimateStampTextWidth(STAT_LABEL[item], labelFont),
           estimateStampTextWidth(finalValue, (item === 'distance' ? 22 : 18) * u));
       });
@@ -1555,6 +1550,12 @@ function stampLayoutDescriptors(
   return { texts: nodes, rects };
 }
 
+function stampTextContent(node: ReturnType<typeof stampLayoutDescriptors>['texts'][number]) {
+  return node.parts
+    ? node.parts.map((part, index) => <TSpan key={index} fontSize={part.size}>{part.text}</TSpan>)
+    : node.text;
+}
+
 export function StampLayerSvg({
   run,
   config,
@@ -1591,52 +1592,104 @@ export function StampLayerSvg({
           strokeWidth={r.stroke ? 1 : undefined}
         />
       ))}
-      {texts.map((n) => {
-        // parts가 있으면(예: 히어로 숫자 "5.23"+" km") 한 줄 안에서 TSpan으로 크기를
-        // 나눠 그린다 — textAnchor는 SvgText(부모)에서 이어붙인 전체 줄 기준으로 적용된다.
-        const content = n.parts
-          ? n.parts.map((p, i) => (
-              <TSpan key={i} fontSize={p.size}>
-                {p.text}
-              </TSpan>
-            ))
-          : n.text;
-        const fill = n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM;
-        if (softShadow) {
-          // 원본의 옅은 text-shadow 근사 — 흐릿한 검정 사본(그림자) 하나 + 또렷한
-          // 글씨. 두꺼운 외곽선(stroke)은 안 쓴다.
-          return (
-            <Fragment key={n.key}>
-              <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill="rgba(0,0,0,0.55)" filter="url(#stampGlow)">
-                {content}
-              </SvgText>
-              <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={fill}>
-                {content}
-              </SvgText>
-            </Fragment>
-          );
-        }
-        return (
-          <Fragment key={n.key}>
-            <SvgText
-              x={n.x}
-              y={n.y}
-              textAnchor={n.anchor}
-              fontSize={n.size}
-              fontFamily={n.family}
-              fill="none"
-              stroke="rgba(11,13,16,0.85)"
-              strokeWidth={n.size * 0.24}>
-              {content}
-            </SvgText>
-            <SvgText x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size} fontFamily={n.family} fill={fill} filter="url(#stampGlow)">
-              {content}
-            </SvgText>
-          </Fragment>
-        );
-      })}
+      <StampTextsSvg texts={texts} softShadow={softShadow} />
     </>
   );
+}
+
+function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: StampTextDescriptor[]; softShadow: boolean; applyShadow?: boolean }) {
+  return <>
+      {/* 정적 썸네일은 필터를 묶고, 실시간 미리보기는 네이티브 그림자로 처리한다. */}
+      {!softShadow && texts.map((n) => (
+        <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
+          fontFamily={n.family} fill="none" stroke="rgba(11,13,16,0.85)" strokeWidth={n.size * 0.24}>
+          {stampTextContent(n)}
+        </SvgText>
+      ))}
+      <G filter={applyShadow ? "url(#stampGlow)" : undefined}>
+        {texts.map((n) => (
+          <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
+            fontFamily={n.family} fill={softShadow && applyShadow ? 'rgba(0,0,0,0.55)' : n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM}>
+            {stampTextContent(n)}
+          </SvgText>
+        ))}
+      </G>
+      {softShadow && applyShadow && texts.map((n) => (
+        <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
+          fontFamily={n.family} fill={n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM}>
+          {stampTextContent(n)}
+        </SvgText>
+      ))}
+  </>;
+}
+
+// 카운트업 도중 뷰 크기가 흔들리지 않도록 완성 값으로 고정한다.
+function stampTextViewport(node: StampTextDescriptor): CanvasRect {
+  // 폰트 실측 차이와 굵은 외곽선에도 여유를 둬 글자와 그림자가 잘리지 않게 한다.
+  const width = node.parts
+    ? node.parts.reduce((sum, part) => sum + Array.from(part.text).length * part.size * 1.2, 0)
+    : Array.from(node.text).length * node.size * 1.2;
+  const left = node.anchor === 'end' ? node.x - width : node.anchor === 'middle' ? node.x - width / 2 : node.x;
+  const padding = Math.max(32, node.size * .24);
+  return { x: left - padding, y: node.y - node.size * 1.4 - padding,
+    width: Math.max(1, width + padding * 2), height: node.size * 1.9 + padding * 2 };
+}
+
+function sameStampText(a: StampTextDescriptor, b: StampTextDescriptor) {
+  return a.key === b.key && a.x === b.x && a.y === b.y && a.size === b.size && a.family === b.family
+    && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted
+    && a.parts?.length === b.parts?.length
+    && (a.parts?.every((part, i) => part.text === b.parts?.[i].text && part.size === b.parts?.[i].size) ?? true);
+}
+
+type StampPreviewFit = { fitScale: number; offsetX: number; offsetY: number; viewWidth: number; viewHeight: number };
+
+type PreviewTextProps = { node: StampTextDescriptor; viewport: CanvasRect; softShadow: boolean }
+  & Pick<StampPreviewFit, 'fitScale' | 'offsetX' | 'offsetY'>;
+
+const StampPreviewText = memo(function StampPreviewText({ node, viewport, softShadow, fitScale, offsetX, offsetY }: PreviewTextProps) {
+  // 실시간 숫자는 SVG의 CPU 필터 대신 iOS 합성 레이어의 그림자를 사용한다.
+  // 글자·단위·폰트·좌표는 정적 SVG와 같은 기술자를 그대로 사용한다.
+  return <View style={{ position: 'absolute', left: offsetX + viewport.x * fitScale,
+    top: offsetY + viewport.y * fitScale, width: viewport.width * fitScale, height: viewport.height * fitScale,
+    shadowColor: softShadow ? '#000000' : LINE_WARM, shadowOpacity: softShadow ? .55 : 1,
+    shadowRadius: 6 * fitScale, shadowOffset: { width: 0, height: 0 } }}>
+    <Svg width={viewport.width * fitScale} height={viewport.height * fitScale}
+      viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="none">
+      <StampTextsSvg texts={[node]} softShadow={softShadow} applyShadow={false} />
+    </Svg>
+  </View>;
+}, (a, b) => a.viewport === b.viewport && a.softShadow === b.softShadow && a.fitScale === b.fitScale
+  && a.offsetX === b.offsetX && a.offsetY === b.offsetY && sameStampText(a.node, b.node));
+
+const StampPreviewShapes = memo(function StampPreviewShapes({ rects, fitScale, offsetX, offsetY, viewWidth, viewHeight }:
+  { rects: StampRectDescriptor[] } & StampPreviewFit) {
+  if (!rects.length) return null;
+  return <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
+    <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+      {rects.map(rect => <SvgRect key={rect.key} x={rect.x} y={rect.y} width={rect.width} height={rect.height}
+        rx={rect.rx} fill={rect.fill ?? 'rgba(10,12,15,0.72)'} stroke={rect.stroke} strokeWidth={rect.stroke ? 1 : undefined} />)}
+    </G>
+  </Svg>;
+});
+
+function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], ...fit }:
+  { run: RunRecord; config: StampConfig; progressFraction: number; paceTimeline?: number[] } & StampPreviewFit) {
+  const finalLayout = useMemo(() => stampLayoutDescriptors(run, config, 1), [run, config]);
+  const viewports = useMemo(() => new Map(finalLayout.texts.map(node => {
+    const viewport = stampTextViewport(node);
+    // 구간 페이스가 평균보다 자릿수가 길어져도 그림자/글자가 잘리지 않게 한다.
+    return [node.key, { ...viewport, x: viewport.x - node.size, width: viewport.width + node.size * 2 }];
+  })), [finalLayout]);
+  const { texts, rects } = stampLayoutDescriptors(run, config, progressFraction,
+    paceAtProgress(paceTimeline, progressFraction, run.averagePaceSecPerKm));
+  if (!texts.length && !rects.length) return null;
+  const softShadow = !['row', 'hero'].includes(config.layout ?? 'row');
+  return <>
+    <StampPreviewShapes rects={finalLayout.rects} {...fit} />
+    {texts.map(node => <StampPreviewText key={node.key} node={node} viewport={viewports.get(node.key)!}
+      softShadow={softShadow} fitScale={fit.fitScale} offsetX={fit.offsetX} offsetY={fit.offsetY} />)}
+  </>;
 }
 
 export type CanvasRect = { x: number; y: number; width: number; height: number };
