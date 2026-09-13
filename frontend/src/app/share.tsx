@@ -59,6 +59,7 @@ export default function ShareScreen() {
   const [showMissingSheet, setShowMissingSheet] = useState(false);
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  const renderFileRef = useRef<string | null>(null);
 
   // common-rules §6 타이밍: 0.3초에 표시, 2초에 진행률·취소로 전환.
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function ShareScreen() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const subscription = RouteRenderer.addListener('onRenderProgress', (event) => {
+      if (event.outputFileName && event.outputFileName !== renderFileRef.current) return;
       setProgress(event.progress);
     });
     return () => subscription.remove();
@@ -106,6 +108,7 @@ export default function ShareScreen() {
 
     activeShareGeneration += 1;
     const myGeneration = activeShareGeneration;
+    renderFileRef.current = `mechuri-${resultId}`;
 
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
@@ -139,27 +142,37 @@ export default function ShareScreen() {
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
-        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
-        // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
-        // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
-        // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
-        await addResult({
-          id: resultId,
-          run: selectedRun,
-          runDate: selectedRun.date,
-          distanceMeters: selectedRun.distanceMeters,
-          track,
-          preset: draft.preset,
-          transform: draft.transform,
-          smoothOptions: draft.smoothOptions,
-          stampConfig: draft.stampConfig,
-          backgroundImagePath,
-          backgroundPhoto: draft.backgroundPhoto,
-          outputPath: result.outputPath,
-          createdAt: new Date().toISOString(),
-        });
-        await clearDraft();
-        finishAfterMinHold(() => setOutputPath(result.outputPath));
+        let persisted = false;
+        try {
+          if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
+          if (cancelledRef.current) {
+            router.back();
+            return;
+          }
+          // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
+          // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
+          // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
+          await addResult({
+            id: resultId,
+            run: selectedRun,
+            runDate: selectedRun.date,
+            distanceMeters: selectedRun.distanceMeters,
+            track,
+            preset: draft.preset,
+            transform: draft.transform,
+            smoothOptions: draft.smoothOptions,
+            stampConfig: draft.stampConfig,
+            backgroundImagePath,
+            backgroundPhoto: draft.backgroundPhoto,
+            outputPath: result.outputPath,
+            createdAt: new Date().toISOString(),
+          });
+          persisted = true;
+          await clearDraft().catch((error) => console.warn('Completed result saved, draft cleanup failed', error));
+          finishAfterMinHold(() => setOutputPath(result.outputPath));
+        } finally {
+          if (result.jobId) RouteRenderer.finishRender?.(result.jobId, persisted);
+        }
       })
       .catch((error) => {
         if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 조용히 종료
@@ -176,7 +189,7 @@ export default function ShareScreen() {
         console.warn('RouteRenderer.renderClip failed', error);
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
-        Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
+        Alert.alert('결과물을 만들지 못했어요', '편집 내용은 그대로예요. 편집 화면에서 다시 완료를 눌러주세요.', [
           { text: '확인', onPress: () => router.back() },
         ]);
       });
@@ -307,7 +320,7 @@ export default function ShareScreen() {
 
           <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
           <Text style={styles.notice}>
-            이 화면을 벗어나도 인코딩은 계속됩니다. 끝나면 보관함에 완성으로 들어옵니다.
+            다른 앱을 보거나 화면을 잠가도 계속 만들어요. 시스템이 중단하면 편집 내용을 유지해요.
           </Text>
         </View>
       </SafeAreaView>

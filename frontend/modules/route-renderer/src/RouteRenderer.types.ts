@@ -66,9 +66,11 @@ export type RenderClipOptions = {
 };
 
 /** export-and-share FRD §2-3. progress는 0~1. */
-export type RenderProgressEvent = { progress: number };
+export type RenderProgressEvent = { progress: number; outputFileName?: string };
 
 export type RenderClipResult = {
   /** 완성된 mp4의 로컬 파일 경로 (file://). */
   outputPath: string;
+  /** 보관함 저장 후 백그라운드 작업을 종료하기 위한 네이티브 작업 ID. */
+  jobId?: string;
 };

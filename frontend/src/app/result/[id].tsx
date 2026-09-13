@@ -23,7 +23,7 @@ import InstagramStoryShare from '../../../modules/instagram-story-share/src/Inst
 
 export default function ResultDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { loadDraft } = useCreationFlow();
+  const { loadDraft, setSelectedRun } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -131,11 +131,11 @@ export default function ResultDetailScreen() {
     }
   };
 
-  const handleMakeAnother = () => {
+  const handleMakeAnother = async () => {
     if (!result) return;
     // §2-2: "같은 기록으로 새로 만들기"는 렌더러 초기값에서 시작한다(result-editing §8).
     // 배경은 다시 고를 수 있게 배경 선택부터.
-    loadDraft({ selectedRun: result.run, track: result.track });
+    await setSelectedRun(result.run, result.track);
     router.push('/background-selection');
   };
 

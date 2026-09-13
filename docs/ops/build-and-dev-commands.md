@@ -50,7 +50,7 @@ Run 후 앱이 켜지면, 그 앱은 자동으로 Metro(`npx expo start`)를 찾
 `eas.json`에 `production` 빌드/제출 프로필이 이미 설정돼 있음(`ascAppId: 6807295594`).
 
 ```bash
-# 1) 빌드 — Apple 클라우드에서 빌드, 완료까지 보통 10~20분
+# 1) 빌드 — Expo EAS 클라우드에서 빌드
 npx eas-cli build --platform ios --profile production --non-interactive --no-wait
 
 # 위 명령이 출력하는 빌드 ID(또는 아래로 조회)로 진행 상황 확인
@@ -66,6 +66,25 @@ npx eas-cli submit --platform ios --profile production --non-interactive --id <B
 - 제출 후 애플 쪽 자동 처리(바이러스 검사 등, 사람이 보는 심사 아님)에 5~10분 정도 걸린다. 끝나면 등록된 내부 테스터는 바로 TestFlight 앱에서 설치할 수 있다(우리 팀은 내부 테스터라 별도 "베타 심사"는 안 거침 — 외부 테스터에게 공개할 때만 애플의 베타 심사가 있음).
 - `autoIncrement: true`(eas.json)라 빌드 번호는 자동으로 올라간다 — 버전 번호를 직접 안 올려도 됨.
 - 확인 링크: `https://appstoreconnect.apple.com/apps/6807295594/testflight/ios`
+
+### 클라우드 무료 한도가 소진됐을 때: 로컬 배포 빌드
+
+2026-09-13 PR #53은 EAS 무료 iOS 빌드 한도 때문에 이 경로로 배포했다. 유료 구독을 추가하지 않았다. 생성된 IPA도 EAS Submit으로 제출할 수 있다.
+
+```bash
+brew install fastlane  # 이 맥에 없을 때 한 번만. Xcode·CocoaPods도 필요
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer npx eas-cli build \
+  --platform ios --profile production --local --non-interactive --output /private/tmp/mechuri-production.ipa
+npx eas-cli submit --platform ios --profile production \
+  --path /private/tmp/mechuri-production.ipa --non-interactive --no-wait
+npx eas-cli submit:status --platform ios --profile production --json --non-interactive
+```
+
+- 머지된 커밋의 깨끗한 체크아웃에서 실행한다. 작업 중 변경이나 개인 파일을 배포에 섞지 않는다.
+- 로컬 빌드도 원격 인증서와 원격 빌드 번호를 사용한다. 실패한 빌드 번호는 건너뛸 수 있다.
+- 이 날짜의 EAS CLI에서 `--what-to-test` 자동 등록은 Enterprise 플랜 제한으로 제출이 거절됐다. 해당 옵션 없이 제출하고 팀 테스트 안내는 PR에 남겼다.
+- `submit` 완료는 Apple 업로드 완료다. `submit:status`의 해당 빌드가 `VALID` / `IN_BETA_TESTING`인지 확인해야 내부 테스트 가능 상태를 확정할 수 있다.
+- **1.0.0(17)**: PR #53, merge `be7483b`, Apple 제출 `65bc740a-d749-4105-9405-316d0f4861e9`. 2026-09-13 내부 테스트 가능 상태 확인. 미리보기 원인·해결·측정은 [미리보기 성능 노트](../product/features/preview-performance.md)에 있다.
 
 ## 5. 자주 쓰는 확인 명령 (커밋 전)
 
