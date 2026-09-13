@@ -86,6 +86,16 @@ npx eas-cli submit:status --platform ios --profile production --json --non-inter
 - `submit` 완료는 Apple 업로드 완료다. `submit:status`의 해당 빌드가 `VALID` / `IN_BETA_TESTING`인지 확인해야 내부 테스트 가능 상태를 확정할 수 있다.
 - **1.0.0(17)**: PR #53, merge `be7483b`, Apple 제출 `65bc740a-d749-4105-9405-316d0f4861e9`. 2026-09-13 내부 테스트 가능 상태 확인. 미리보기 원인·해결·측정은 [미리보기 성능 노트](../product/features/preview-performance.md)에 있다.
 
+
+### 2026-09-13 인코딩·각인 후속 배포 — 1.0.0(18)
+
+- 소스: [PR #54](https://github.com/everyware-ie/run-mechuri/pull/54), merge `5b704ce212e018bfdd4a8490135df8f8067b40a4`.
+- 변경: 앱 전환·화면 잠금 중 인코딩과 보관함 저장, 완성 프레임 재사용, 최초 코너·최근 선택 각인 기본값. 시스템 진행 안내의 자동 숨김은 공개 API 제약으로 미적용.
+- 로컬 production 빌드 성공. IPA의 `1.0.0(18)`·bundle ID·processing 모드·continued processing 식별자·JS 번들 포함 확인.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/964812d4-36be-461a-9f36-49b682735c44): `FINISHED`. 2026-09-13 Apple 조회에서 `VALID` / `IN_BETA_TESTING`, 미만료 상태 확인. 등록된 내부 테스터가 TestFlight에서 업데이트할 수 있다.
+- IPA SHA-256: `903bb27553b818b7ce7e9f903672f4d3d8ff62a25f6109ecf7bcb0c4d03f6db4`.
+- 구현·검증·제약은 [인코딩 성능 노트](../product/features/encoding-performance.md), [각인 편집 노트](../product/features/result-editing.md)에 기록한다. 개발 기기에서 약 28.4% 단축과 전체 360프레임 픽셀 일치를 확인했으며, 모든 기기·입력에 같은 속도를 보장하지 않는다.
+
 ## 5. 자주 쓰는 확인 명령 (커밋 전)
 
 ```bash
