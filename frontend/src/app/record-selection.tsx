@@ -85,7 +85,7 @@ export default function RecordSelectionScreen() {
       setLoadingRouteFor(run.id);
       // §5: 고른 다음에만 실제 좌표를 가져온다.
       const track = await HealthKitBridge.getRoute(run.id);
-      setSelectedRun(run, track);
+      await setSelectedRun(run, track);
       router.push('/background-selection');
     } catch {
       // §6: 좌표를 읽다 실패하면 목록에 머무른다. 그 줄에 "다시 시도"를 남긴다.

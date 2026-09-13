@@ -1,3 +1,4 @@
+import { rememberStampLayout } from '@/lib/stamp-preference';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -198,6 +199,7 @@ export default function EditScreen() {
     commitStampConfig(next);
   };
   const handleLayoutSelect = (layout: StampLayout) => {
+    rememberStampLayout(layout);
     const next = { ...stampConfigRef.current, layout };
     updateStampConfig(next);
     commitStampConfig(next);
