@@ -842,9 +842,10 @@ export default function EditScreen() {
             )}
             {!keyboardVisible && <View style={styles.stepNavigation}>
               <Pressable onPress={() => stampSheetOpen ? selectStep(false) : router.push({ pathname: '/background-selection', params: { returnTo: 'edit' } })}
-                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '이전: 드로잉 편집' : '배경 바꾸기'}
-                style={styles.stepPrevious}>
-                <Text style={styles.stepPreviousText}>{stampSheetOpen ? '← 이전' : '배경 바꾸기'}</Text>
+                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '이전: 드로잉 편집' : '이전: 배경 바꾸기'}
+                style={({ pressed }) => [styles.stepPrevious, pressed && styles.stepPreviousPressed]}>
+                <SymbolView name="arrow.left" size={14} tintColor={Colors.text} accessible={false} />
+                <Text style={styles.stepPreviousText}>{stampSheetOpen ? '이전 · 드로잉' : '배경 바꾸기'}</Text>
               </Pressable>
               <Pressable onPress={() => stampSheetOpen ? handleNext() : selectStep(true)}
                 accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '편집 완료하고 공유로' : '다음: 각인 편집'}
@@ -883,8 +884,9 @@ const styles = StyleSheet.create({
   guideToggleText: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
   guideToggleTextOn: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.accent },
   stepNavigation: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8, flexShrink: 0 },
-  stepPrevious: { minHeight: 44, flex: 1, justifyContent: 'center', alignItems: 'center' },
-  stepPreviousText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  stepPrevious: { minHeight: 44, flex: 1, flexDirection: 'row', gap: 6, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.borderStrong, borderRadius: 22 },
+  stepPreviousPressed: { backgroundColor: Colors.border },
+  stepPreviousText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text, flexShrink: 1 },
   stepNext: { minHeight: 44, flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 22 },
   stepNextText: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accentText },
   sectionLabel: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },

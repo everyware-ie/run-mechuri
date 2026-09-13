@@ -83,6 +83,7 @@ struct RenderClipOptionsInput: Record {
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
   @Field var averagePaceSecPerKm: Double = 0
+  @Field var paceSamples: [Double] = []
   /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
   @Field var averageHeartRate: Double? = nil
 }
@@ -606,6 +607,16 @@ public class RouteRendererModule: Module {
     return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
   }
 
+  /// TS paceAtProgress와 동일. 전처리는 JS에서 한 번만 수행해 미리보기와 공유한다.
+  private func paceAtProgress(_ stamp: RenderClipOptionsInput, _ progress: Double) -> Double {
+    let samples = stamp.paceSamples
+    guard samples.count >= 2, progress.isFinite, progress < 1 else { return stamp.averagePaceSecPerKm }
+    let index = max(0, progress) * Double(samples.count - 1)
+    let lo = Int(floor(index)), hi = min(lo + 1, samples.count - 1)
+    let value = samples[lo] + (samples[hi] - samples[lo]) * (index - Double(lo))
+    return value.isFinite && value > 0 ? value : stamp.averagePaceSecPerKm
+  }
+
   private func formatPace(_ secPerKm: Double) -> String {
     let total = max(0, Int(secPerKm.rounded()))
     return String(format: "%d'%02d\"/km", total / 60, total % 60)
@@ -663,7 +674,7 @@ public class RouteRendererModule: Module {
     var keyed: [(String, String)] = []
     if stamp.stampItems.distance { keyed.append(("distance", formatDistanceKm(stamp.distanceMeters * progressFraction))) }
     if stamp.stampItems.time { keyed.append(("time", formatDuration(stamp.durationSeconds * progressFraction))) }
-    if stamp.stampItems.pace { keyed.append(("pace", formatPace(stamp.averagePaceSecPerKm))) }
+    if stamp.stampItems.pace { keyed.append(("pace", formatPace(paceAtProgress(stamp, progressFraction)))) }
     if stamp.stampItems.date {
       let s = formatStampDate(stamp.runDate)
       if !s.isEmpty { keyed.append(("date", s)) }
@@ -753,7 +764,8 @@ public class RouteRendererModule: Module {
     func valueFor(_ k: String) -> String { keyed.first { $0.0 == k }?.1 ?? "" }
     func finalValueFor(_ k: String) -> String {
       k == "distance" ? formatDistanceKm(stamp.distanceMeters)
-        : k == "time" ? formatDuration(stamp.durationSeconds) : valueFor(k)
+        : k == "time" ? formatDuration(stamp.durationSeconds)
+        : k == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm)) : valueFor(k)
     }
     // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
     func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
@@ -880,7 +892,8 @@ public class RouteRendererModule: Module {
       if !statOrder.isEmpty {
         let widths = statOrder.map { key -> CGFloat in
           let finalValue = key == "distance" ? formatDistanceKm(stamp.distanceMeters)
-            : key == "time" ? formatDuration(stamp.durationSeconds) : valueFor(key)
+            : key == "time" ? formatDuration(stamp.durationSeconds)
+            : key == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm)) : valueFor(key)
           return max(estimateStampTextWidth(statLabel[key] ?? "", labelFont),
             estimateStampTextWidth(finalValue, (key == "distance" ? 22 : 18) * u))
         }

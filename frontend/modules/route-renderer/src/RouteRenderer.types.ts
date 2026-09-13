@@ -59,6 +59,8 @@ export type RenderClipOptions = {
   distanceMeters: number;
   durationSeconds: number;
   averagePaceSecPerKm: number;
+  /** GPS 구간 페이스(초/km). 9초 그리기의 등간격 샘플. 없으면 평균값 사용. */
+  paceSamples?: number[];
   /** 데이터가 없으면 null(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다). */
   averageHeartRate: number | null;
 };
