@@ -50,6 +50,15 @@ AVAssetReader로 두 mp4의 **360프레임 전체**를 같은 BGRA 형식으로 
 - JS가 보관함에 저장한 뒤 `finishRender(jobId, persisted)`로 백그라운드 작업을 종료한다. JS reload 등으로 응답이 없으면 15초 후 권한을 반환한다. 이 타임아웃은 결과물을 저장했다는 뜻이 아니다.
 - `app.json`에 permitted task ID와 processing 모드를 둔다. 네이티브 재빌드가 필요하다. **TestFlight 17에는 이 후속 인코딩 변경이 포함되지 않는다.**
 
+## 시스템 진행 안내 표시 제약 (2026-09-13)
+
+phs00가 내보내기 시작 시 상단의 “러닝 영상 만들기” 안내를 몇 초 뒤 자연스럽게 숨기도록 요청했다. 해당 문구는 앱의 toast가 아니라 `BGContinuedProcessingTaskRequest`의 title이며, iOS가 표시하는 시스템 진행 UI다.
+
+- [Apple BGContinuedProcessingTask 문서](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask)와 Xcode iOS 26.5 SDK 헤더를 확인했다. 제목·부제목·진행률 갱신은 가능하지만 배너 표시 시간 지정이나 숨김 API는 제공하지 않는다.
+- 안내만 숨기려고 `setTaskCompleted`를 호출하면 장시간 백그라운드 실행 권한도 종료하므로 적용하지 않았다. 기존 보관함 저장 ACK 이후 완료 처리를 유지한다.
+- [요청 API](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest)는 foreground에서 사용자 동작에 따라 제출해야 한다. 배경 전환 시점까지 제출을 미루는 우회는 별도의 실행 안정성 검증이 필요하며 이번 요청에 적용하지 않았다.
+- 이번 확인에서는 런타임 코드를 변경하지 않았다. 자동 숨김 요구는 현재 공개 API로 충족하지 못한 UX 제약으로 남긴다.
+
 ## 픽셀 비교 재현
 
 `frontend/scripts/check-rendered-clips.swift`는 macOS AVAssetReader로 비교한다. 좌표·사진을 외부로 전송하지 않는다. 기존/개선 mp4를 로컬에 준비한 뒤 다음을 실행한다.
