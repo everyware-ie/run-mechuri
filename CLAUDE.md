@@ -44,6 +44,10 @@ FRD (화면과 기능의 규칙·수치)
 5. **새 용어를 만들거나 뜻을 바꾸면 [용어집](.claude/domain/glossary.md)부터 고친다.** 같은 말을 두 뜻으로 쓰는 것이 가장 흔한 어긋남이다
 6. 어느 FRD가 PRD의 어느 부분을 근거로 하는지는 `docs/specs/frd/README.md`의 근거 지도에 있다. FRD frontmatter의 `derives_from`·`prd_sections`에도 같은 내용이 들어간다
 
+**문서를 쓰고 고칠 때의 문체는 [문서 작성 컨벤션](.claude/conventions/writing.md)을 따른다.** 위가 문서끼리 어긋나지 않게 하는 규칙이라면, 그쪽은 한 문서를 사람이 읽을 수 있게 하는 규칙이다.
+
+**이 문서의 규칙을 고치면 [AGENTS.md](AGENTS.md)도 함께 본다.** Claude가 아닌 도구(codex 등)는 이 파일을 읽지 않고 AGENTS.md를 읽는다. 둘이 어긋나면 이쪽이 원문이다.
+
 **자동 검사**
 
 ```
@@ -80,7 +84,9 @@ python3 scripts/check-docs.py
 │   ├── marketing/
 │   └── product/features/      # 기능별 구현 노트 (코드 착수 후 생성)
 ├── scripts/hooks/              # git 훅 (아래 "강제 게이트" 참고)
-├── .claude/conventions/git.md  # 브랜치·커밋 규칙
+├── AGENTS.md                        # 도구 무관 에이전트 규칙 (codex 등이 읽는다)
+├── .claude/conventions/git.md      # 브랜치·커밋 규칙
+├── .claude/conventions/writing.md  # 문서 문체 규칙
 ├── frontend/                    # React Native + Expo 앱 (2026-08-25 스캐폴딩)
 │   └── src/{app,components,constants,hooks}  # Expo Router 기본 템플릿 구조
 └── CLAUDE.md
@@ -128,12 +134,10 @@ UI는 RN으로 짜고, Swift로만 되는 것은 브릿지로 연결한다. 브�
 
 **디자인 컨셉은 1a 야간 네온이다.** 어두운 캔버스에 경로가 빛으로 그려진다.
 
-## 기능 시작 워크플로우 (코드 착수 후 적용)
+## 작업 흐름
 
-1. `/feature-start` — 요구사항 그릴링 + 설계 (한 세션)
-2. `/to-prd` — 세션 내용을 PRD로 정리
-3. `/to-issues` — PRD를 독립 이슈로 분해 후 GitHub에 등록
-4. `tdd` — 이슈 단위로 구현
+**정본은 [AGENTS.md](AGENTS.md) §1 작업 흐름이다.** 작업자마다 쓰는 AI가 달라서, 도구를 가리지 않는 파일 한 곳에 모아 두었다. 여기에 옮겨 적으면 두 벌이 어긋난다.
 
-**PRD 없이 구현 시작 금지.**
-PRD는 `docs/specs/prd/`에, FRD는 `docs/specs/frd/`에 저장한다.
+아이디어에서 결정까지, 결정에서 구현까지, 배포와 QA가 어떻게 이어지는지가 거기 있다.
+
+> **2026-09-14 정정.** 원래 이 자리에는 `/feature-start` → `/to-prd` → `/to-issues` → `tdd` 네 단계가 적혀 있었다. **kill-betting 템플릿에서 따라온 것이고 이 저장소에는 그 커맨드가 없다.** 실제로 돌던 흐름으로 바꿨다.
