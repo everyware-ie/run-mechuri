@@ -2,7 +2,7 @@
 
 ## 서비스 개요
 
-러닝 관련 서비스. 팀메추리의 세 번째 프로덕트. **제품명은 잠정 "메추리런"** 이고 확정은 아니다(대안 "런메추리"). TestFlight 단계까지는 쉽게 바꿀 수 있어 그전까지 계속 본다.
+러닝 관련 서비스. 팀메추리의 세 번째 프로덕트. **제품명은 `Runary`(러너리)다** ([2026-09-16 결정](docs/decisions/2026-09-16-product-name-runary.md)). 8월부터 잠정으로 쓰던 "메추리런"을 대체한다. **번들 ID `com.mechuri.runmechuri`는 그대로 간다.** App Store Connect에 등록된 앱과 묶여 있어 바꾸려면 앱을 새로 만들어야 한다.
 **`ideation` 단계는 끝났다.** [2026-08-25 결정](docs/decisions/2026-08-25-react-native-expo-stack.md)으로 기술 스택(React Native + Expo)이 정해지고 FRD 7개가 `approved`로 승격되며 구현이 시작됐다. 배경: [docs/meetings/2026-07-14/synthesis.md](docs/meetings/2026-07-14/synthesis.md)
 
 ## 기획 문서의 정본 (이 레포)

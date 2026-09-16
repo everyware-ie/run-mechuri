@@ -134,11 +134,23 @@ FRD를 고치다 PRD가 낡으면 **같은 PR에서** 함께 고친다. 나중�
 
 설치는 `sh scripts/hooks/install.sh`다.
 
-## 7. 확인하고 진행한다
+## 7. 시작하기 전에 확인한다
+
+**`.claude/` 아래의 규칙 문서를 읽었는지 스스로 확인하고 시작한다.**
+
+| | |
+|---|---|
+| [.claude/conventions/writing.md](.claude/conventions/writing.md) | 문서를 쓰거나 고칠 때 |
+| [.claude/conventions/git.md](.claude/conventions/git.md) | 브랜치를 파거나 커밋할 때 |
+| [.claude/domain/glossary.md](.claude/domain/glossary.md) | 용어를 쓰거나 새로 만들 때 |
+
+**읽지 않았으면 먼저 읽는다.** 이 파일의 요약만으로 대신하지 않는다.
+
+## 8. 확인하고 진행한다
 
 **무엇을 어떻게 할지 먼저 알리고 확인을 받은 뒤에 진행한다.** 임의로 앞서 나가지 않는다.
 
-## 8. 규칙이 안 맞아 보이면
+## 9. 규칙이 안 맞아 보이면
 
 **규칙을 지키느라 나쁜 해법을 고르지 않는다.**
 
