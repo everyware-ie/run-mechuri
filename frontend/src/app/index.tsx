@@ -178,8 +178,7 @@ export default function HomeScreen() {
 
             {rest.length > 0 && (
               <View style={styles.sectionRow}>
-                <Text style={styles.sectionLabel}>내가 만든 것</Text>
-                <Text style={styles.sectionLabelEn}>MY DRAWINGS</Text>
+                <Text style={styles.sectionLabel}>MY RUNARY</Text>
               </View>
             )}
           </View>
@@ -281,12 +280,6 @@ const styles = StyleSheet.create({
   emptySub: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   sectionLabel: {
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
-  sectionLabelEn: {
     fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,

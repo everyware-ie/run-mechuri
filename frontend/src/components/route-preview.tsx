@@ -5,7 +5,13 @@ import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
 import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { Animated, AppState, View } from 'react-native';
-import { useAnimatedReaction, useDerivedValue, useFrameCallback, useSharedValue } from 'react-native-reanimated';
+import ReanimatedAnimated, {
+  useAnimatedProps,
+  useAnimatedReaction,
+  useDerivedValue,
+  useFrameCallback,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
   Circle as SvgCircle,
@@ -50,7 +56,9 @@ export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
   { id: 'stack', label: '스택' }, // 2a 좌하단 스택
   { id: 'bar', label: '스탯바' }, // 2b 하단 스탯 바
   { id: 'line', label: '원라인' }, // 2f 원 라인
-  { id: 'row', label: '간결' },
+  // 'row'(간결)는 2026-09-16 결정으로 선택 목록에서 뺐다 — 원라인과 비슷해 고를 때
+  // 헷갈린다는 이유. 렌더링 분기 자체는 남겨 둔다 — layout 필드가 없는 옛 저장분의
+  // fallback 대상이라서(아래 stampLayoutDescriptors 'row' 분기 참고).
 ];
 
 export type StampConfig = {
@@ -214,6 +222,9 @@ type Props = {
   /** 실기기 피드백(2026-09-02): 각인을 화면에서 직접 탭해 고를 때, 지금 각인이
    * "선택된" 대상임을 점선 박스로 보여준다(edit.tsx가 탭 히트테스트 결과로 켬). */
   stampSelected?: boolean;
+  /** 2026-09-16 결정 — 경로 그림에도 각인과 같은 방식으로 만질 수 있는 영역을
+   * 점선으로 보여준다(edit.tsx가 지금 단계가 "경로"인지로 켠다). */
+  drawingSelected?: boolean;
   /** 실기기 피드백(2026-09-02): "재생 중엔 편집(경로·각인 이동)이 계속 느리다" —
    * 재생과 조작이 동시에 일어나지 않게 edit.tsx는 기본 정지(완성된 모습)로 두고
    * 명시적으로 재생 버튼을 눌렀을 때만 이 값을 true로 준다. false면
@@ -237,6 +248,16 @@ type Props = {
 // MakeFromSVGString은 쓰지 않는다 — Skia Path API로 바로 그린다(2026-09-01, 실기기
 // 끊김 원인 중 하나였음). toSvgPath는 route-thumbnail.tsx 등 애니메이션이 없는
 // 곳에서만 쓴다.
+// 2026-09-17 실기기 피드백 — 경로 점선 박스가 드래그 중엔 안 움직이다가 손을
+// 뗀 뒤에야 뒤늦게 따라왔다. 이 박스는 transform(React state, 커밋된 값)만
+// 보고 그렸는데, 드래그 중 실제 경로는 Reanimated SharedValue(tx/ty/tScale/
+// tRotation)를 UI 스레드에서 직접 읽어 매 프레임 움직인다(리렌더 없이, 끊김을
+// 없애려고 이렇게 설계됨 — 위 groupTransform 설명 참고) — 그래서 둘이 어긋났다.
+// AnimatedG로 같은 SharedValue를 똑같이 읽게 하면 박스도 같은 프레임에 같이
+// 움직인다(모듈 스코프에서 한 번만 만들어야 매 렌더마다 다시 마운트되며
+// 애니메이션이 끊기지 않는다).
+const AnimatedG = ReanimatedAnimated.createAnimatedComponent(G);
+
 function skPath(points: CanvasPoint[]) {
   const path = Skia.Path.Make();
   if (points.length === 0) return path;
@@ -262,6 +283,7 @@ export function RoutePreview({
   fit = 'contain',
   bottomInset = 0,
   stampSelected = false,
+  drawingSelected = false,
   playing = true,
   stampDragOffset,
 }: Props) {
@@ -376,6 +398,15 @@ export function RoutePreview({
     { translateY: -CANVAS_HEIGHT / 2 },
   ]);
 
+  // 2026-09-17 — 경로 점선 박스(아래 routeLocalBounds)를 이 Group과 똑같은
+  // 수식·같은 SharedValue로 돌려서, 실제 경로가 움직이는 그 프레임에 같이
+  // 움직인다. 위 groupTransform(Skia 배열)과 순서만 같고 형식만 SVG 문자열이다.
+  const routeBoxAnimatedProps = useAnimatedProps(() => {
+    return {
+      transform: `translate(${CANVAS_WIDTH / 2 + tx.value} ${CANVAS_HEIGHT / 2 + ty.value}) rotate(${tRotation.value}) scale(${tScale.value}) translate(${-CANVAS_WIDTH / 2} ${-CANVAS_HEIGHT / 2})`,
+    };
+  });
+
   if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
@@ -394,7 +425,13 @@ export function RoutePreview({
   // 말한 게 아니라 "손을 뗐다"는 뜻이었을 뿐, 재생 자체의 비용은 그대로였다).
   const blurScale = isInteracting ? 0.4 : 0.7;
 
-  const stampBounds = stampSelected ? computeStampBounds(run, stampConfig) : null;
+  // 2026-09-16 결정 — 하나의 큰 envelope 대신, 서로 떨어진 항목 덩어리마다 각자의
+  // 점선 박스를 그린다(computeStampHitRects, 코너·레일 등에서 특히 차이가 크다).
+  const stampHitRects = stampSelected ? computeStampHitRects(run, stampConfig) : [];
+  // 2026-09-16 결정 — 경로 그림 쪽 점선 박스. "돌리기 전 자기 모양"만 여기서
+  // 구하고(사용자 transform 미적용), 실제로 돌리고 옮기고 키우는 건 아래 렌더링의
+  // AnimatedG(routeBoxAnimatedProps)가 담당한다 — computeRouteLocalBounds 주석 참고.
+  const routeLocalBounds = drawingSelected ? computeRouteLocalBounds(points) : null;
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
@@ -404,6 +441,20 @@ export function RoutePreview({
         pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
         playToken={playToken} onProgressSample={setUiStampProgress}
       />
+
+      {routeLocalBounds && (
+        <Svg pointerEvents="none" width={viewWidth} height={viewHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
+          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+            {/* AnimatedG가 groupTransform과 같은 SharedValue를 직접 읽어 매 프레임
+                갱신된다 — 리렌더를 거치지 않아 실제 경로와 같은 프레임에 움직인다. */}
+            <AnimatedG animatedProps={routeBoxAnimatedProps}>
+              <SvgRect x={routeLocalBounds.cx - routeLocalBounds.width / 2} y={routeLocalBounds.cy - routeLocalBounds.height / 2}
+                width={routeLocalBounds.width} height={routeLocalBounds.height}
+                rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
+            </AnimatedG>
+          </G>
+        </Svg>
+      )}
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
           설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), content와는
@@ -436,10 +487,12 @@ export function RoutePreview({
         ]}>
         <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
           fitScale={fitScale} offsetX={offsetX} offsetY={offsetY} viewWidth={viewWidth} viewHeight={viewHeight} />
-        {stampBounds && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
+        {stampHitRects.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
           <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-            <SvgRect x={stampBounds.x} y={stampBounds.y} width={stampBounds.width} height={stampBounds.height}
-              rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
+            {stampHitRects.map((box, i) => (
+              <SvgRect key={i} x={box.x} y={box.y} width={box.width} height={box.height}
+                rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
+            ))}
           </G>
         </Svg>}
       </Animated.View>
@@ -1201,7 +1254,7 @@ function stampLayoutDescriptors(
     const rightX = CANVAS_WIDTH - 20 * M + config.position.x;
     const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 24 * M + config.position.y;
     const dateText = has('date') ? value('date') : '';
-    const statOrder = (['distance', 'time', 'pace', 'heartRate'] as StampItem[]).filter(has);
+    const statOrder = (['distance', 'time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(has);
 
     const headerFont = 15 * u;
     const dateFont = 11 * u;
@@ -1271,7 +1324,7 @@ function stampLayoutDescriptors(
       nodes.push({ key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
     }
 
-    const statItems = (['time', 'pace', 'heartRate'] as StampItem[]).filter(has);
+    const statItems = (['time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(has);
     if (statItems.length > 0) {
       const labelFont = 9 * u;
       const valueFont = 19 * u;
@@ -1423,6 +1476,7 @@ function stampLayoutDescriptors(
     if (has('pace')) rows.push({ label: 'PACE', text: value('pace') });
     if (has('heartRate')) rows.push({ label: 'AVG BPM', text: value('heartRate') });
     if (has('date')) rows.push({ label: 'DATE', text: value('date') });
+    if (has('place')) rows.push({ label: 'PLACE', text: value('place') });
 
     const hasRail = rows.length > 0;
     // 실기기 피드백: "위치도 저기가 최선인가?" — 기존엔 스택(rows)만 캔버스
@@ -1479,7 +1533,9 @@ function stampLayoutDescriptors(
     const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 30 * M + config.position.y;
     const gap = 12 * u;
     const oneLineFont = 11 * u;
-    const titleFont = 26 * u;
+    // 2026-09-16 실기기 피드백 — 문구가 너무 크게 나온다. 26→22로 줄이고
+    // 아래 titleBaseline도 함께 내렸다. 정확한 값은 실기기에서 다시 볼 것.
+    const titleFont = 22 * u;
     const dividerW = 28 * u;
 
     // 시안의 oneLine 템플릿("{{d}} KM · {{t}} · {{pc}}/KM · {{b}} BPM · {{dt}}")을
@@ -1489,7 +1545,8 @@ function stampLayoutDescriptors(
       has('time') ? [value('time')] : [],
       has('pace') ? [value('pace').toUpperCase()] : [],
       has('heartRate') ? [value('heartRate').toUpperCase()] : [],
-      has('date') ? [value('date')] : []
+      has('date') ? [value('date')] : [],
+      has('place') ? [value('place')] : []
     );
     const oneLine = parts.join(' · ');
 
@@ -1499,7 +1556,7 @@ function stampLayoutDescriptors(
     const hasOneLine = !!oneLine;
     const oneLineBaseline = bottomAnchor;
     const dividerY = oneLineBaseline - oneLineFont * 1.3 - gap;
-    const titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85;
+    const titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.7 : bottomAnchor - titleFont * 0.75;
 
     if (oneLine) {
       nodes.push({ key: 'oneLine', x: centerX, y: oneLineBaseline, size: oneLineFont, family: 'JetBrainsMono_500Medium', text: oneLine, anchor: 'middle' });
@@ -1694,6 +1751,45 @@ function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], .
 
 export type CanvasRect = { x: number; y: number; width: number; height: number };
 
+// 경로의 (사용자 transform을 적용하기 전) 캔버스 좌표 바운즈 — 각인의
+// computeStampBounds와 같은 목적(선택 박스)의 경로 그림 버전.
+export type CanvasCenterRect = { cx: number; cy: number; width: number; height: number };
+
+// 2026-09-16 결정 — "편집의 경로 그림 영역도 터치 영역을 점선으로 표기한다.
+// 각인처럼." 일부러 여기서 transform(위치·회전·스케일)을 적용하지 않는다 —
+// 두 가지 실기기 피드백(2026-09-17) 때문에 적용하는 쪽을 렌더링 쪽으로 옮겼다.
+//
+// 1. **회전하면 박스가 같이 안 돌고 제자리에서 커지기만 했다**: 축 정렬(min/max)
+//    envelope으로 접으면 회전할수록 원본보다 큰 사각형이 나온다.
+// 2. **이동·회전·크기 조절 중엔 박스가 안 움직이다가 손을 뗀 뒤에야 따라왔다**:
+//    실제 경로는 Reanimated SharedValue(tx/ty/tScale/tRotation)를 UI 스레드에서
+//    직접 읽어 리렌더 없이 매 프레임 움직이는데(끊김을 없애려고 이렇게 설계됨 —
+//    groupTransform 설명 참고), 이 함수는 커밋된 transform(React state)만 봐서
+//    그 프레임들을 놓쳤다.
+//
+// 그래서 여기서는 "돌리기 전 자기 모양"만 반환하고, RoutePreview가 이 값을
+// AnimatedG(같은 SharedValue를 읽는 Group)로 감싸 실제 경로와 완전히 같은
+// 프레임에 같이 움직이게 한다.
+export function computeRouteLocalBounds(points: Point[]): CanvasCenterRect | null {
+  const projected = projectPoints(points);
+  if (projected.length === 0) return null;
+  let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+  for (const p of projected) {
+    left = Math.min(left, p.x);
+    right = Math.max(right, p.x);
+    top = Math.min(top, p.y);
+    bottom = Math.max(bottom, p.y);
+  }
+  // 선 두께·글로우 반경만큼 여유를 둔다 — 각인의 28px 패딩과 같은 성격.
+  const padding = 40;
+  return {
+    cx: (left + right) / 2,
+    cy: (top + bottom) / 2,
+    width: right - left + padding * 2,
+    height: bottom - top + padding * 2,
+  };
+}
+
 // 실기기 피드백(2026-09-02): 각인도 드로잉처럼 화면에서 직접 탭해 고르고
 // 끌기·핀치로 위치·크기를 바꿀 수 있게 해달라는 요청 — edit.tsx가 탭 지점이
 // 각인 위인지 판정(히트테스트)하고, 선택 중엔 이 사각형으로 점선 박스를 그린다.
@@ -1701,42 +1797,59 @@ export type CanvasRect = { x: number; y: number; width: number; height: number }
 // 자리·대략적인 크기는 거의 안 변하므로, 히트테스트·선택 박스 목적으로는 완주
 // 시점(progressFraction=1) 값으로 고정 계산해도 충분하다 — 매 프레임 재계산할
 // 필요가 없다.
-export function computeStampBounds(run: RunRecord, config: StampConfig, forThumbnail = false): CanvasRect | null {
-  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
-  if (texts.length === 0 && rects.length === 0) return null;
-
-  // 글자폭 추정치라 정확하진 않지만, 탭 히트박스는 넉넉한 편이 오히려 쓰기 좋다.
-  let left = Infinity;
-  let right = -Infinity;
-  let top = Infinity;
-  let bottom = -Infinity;
+// texts·rects 각각의 (패딩 없는) 캔버스 좌표 박스 — computeStampBounds(전체
+// envelope 하나)와 computeStampHitRects(항목별로 나눠 반환) 둘이 공유한다.
+function stampNodeBoxes(
+  texts: StampTextDescriptor[],
+  rects: StampRectDescriptor[],
+  forThumbnail: boolean
+): CanvasRect[] {
   // 썸네일은 한글 문구·폭이 넓은 영문도 잘리지 않도록 보수적으로 추정한다.
   const textWidth = (text: string, size: number) => forThumbnail
     ? Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 || /[MW@%]/.test(char) ? 1.1 : 0.7), 0)
     : text.length * size * 0.62;
-  for (const n of texts) {
+  const boxes: CanvasRect[] = texts.map((n) => {
     const width = n.key.startsWith('caption-')
       ? Math.max(textWidth(n.text, n.size), estimateStampTextWidth(n.text, n.size))
       : n.parts
       ? n.parts.reduce((sum, p) => sum + textWidth(p.text, p.size), 0)
       : textWidth(n.text, n.size);
-    const nodeLeft = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
-    const nodeRight = nodeLeft + width;
-    const nodeTop = n.y - n.size * (forThumbnail ? 1.2 : 0.85);
-    const nodeBottom = n.y + n.size * 0.3; // 대략적인 descent
-    left = Math.min(left, nodeLeft);
-    right = Math.max(right, nodeRight);
-    top = Math.min(top, nodeTop);
-    bottom = Math.max(bottom, nodeBottom);
-  }
-  // 카드 배경처럼 텍스트보다 더 넓게 퍼진 도형은 그 경계도 같이 반영한다 — 카드
+    const left = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
+    const top = n.y - n.size * (forThumbnail ? 1.2 : 0.85);
+    return { x: left, y: top, width, height: n.size * 1.15 }; // *1.15 ≈ 0.85(위) + 0.3(대략적인 descent)
+  });
+  // 카드 배경처럼 텍스트보다 더 넓게 퍼진 도형도 각자의 박스로 더한다 — 카드
   // 프리셋은 이 rects만으로도 사실상 정확한 바운즈가 나온다.
-  for (const r of rects) {
-    left = Math.min(left, r.x);
-    right = Math.max(right, r.x + r.width);
-    top = Math.min(top, r.y);
-    bottom = Math.max(bottom, r.y + r.height);
+  for (const r of rects) boxes.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+  return boxes;
+}
+
+function envelopeOf(boxes: CanvasRect[]): { left: number; right: number; top: number; bottom: number } {
+  let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+  for (const b of boxes) {
+    left = Math.min(left, b.x);
+    right = Math.max(right, b.x + b.width);
+    top = Math.min(top, b.y);
+    bottom = Math.max(bottom, b.y + b.height);
   }
+  return { left, right, top, bottom };
+}
+
+// 실기기 피드백(2026-09-02): 각인도 드로잉처럼 화면에서 직접 탭해 고르고
+// 끌기·핀치로 위치·크기를 바꿀 수 있게 해달라는 요청 — edit.tsx가 탭 지점이
+// 각인 위인지 판정(히트테스트)하고, 선택 중엔 이 사각형으로 점선 박스를 그린다.
+// 진행률에 따라 숫자가 카운트업되며 폭이 미세하게 변하지만(예: "0.00km"→"5.23km")
+// 자리·대략적인 크기는 거의 안 변하므로, 히트테스트·선택 박스 목적으로는 완주
+// 시점(progressFraction=1) 값으로 고정 계산해도 충분하다 — 매 프레임 재계산할
+// 필요가 없다.
+//
+// forThumbnail(true)일 때는 여전히 "전부를 담는 envelope 하나"를 반환한다 —
+// 썸네일 크롭 창을 정할 땐 흩어진 항목 중 어느 하나도 잘리면 안 되므로 여러
+// 조각으로 나누면 오히려 안 맞는다.
+export function computeStampBounds(run: RunRecord, config: StampConfig, forThumbnail = false): CanvasRect | null {
+  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
+  if (texts.length === 0 && rects.length === 0) return null;
+  const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(texts, rects, forThumbnail));
   const padding = 28;
   return {
     x: left - padding,
@@ -1744,6 +1857,62 @@ export function computeStampBounds(run: RunRecord, config: StampConfig, forThumb
     width: right - left + padding * 2,
     height: bottom - top + padding * 2,
   };
+}
+
+// 2026-09-16 결정 — "각인 터치 영역을 조금 더 최소화. 실제 영역에 가깝게(예:
+// 코너의 터치 영역이 가장 큰 사각형인데 드로잉을 선택하는 과정이 불편함)."
+// computeStampBounds는 흩어진 항목(코너·레일 등) 전부를 하나의 envelope으로
+// 감싸서 그 사이 빈 공간까지 "각인" 취급했다 — 그 빈 공간에서는 경로 그림을
+// 고르고 싶어도 늘 각인이 먼저 잡혔다. 여기서는 서로 가까운(간격 ≤ CLUSTER_GAP)
+// 항목끼리만 하나의 사각형으로 묶고, 멀리 떨어진 덩어리는 각자의 사각형으로
+// 나눠 반환한다 — edit.tsx는 이 중 하나에라도 들어가면 각인으로 판정한다.
+function clusterStampBoxes(boxes: CanvasRect[], gap: number): CanvasRect[] {
+  const n = boxes.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const overlaps = (a: CanvasRect, b: CanvasRect) =>
+    a.x - gap < b.x + b.width && a.x + a.width + gap > b.x &&
+    a.y - gap < b.y + b.height && a.y + a.height + gap > b.y;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const ri = find(i), rj = find(j);
+        if (ri !== rj && overlaps(boxes[i], boxes[j])) {
+          parent[ri] = rj;
+          changed = true;
+        }
+      }
+    }
+  }
+  const groups = new Map<number, CanvasRect>();
+  boxes.forEach((box, i) => {
+    const root = find(i);
+    const g = groups.get(root);
+    if (!g) { groups.set(root, { ...box }); return; }
+    const right = Math.max(g.x + g.width, box.x + box.width);
+    const bottom = Math.max(g.y + g.height, box.y + box.height);
+    g.x = Math.min(g.x, box.x);
+    g.y = Math.min(g.y, box.y);
+    g.width = right - g.x;
+    g.height = bottom - g.y;
+  });
+  return Array.from(groups.values());
+}
+
+export function computeStampHitRects(run: RunRecord, config: StampConfig): CanvasRect[] {
+  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
+  if (texts.length === 0 && rects.length === 0) return [];
+  const CLUSTER_GAP = 36; // 이 거리 안이면 한 덩어리로 묶는다 — 실기기에서 다시 볼 값
+  const clusters = clusterStampBoxes(stampNodeBoxes(texts, rects, false), CLUSTER_GAP);
+  const padding = 16; // computeStampBounds의 28보다 줄임 — "실제 영역에 가깝게"
+  return clusters.map((c) => ({
+    x: c.x - padding,
+    y: c.y - padding,
+    width: c.width + padding * 2,
+    height: c.height + padding * 2,
+  }));
 }
 
 // route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.

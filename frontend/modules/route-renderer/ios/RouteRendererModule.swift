@@ -845,6 +845,41 @@ public class RouteRendererModule: Module {
     let safeAreaBottomRatio: CGFloat = 0.17
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
+    // 2026-09-17 — "각인이 흐리게 보이고 화질이 안 좋다"(2026-09-16 결정 §1
+    // 각인 가독성)의 실제 원인. route-preview.tsx는 'row'(레거시, 이제 선택
+    // 목록에 없다)에서만 흰색 발광(글로우, softShadow=false)을 쓰고, 실제로
+    // 고를 수 있는 나머지 여섯 프리셋(코너 등)은 옅은 검정 그림자 하나만 쓴다
+    // (2026-09-02 결정 — "안쪽만 빛나고 겉은 새까맣게 되어 구리다"는 실기기
+    // 피드백으로 나뉜 것). 이 파일은 그 구분 없이 전부 흰색 글로우로 그리고
+    // 있었다 — 지금 쓰는 프리셋 전부가 미리보기보다 더 "빛나 보이는" 원인이다.
+    let isSoftShadow = stamp.stampLayout != "row"
+    let stampShadowColor: UIColor = isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
+
+    // 2026-09-17 — 폰트 불일치(v0 근사, 구현 노트 "폰트 불일치" 참고) 수정.
+    // 미리보기(route-preview.tsx)는 @expo-google-fonts로 로드한 실제 폰트를
+    // 쓰는데 이 파일은 시스템 폰트로 근사하고 있었다. expo-font가 JS에서
+    // Font.loadAsync를 부르면 CTFontManagerRegisterFontsForURL로 프로세스
+    // 전역에 등록되므로(node_modules/expo-font/ios/FontLoaderModule.swift),
+    // 실제 PostScript 이름으로 여기서도 찾을 수 있다 — 못 찾으면(등록 전 등)
+    // 기존 시스템 폰트로 그대로 폴백한다.
+    func loadedFont(_ postscriptName: String, size: CGFloat, fallback: UIFont) -> UIFont {
+      UIFont(name: postscriptName, size: size) ?? fallback
+    }
+    // route-preview.tsx의 'JetBrainsMono_500Medium'/'_700Bold' — 라벨·날짜·mono 값.
+    func monoFont(_ size: CGFloat, bold: Bool) -> UIFont {
+      loadedFont(bold ? "JetBrainsMono-Bold" : "JetBrainsMono-Medium", size: size,
+        fallback: .monospacedSystemFont(ofSize: size, weight: bold ? .bold : .medium))
+    }
+    // route-preview.tsx의 'SpaceGrotesk_700Bold' — 히어로·통계 숫자값(항상 굵게).
+    func heroValueFont(_ size: CGFloat) -> UIFont {
+      loadedFont("SpaceGrotesk-Bold", size: size, fallback: .systemFont(ofSize: size, weight: .bold))
+    }
+    // route-preview.tsx의 'NotoSansKR_500Medium'/'_700Bold' — 한글 문구(caption).
+    func hangulFont(_ size: CGFloat, bold: Bool) -> UIFont {
+      loadedFont(bold ? "NotoSansKR-Bold" : "NotoSansKR-Medium", size: size,
+        fallback: .systemFont(ofSize: size, weight: bold ? .bold : .medium))
+    }
+
     // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
     // color 생략 시 기본 밝은 톤. 라벨류(muted)는 호출부에서 mutedColor를 넘긴다
     // (route-preview.tsx StampTextDescriptor.muted와 같은 개념, 2026-09-02).
@@ -861,7 +896,7 @@ public class RouteRendererModule: Module {
       // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
       let topY = origin.y - font.ascender
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
       (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
@@ -884,11 +919,11 @@ public class RouteRendererModule: Module {
     // 구해서 같은 베이스라인(origin.y)에 나란히 앉힌다(위 draw()와 같은 이유의 같은 수정).
     func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
       guard let split = splitHeroValue(text) else {
-        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), align)
+        draw(text, origin, heroValueFont(size), align)
         return
       }
-      let mainFont = UIFont.systemFont(ofSize: size, weight: .bold)
-      let unitFont = UIFont.systemFont(ofSize: size * 0.42, weight: .bold)
+      let mainFont = heroValueFont(size)
+      let unitFont = heroValueFont(size * 0.42)
       let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: self.lineWarm]
       let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: self.lineWarm]
       let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
@@ -902,7 +937,7 @@ public class RouteRendererModule: Module {
       default: startX = origin.x
       }
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
       (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y - mainFont.ascender), withAttributes: mainAttrs)
       (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y - unitFont.ascender), withAttributes: unitAttrs)
       ctx.restoreGState()
@@ -939,8 +974,9 @@ public class RouteRendererModule: Module {
     let M: CGFloat = 3.6
     // JS의 caption-layout.ts에서 계산한 행을 받아 결과물의 줄 구성을 동일하게 유지한다.
     let captionLines = caption.isEmpty ? [] : (stamp.captionLines ?? caption.components(separatedBy: "\n"))
+    // 2026-09-16 실기기 피드백, TS와 동일 — line 문구가 너무 크게 나와 26→22로 줄였다.
     let captionSize: CGFloat = stamp.stampLayout == "row" ? 34 * s
-      : (stamp.stampLayout == "line" ? 26 : stamp.stampLayout == "bar" ? 15 : 13) * M * s
+      : (stamp.stampLayout == "line" ? 22 : stamp.stampLayout == "bar" ? 15 : 13) * M * s
     let captionLineHeight = captionSize * 1.3
     let captionExtra = CGFloat(max(0, captionLines.count - 1)) * captionLineHeight
     let captionMargin = canvasSize.width * 0.08
@@ -1002,14 +1038,14 @@ public class RouteRendererModule: Module {
         let widths = metaItems.map { estimateStampTextWidth(finalValueFor($0.0), metaFont) }
         let rowWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + metaGap * CGFloat(metaItems.count - 1))
         let fitted = fitStampColumns(widths, rowWidth, min(metaGap, 12 * M))
-        let font = UIFont.monospacedSystemFont(ofSize: metaFont * fitted.scale, weight: .medium)
+        let font = monoFont(metaFont * fitted.scale, bold: false)
         for (i, item) in metaItems.enumerated() {
           draw(item.1, CGPoint(x: leftX + fitted.offsets[i], y: metaBaseline), font, .left)
         }
       }
       if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
       if !caption.isEmpty {
-        drawCaption(CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
+        drawCaption(CGPoint(x: leftX, y: captionBaseline), hangulFont(titleFont, bold: false), .left)
       }
       return
     }
@@ -1021,7 +1057,7 @@ public class RouteRendererModule: Module {
       let rightX = canvasSize.width - 20 * M + CGFloat(stamp.stampX)
       let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
       let dateText = valueFor("date")
-      let statOrder = ["distance", "time", "pace", "heartRate"].filter(hasKey)
+      let statOrder = ["distance", "time", "pace", "heartRate", "place"].filter(hasKey)
 
       let headerFont = 15 * u
       let labelFont = 9 * u
@@ -1036,8 +1072,8 @@ public class RouteRendererModule: Module {
       let dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor
       let headerBaseline = dividerY - dividerGap - headerFont * 0.3
 
-      if !caption.isEmpty { drawCaption(CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: leftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
       if !caption.isEmpty || !dateText.isEmpty {
         fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
       }
@@ -1057,8 +1093,8 @@ public class RouteRendererModule: Module {
         var cursorX = leftX
         for (index, key) in statOrder.enumerated() {
           let isDist = key == "distance"
-          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont * fittedScale, weight: .medium), .left, color: mutedColor)
-          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u * fittedScale, weight: .bold), .left)
+          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), monoFont(labelFont * fittedScale, bold: false), .left, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), heroValueFont((isDist ? 22 : 18) * u * fittedScale), .left)
           cursorX += widths[index] * fittedScale + gap
         }
       }
@@ -1073,11 +1109,11 @@ public class RouteRendererModule: Module {
       let headerFont = 13 * u
       let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
 
-      if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left, fromTop: true) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left, fromTop: true) }
       let dateText = valueFor("date")
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
 
-      let statItems = ["time", "pace", "heartRate"].filter(hasKey)
+      let statItems = ["time", "pace", "heartRate", "place"].filter(hasKey)
       if !statItems.isEmpty {
         let labelFont = 9 * u
         let valueFont = 19 * u
@@ -1087,8 +1123,8 @@ public class RouteRendererModule: Module {
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 1.05
           let label = key == "heartRate" ? "AVG BPM" : (statLabel[key] ?? "")
-          draw(label, CGPoint(x: topRightX, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .right, color: mutedColor)
-          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .right)
+          draw(label, CGPoint(x: topRightX, y: labelY), monoFont(labelFont, bold: false), .right, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), heroValueFont(valueFont), .right)
           cursorY = valueY + rowGap
         }
       }
@@ -1156,8 +1192,8 @@ public class RouteRendererModule: Module {
       var cursor = panelTop + padY
       if hasHeader {
         cursor += headerFont * 0.85
-        if !caption.isEmpty { drawCaption(CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left, fromTop: true) }
-        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+        if !caption.isEmpty { drawCaption(CGPoint(x: panelLeft + padX, y: cursor), hangulFont(headerFont, bold: true), .left, fromTop: true) }
+        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), monoFont(11 * u, bold: false), .right, color: mutedColor) }
       }
       cursor += captionExtra
       if let hero {
@@ -1169,8 +1205,8 @@ public class RouteRendererModule: Module {
         let valueY = cursor + valueFont * 1.05
         for (i, item) in statItems.enumerated() {
           let colX = panelLeft + padX + fitted.offsets[i]
-          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont * fitted.scale, weight: .medium), .left, color: mutedColor)
-          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont * fitted.scale, weight: .bold), .left)
+          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), monoFont(labelFont * fitted.scale, bold: false), .left, color: mutedColor)
+          draw(item.1, CGPoint(x: colX, y: valueY), heroValueFont(valueFont * fitted.scale), .left)
         }
       }
       return
@@ -1197,6 +1233,7 @@ public class RouteRendererModule: Module {
       if hasKey("pace") { rows.append(("PACE", valueFor("pace"), false)) }
       if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
       if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
+      if hasKey("place") { rows.append(("PLACE", valueFor("place"), false)) }
 
       let railX = CGFloat(stamp.stampX)
       let hasRail = !rows.isEmpty
@@ -1222,8 +1259,8 @@ public class RouteRendererModule: Module {
           let valueFont = row.big ? distValueFont : otherValueFont
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 0.95
-          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), monoFont(labelFont, bold: false), .left, color: mutedColor)
+          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), heroValueFont(valueFont), .left)
           cursorY += rowHeights[i] + rowGap
         }
       }
@@ -1235,7 +1272,7 @@ public class RouteRendererModule: Module {
         let y = hasRail
           ? railBottom + rowGap + captionFont * 0.8
           : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
-        drawCaption(CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right, fromTop: hasRail)
+        drawCaption(CGPoint(x: x, y: y), hangulFont(captionFont, bold: true), hasRail ? .left : .right, fromTop: hasRail)
       }
       return
     }
@@ -1256,6 +1293,7 @@ public class RouteRendererModule: Module {
       if hasKey("pace") { parts.append(valueFor("pace").uppercased()) }
       if hasKey("heartRate") { parts.append(valueFor("heartRate").uppercased()) }
       if hasKey("date") { parts.append(valueFor("date")) }
+      if hasKey("place") { parts.append(valueFor("place")) }
       let oneLine = parts.joined(separator: " · ")
 
       // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
@@ -1263,14 +1301,14 @@ public class RouteRendererModule: Module {
       let hasOneLine = !oneLine.isEmpty
       let oneLineBaseline = bottomAnchor
       let dividerY = oneLineBaseline - oneLineFont * 1.3 - gap
-      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85
+      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.7 : bottomAnchor - titleFont * 0.75
 
       if !oneLine.isEmpty {
-        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), UIFont.monospacedSystemFont(ofSize: oneLineFont, weight: .medium), .center)
+        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), monoFont(oneLineFont, bold: false), .center)
         fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
       }
       if !caption.isEmpty {
-        drawCaption(CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
+        drawCaption(CGPoint(x: centerX, y: titleBaseline), hangulFont(titleFont, bold: true), .center)
       }
       return
     }
@@ -1284,7 +1322,7 @@ public class RouteRendererModule: Module {
     let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
 
     if !caption.isEmpty {
-      drawCaption(CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
+      drawCaption(CGPoint(x: centerX, y: baseY - 58 * s), hangulFont(34 * s, bold: false), .center)
     }
     if !items.isEmpty {
       let fontSize: CGFloat = 28 * s
@@ -1292,7 +1330,7 @@ public class RouteRendererModule: Module {
       let widths = keyed.map { estimateStampTextWidth(finalValueFor($0.0), fontSize) }
       let totalWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + gap * CGFloat(items.count - 1))
       let fitted = fitStampColumns(widths, totalWidth, min(gap, 12 * M))
-      let font = UIFont.monospacedSystemFont(ofSize: fontSize * fitted.scale, weight: .bold)
+      let font = monoFont(fontSize * fitted.scale, bold: true)
       for (i, text) in items.enumerated() {
         draw(text, CGPoint(x: centerX - totalWidth / 2 + fitted.offsets[i], y: baseY), font, .left)
       }
