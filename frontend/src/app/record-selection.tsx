@@ -160,18 +160,39 @@ export default function RecordSelectionScreen() {
     );
   }
 
+  // 2026-09-16 결정 — 경로가 없는 기록을 목록에서 뺀다(예전엔 점선으로 보여주되
+  // 고를 수 없게만 했다). 그 결과 "기록은 있는데 전부 좌표가 없는" 세 번째
+  // 빈 화면이 새로 생긴다 — 위 "기록이 아예 없음"과는 다른 원인이라 걸러낸
+  // 기록 수를 알려주는 별도 문구를 둔다.
+  const visibleRuns = runs.filter((r) => r.hasRoute);
+
+  if (visibleRuns.length === 0) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        {header}
+        <View style={styles.center}>
+          <Text style={styles.emptyTitle}>좌표가 있는 기록이 없어요</Text>
+          <Text style={styles.emptyBody}>
+            러닝 {runs.length}건을 찾았지만 좌표가 저장되어 있지 않아 목록에서 걸렀어요. 실외에서
+            GPS로 기록한 러닝인지 확인해주세요.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {header}
       <Text style={styles.sourceLabel}>APPLE 건강 · 실외 러닝</Text>
       <FlatList
-        data={runs}
+        data={visibleRuns}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
           const failed = failedIds.has(item.id);
-          const selectable = item.hasRoute && !failed;
+          const selectable = !failed;
           const loading = loadingRouteFor === item.id;
           return (
             <Pressable
@@ -180,7 +201,7 @@ export default function RecordSelectionScreen() {
               style={[styles.row, !selectable && styles.rowDashed, failed && styles.rowFailed]}>
               <View style={[styles.thumb, failed && styles.thumbFailed]}>
                 <Text style={[styles.thumbGlyph, failed && styles.thumbGlyphFailed]}>
-                  {failed ? '!' : item.hasRoute ? '〜' : '—'}
+                  {failed ? '!' : '〜'}
                 </Text>
               </View>
 
@@ -191,10 +212,10 @@ export default function RecordSelectionScreen() {
                 <Text style={styles.rowMeta}>
                   {[
                     formatDistanceKm(item.distanceMeters),
-                    !failed && item.hasRoute ? formatDuration(item.durationSeconds) : null,
+                    !failed ? formatDuration(item.durationSeconds) : null,
                     selectable ? formatPace(item.averagePaceSecPerKm) : null,
                     selectable && item.averageHeartRate ? formatHeartRate(item.averageHeartRate) : null,
-                    failed ? '좌표를 불러올 수 없음' : !item.hasRoute ? '좌표가 저장되어 있지 않음' : null,
+                    failed ? '좌표를 불러올 수 없음' : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -207,9 +228,11 @@ export default function RecordSelectionScreen() {
           );
         }}
         ListFooterComponent={
-          <Text style={styles.footerNote}>
-            실내 러닝은 이 목록에 오지 않아요. 점선은 보이지만 고를 수 없는 상태예요.
-          </Text>
+          runs.length > visibleRuns.length ? (
+            <Text style={styles.footerNote}>
+              좌표가 없는 기록 {runs.length - visibleRuns.length}건은 목록에서 걸렀어요.
+            </Text>
+          ) : null
         }
       />
     </SafeAreaView>
