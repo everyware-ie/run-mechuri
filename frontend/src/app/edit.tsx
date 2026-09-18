@@ -26,7 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   computeFitTransform,
-  computeStampBounds,
+  computeStampHitRects,
   CYCLE_SECONDS,
   IDENTITY_TRANSFORM,
   RoutePreview,
@@ -65,7 +65,7 @@ import { useCreationFlow } from '@/state/creation-flow';
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
 const PRESETS: { id: RoutePreset; label: string }[] = [
-  { id: 'default-drawing', label: '기본 드로잉' },
+  { id: 'default-drawing', label: '기본 경로 그림' },
   { id: 'light-runner', label: '불빛 러너' },
   { id: 'segment-lighting', label: '구간 점등' },
 ];
@@ -112,9 +112,10 @@ export default function EditScreen() {
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardVisible(false));
     return () => { show.remove(); hide.remove(); };
   }, []);
-  // §7-1 안전 영역 가이드 — 실기기 피드백(2026-09): 항상 떠 있으면 거슬린다는
-  // 지적으로 기본 숨김·버튼으로 토글하는 방식으로 바꿨다.
-  const [showSafeGuide, setShowSafeGuide] = useState(false);
+  // §7-1 안전 영역 가이드 — 맞춰도 잘린다는 제보가 이어져 2026-09-16 결정으로
+  // 켜고 끄는 버튼을 없앴다(안전 영역 자체가 아니라 그 토글만 없앤 것). 그려주는
+  // 기능은 RoutePreview에 남아 있어 다시 필요해지면 여기서 값만 다시 연결하면 된다.
+  const showSafeGuide = false;
   // 실기기 피드백(2026-09-02): "재생 중엔 경로·각인 조작이 계속 느리다" — 재생과
   // 편집이 동시에 안 겹치도록, 기본은 정지(완성된 모습)로 두고 재생 버튼을 눌러야만
   // 그려지는 과정을 보여준다. 한 번 누르면 한 사이클(그리기+정지 유지, CYCLE_SECONDS)
@@ -201,6 +202,14 @@ export default function EditScreen() {
   const handleLayoutSelect = (layout: StampLayout) => {
     rememberStampLayout(layout);
     const next = { ...stampConfigRef.current, layout };
+    updateStampConfig(next);
+    commitStampConfig(next);
+  };
+  // 각인 초기화(2026-09-16 신설) — "지금은 러닝 데이터를 되돌릴 방법이 없다"는
+  // 지적에 따라 추가. 경로 초기화(handleReset)와 같은 원칙(§4-3): 되돌리는 단위는
+  // 위치·크기 "조작"뿐이다 — 켠 항목·문구·프리셋(layout)은 그대로 둔다.
+  const handleStampReset = () => {
+    const next = { ...stampConfigRef.current, position: { x: 0, y: 0 }, scale: 1 };
     updateStampConfig(next);
     commitStampConfig(next);
   };
@@ -341,18 +350,22 @@ export default function EditScreen() {
         gestureFitScaleRef.current = fitScale;
 
         // 탭 지점(뷰 픽셀) → 캔버스 좌표로 역변환해 각인 영역 히트테스트.
+        // 2026-09-16 결정 — 하나의 큰 사각형이 아니라 항목 덩어리별 사각형
+        // 중 하나에라도 들어가면 각인으로 판정한다(코너·레일처럼 흩어진
+        // 프리셋에서 그 사이 빈 공간까지 각인으로 잡히던 문제를 줄인다).
         const run = selectedRunRef.current;
-        const bounds = run ? computeStampBounds(run, stampConfigRef.current) : null;
+        const hitRects = run ? computeStampHitRects(run, stampConfigRef.current) : [];
         let tappedStamp = false;
-        if (bounds) {
+        if (hitRects.length > 0) {
           const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
           const canvasX = (touch.locationX - offsetX) / fitScale;
           const canvasY = (touch.locationY - offsetY) / fitScale;
-          tappedStamp =
+          tappedStamp = hitRects.some((bounds) =>
             canvasX >= bounds.x &&
             canvasX <= bounds.x + bounds.width &&
             canvasY >= bounds.y &&
-            canvasY <= bounds.y + bounds.height;
+            canvasY <= bounds.y + bounds.height
+          );
         }
         tappedTargetRef.current = tappedStamp ? 'stamp' : 'drawing';
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
@@ -686,6 +699,7 @@ export default function EditScreen() {
                     viewHeight={previewSize.height}
                     fit="contain"
                     stampSelected={stampTargeted}
+                    drawingSelected={!stampTargeted}
                     playing={isPlaying}
                     stampDragOffset={{ x: stampDragX, y: stampDragY }}
                   />
@@ -709,7 +723,7 @@ export default function EditScreen() {
                     onPress={() => selectStep(isStamp)}
                     style={[styles.toolTab, stampSheetOpen === isStamp && styles.toolTabOn]}>
                     <Text style={stampSheetOpen === isStamp ? styles.toolTabTextOn : styles.toolTabText}>
-                      {isStamp ? '각인' : '드로잉'}
+                      {isStamp ? '러닝 데이터' : '경로'}
                     </Text>
                   </Pressable>
                 ))}
@@ -719,17 +733,12 @@ export default function EditScreen() {
                   onPress={() => setIsPlaying((v) => !v)}
                   accessibilityRole="button"
                   accessibilityLabel={isPlaying ? '미리보기 정지' : '미리보기 재생'}
-                  style={[styles.previewAction, isPlaying && styles.previewActionOn]}>
+                  style={[styles.previewAction, styles.previewActionNamed, isPlaying && styles.previewActionOn]}>
                   <SymbolView name={isPlaying ? 'pause.fill' : 'play.fill'} size={14}
                     tintColor={isPlaying ? Colors.accent : Colors.textMuted} />
-                </Pressable>
-                <Pressable
-                  onPress={() => setShowSafeGuide((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityLabel="스토리 안전 영역 표시"
-                  accessibilityState={{ selected: showSafeGuide }}
-                  style={[styles.guideToggle, showSafeGuide && styles.previewActionOn]}>
-                  <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>스토리</Text>
+                  <Text style={isPlaying ? styles.previewActionLabelOn : styles.previewActionLabel}>
+                    {isPlaying ? '정지' : '재생'}
+                  </Text>
                 </Pressable>
                 <Pressable onPress={() => animateSheetTo(!sheetExpanded)} style={styles.previewAction}
                   accessibilityRole="button" accessibilityLabel={sheetExpanded ? '편집 도구 접기' : '편집 도구 열기'}
@@ -744,9 +753,9 @@ export default function EditScreen() {
               <ScrollView style={styles.drawingScroll} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled"
                 onContentSizeChange={handleToolContentSizeChange} bounces={false}>
                 <View style={styles.drawingHintRow}>
-                  <Text style={[styles.gestureHint, styles.drawingHint]}>드로잉 이동 · 두 손가락으로 확대·회전</Text>
+                  <Text style={[styles.gestureHint, styles.drawingHint]}>경로 이동 · 두 손가락으로 확대·회전</Text>
                   <Pressable onPress={handleReset} style={styles.resetButton}
-                    accessibilityRole="button" accessibilityLabel="드로잉 초기화">
+                    accessibilityRole="button" accessibilityLabel="경로 초기화">
                     {({ pressed }) => (
                       <View style={[styles.resetChip, pressed && styles.resetChipPressed]}>
                         <SymbolView name="arrow.counterclockwise" size={11} tintColor={Colors.textMuted} />
@@ -782,7 +791,7 @@ export default function EditScreen() {
             ) : (
               <View style={styles.stampContent}>
                 <View style={styles.stampTabs}>
-                  {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '넣을 것' }, { id: 'caption', label: '문구' }] as const).map((tab) => (
+                  {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '항목' }, { id: 'caption', label: '문구' }] as const).map((tab) => (
                     <Pressable key={tab.id} onPress={() => { Keyboard.dismiss(); setStampTab(tab.id); }}
                       accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}
                       style={styles.stampTab}>
@@ -792,7 +801,20 @@ export default function EditScreen() {
                 </View>
                 <ScrollView key={stampTab} style={styles.stampScroll} contentContainerStyle={styles.stampScrollContent}
                   onContentSizeChange={handleToolContentSizeChange} bounces={false} keyboardShouldPersistTaps="handled">
-                  {stampTab !== 'caption' && <Text style={[styles.gestureHint, styles.stampGestureHint]}>각인 이동 · 두 손가락으로 크기 조절</Text>}
+                  {stampTab !== 'caption' && (
+                    <View style={styles.drawingHintRow}>
+                      <Text style={[styles.gestureHint, styles.drawingHint, styles.stampGestureHint]}>러닝 데이터 이동 · 두 손가락으로 크기 조절</Text>
+                      <Pressable onPress={handleStampReset} style={styles.resetButton}
+                        accessibilityRole="button" accessibilityLabel="러닝 데이터 초기화">
+                        {({ pressed }) => (
+                          <View style={[styles.resetChip, pressed && styles.resetChipPressed]}>
+                            <SymbolView name="arrow.counterclockwise" size={11} tintColor={Colors.textMuted} />
+                            <Text style={styles.resetText}>초기화</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    </View>
+                  )}
                   {stampTab === 'layout' && (
                     <View style={styles.layoutChipRow}>
                       {STAMP_LAYOUTS.map((l) => {
@@ -831,11 +853,11 @@ export default function EditScreen() {
                       </View>
                       <TextInput value={stampConfig.caption ?? ''} onChangeText={handleCaptionChange}
                         placeholder="예) 비 오는 날의 한강" placeholderTextColor={Colors.textMuted}
-                        accessibilityLabel="각인 문구, 미리보기 기준 최대 3줄" style={styles.captionInput}
+                        accessibilityLabel="러닝 데이터 문구, 미리보기 기준 최대 3줄" style={styles.captionInput}
                         multiline submitBehavior="newline" textAlignVertical="top" />
                       <Text accessibilityLiveRegion="polite" style={styles.note}>
                         {captionLineCount > CAPTION_MAX_LINES ? '크기·프리셋 변경으로 3줄을 넘었어요. 새 입력은 3줄 안에서 가능해요.'
-                          : captionLimited ? '최대 3줄까지 입력할 수 있어요. 문구를 줄이거나 각인 크기를 줄여주세요.' : '미리보기 기준 최대 3줄 · 자동 줄바꿈'}
+                          : captionLimited ? '최대 3줄까지 입력할 수 있어요. 문구를 줄이거나 러닝 데이터 크기를 줄여주세요.' : '미리보기 기준 최대 3줄 · 자동 줄바꿈'}
                       </Text>
                     </View>
                   )}
@@ -844,15 +866,15 @@ export default function EditScreen() {
             )}
             {!keyboardVisible && <View style={styles.stepNavigation}>
               <Pressable onPress={() => stampSheetOpen ? selectStep(false) : router.push({ pathname: '/background-selection', params: { returnTo: 'edit' } })}
-                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '이전: 드로잉 편집' : '이전: 배경 바꾸기'}
+                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '이전: 경로 편집' : '이전: 배경 바꾸기'}
                 style={({ pressed }) => [styles.stepPrevious, pressed && styles.stepPreviousPressed]}>
                 <SymbolView name="arrow.left" size={14} tintColor={Colors.text} accessible={false} />
-                <Text style={styles.stepPreviousText}>{stampSheetOpen ? '이전 · 드로잉' : '배경 바꾸기'}</Text>
+                <Text style={styles.stepPreviousText}>{stampSheetOpen ? '이전 · 경로' : '배경 바꾸기'}</Text>
               </Pressable>
               <Pressable onPress={() => stampSheetOpen ? handleNext() : selectStep(true)}
-                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '편집 완료하고 공유로' : '다음: 각인 편집'}
+                accessibilityRole="button" accessibilityLabel={stampSheetOpen ? '편집 완료하고 공유로' : '다음: 러닝 데이터 편집'}
                 style={styles.stepNext}>
-                <Text style={styles.stepNextText}>{stampSheetOpen ? '완료' : '다음 · 각인 →'}</Text>
+                <Text style={styles.stepNextText}>{stampSheetOpen ? '완료' : '다음 · 러닝 데이터 →'}</Text>
               </Pressable>
             </View>}
             </>}
@@ -874,7 +896,9 @@ const styles = StyleSheet.create({
   previewActions: { flexDirection: 'row', alignItems: 'center', flexShrink: 0 },
   previewAction: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   previewActionOn: { backgroundColor: CHIP_ON_BG },
-  guideToggle: { minHeight: 44, minWidth: 44, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 22 },
+  // 재생 버튼에 이름을 붙인다(2026-09-16) — 아이콘만으로는 무엇을 하는 버튼인지
+  // 알기 어렵다는 지적. 초기화 버튼(resetChip)처럼 아이콘 옆에 문구를 둔다.
+  previewActionNamed: { width: undefined, flexDirection: 'row', gap: 4, paddingHorizontal: 10 },
   gestureHint: { fontFamily: Fonts.sans, fontSize: 10, lineHeight: 15, color: Colors.textMuted },
   stampGestureHint: { marginBottom: 4 },
   drawingHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -883,8 +907,8 @@ const styles = StyleSheet.create({
   resetChip: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: Colors.borderStrong },
   resetChipPressed: { backgroundColor: Colors.border },
   resetText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
-  guideToggleText: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
-  guideToggleTextOn: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.accent },
+  previewActionLabel: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
+  previewActionLabelOn: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.accent },
   stepNavigation: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 4, paddingBottom: 8, flexShrink: 0 },
   stepPrevious: { minHeight: 44, flex: 1, flexDirection: 'row', gap: 6, paddingHorizontal: 12, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.borderStrong, borderRadius: 22 },
   stepPreviousPressed: { backgroundColor: Colors.border },
