@@ -2,11 +2,10 @@ import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
 import { estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { useIsFocused } from 'expo-router';
-import { Canvas, Circle, Group, Path, Shadow, Skia } from '@shopify/react-native-skia';
+import { Canvas, Circle, DashPathEffect, Group, Path, RoundedRect, Shadow, Skia } from '@shopify/react-native-skia';
 import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { Animated, AppState, View } from 'react-native';
-import ReanimatedAnimated, {
-  useAnimatedProps,
+import {
   useAnimatedReaction,
   useDerivedValue,
   useFrameCallback,
@@ -248,16 +247,6 @@ type Props = {
 // MakeFromSVGString은 쓰지 않는다 — Skia Path API로 바로 그린다(2026-09-01, 실기기
 // 끊김 원인 중 하나였음). toSvgPath는 route-thumbnail.tsx 등 애니메이션이 없는
 // 곳에서만 쓴다.
-// 2026-09-17 실기기 피드백 — 경로 점선 박스가 드래그 중엔 안 움직이다가 손을
-// 뗀 뒤에야 뒤늦게 따라왔다. 이 박스는 transform(React state, 커밋된 값)만
-// 보고 그렸는데, 드래그 중 실제 경로는 Reanimated SharedValue(tx/ty/tScale/
-// tRotation)를 UI 스레드에서 직접 읽어 매 프레임 움직인다(리렌더 없이, 끊김을
-// 없애려고 이렇게 설계됨 — 위 groupTransform 설명 참고) — 그래서 둘이 어긋났다.
-// AnimatedG로 같은 SharedValue를 똑같이 읽게 하면 박스도 같은 프레임에 같이
-// 움직인다(모듈 스코프에서 한 번만 만들어야 매 렌더마다 다시 마운트되며
-// 애니메이션이 끊기지 않는다).
-const AnimatedG = ReanimatedAnimated.createAnimatedComponent(G);
-
 function skPath(points: CanvasPoint[]) {
   const path = Skia.Path.Make();
   if (points.length === 0) return path;
@@ -398,14 +387,12 @@ export function RoutePreview({
     { translateY: -CANVAS_HEIGHT / 2 },
   ]);
 
-  // 2026-09-17 — 경로 점선 박스(아래 routeLocalBounds)를 이 Group과 똑같은
-  // 수식·같은 SharedValue로 돌려서, 실제 경로가 움직이는 그 프레임에 같이
-  // 움직인다. 위 groupTransform(Skia 배열)과 순서만 같고 형식만 SVG 문자열이다.
-  const routeBoxAnimatedProps = useAnimatedProps(() => {
-    return {
-      transform: `translate(${CANVAS_WIDTH / 2 + tx.value} ${CANVAS_HEIGHT / 2 + ty.value}) rotate(${tRotation.value}) scale(${tScale.value}) translate(${-CANVAS_WIDTH / 2} ${-CANVAS_HEIGHT / 2})`,
-    };
-  });
+  // 선택 박스도 경로와 같은 Skia Group의 변형을 상속한다.
+  // 숫자 카운트업 리렌더가 memo 경계를 깨지 않도록 원래 영역은 메모한다.
+  const routeLocalBounds = useMemo(
+    () => drawingSelected ? computeRouteLocalBounds(points) : null,
+    [drawingSelected, points]
+  );
 
   if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
@@ -428,10 +415,6 @@ export function RoutePreview({
   // 2026-09-16 결정 — 하나의 큰 envelope 대신, 서로 떨어진 항목 덩어리마다 각자의
   // 점선 박스를 그린다(computeStampHitRects, 코너·레일 등에서 특히 차이가 크다).
   const stampHitRects = stampSelected ? computeStampHitRects(run, stampConfig) : [];
-  // 2026-09-16 결정 — 경로 그림 쪽 점선 박스. "돌리기 전 자기 모양"만 여기서
-  // 구하고(사용자 transform 미적용), 실제로 돌리고 옮기고 키우는 건 아래 렌더링의
-  // AnimatedG(routeBoxAnimatedProps)가 담당한다 — computeRouteLocalBounds 주석 참고.
-  const routeLocalBounds = drawingSelected ? computeRouteLocalBounds(points) : null;
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
@@ -439,22 +422,8 @@ export function RoutePreview({
         preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance}
         fullPath={fullPath} rawFullPath={rawFullPath} groupTransform={groupTransform}
         pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
-        playToken={playToken} onProgressSample={setUiStampProgress}
+        playToken={playToken} onProgressSample={setUiStampProgress} selectionBounds={routeLocalBounds}
       />
-
-      {routeLocalBounds && (
-        <Svg pointerEvents="none" width={viewWidth} height={viewHeight} style={{ position: 'absolute', top: 0, left: 0 }}>
-          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-            {/* AnimatedG가 groupTransform과 같은 SharedValue를 직접 읽어 매 프레임
-                갱신된다 — 리렌더를 거치지 않아 실제 경로와 같은 프레임에 움직인다. */}
-            <AnimatedG animatedProps={routeBoxAnimatedProps}>
-              <SvgRect x={routeLocalBounds.cx - routeLocalBounds.width / 2} y={routeLocalBounds.cy - routeLocalBounds.height / 2}
-                width={routeLocalBounds.width} height={routeLocalBounds.height}
-                rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
-            </AnimatedG>
-          </G>
-        </Svg>
-      )}
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
           설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), content와는
@@ -504,7 +473,7 @@ export function RoutePreview({
 // 프리셋 내부 memo 외에 Canvas 자체도 경계 안에 둬 경로 트리 갱신을 건너뛴다.
 const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
   preset, projected, cumulative, totalDistance, fullPath, rawFullPath, groupTransform,
-  pauseAnimation, playing, blurScale, playToken, onProgressSample,
+  pauseAnimation, playing, blurScale, playToken, onProgressSample, selectionBounds,
 }: {
   preset: RoutePreset;
   projected: CanvasPoint[];
@@ -513,6 +482,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
   fullPath: ReturnType<typeof skPath>;
   rawFullPath: ReturnType<typeof skPath>;
   groupTransform: ComponentProps<typeof Group>['transform'];
+  selectionBounds: CanvasCenterRect | null;
   pauseAnimation: boolean;
   playing: boolean;
   blurScale: number;
@@ -557,6 +527,15 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
             playing={playing}
             onProgressSample={onProgressSample}
           />
+        )}
+        {selectionBounds && (
+          <RoundedRect
+            x={selectionBounds.cx - selectionBounds.width / 2}
+            y={selectionBounds.cy - selectionBounds.height / 2}
+            width={selectionBounds.width} height={selectionBounds.height}
+            r={16} color={GLOW} style="stroke" strokeWidth={3}>
+            <DashPathEffect intervals={[10, 8]} />
+          </RoundedRect>
         )}
       </Group>
     </Canvas>
@@ -1767,9 +1746,8 @@ export type CanvasCenterRect = { cx: number; cy: number; width: number; height: 
 //    groupTransform 설명 참고), 이 함수는 커밋된 transform(React state)만 봐서
 //    그 프레임들을 놓쳤다.
 //
-// 그래서 여기서는 "돌리기 전 자기 모양"만 반환하고, RoutePreview가 이 값을
-// AnimatedG(같은 SharedValue를 읽는 Group)로 감싸 실제 경로와 완전히 같은
-// 프레임에 같이 움직이게 한다.
+// 여기서는 변형 전 영역만 반환한다. 선택 박스와 경로를 같은 Skia Group에
+// 넣어 별도 좌표 변환이나 SVG 속성 갱신 없이 같은 변형을 상속하게 한다.
 export function computeRouteLocalBounds(points: Point[]): CanvasCenterRect | null {
   const projected = projectPoints(points);
   if (projected.length === 0) return null;

@@ -56,7 +56,7 @@ const deps = {
   } },
   'react-native-reanimated': reanimated,
   'react-native-worklets': { scheduleOnRN: (fn, ...args) => fn(...args) },
-  '@shopify/react-native-skia': { Canvas: 'Canvas', Group: 'Group', Skia: { Path: { Make: () => ({ moveTo() {}, lineTo() {} }) } } },
+  '@shopify/react-native-skia': { Canvas: 'Canvas', Group: 'Group', RoundedRect: 'RoundedRect', DashPathEffect: 'DashPathEffect', Skia: { Path: { Make: () => ({ moveTo() {}, lineTo() {} }) } } },
   'react-native-svg': {},
 };
 const cache = {};
@@ -199,3 +199,57 @@ assert.equal(buildPaceTimeline(gap, avg)[135], avg, 'gap window falls back to av
 const backwards = uniform.map((p, i) => i === 100 ? { ...p, timestamp: uniform[90].timestamp } : p);
 assert(buildPaceTimeline(backwards, avg).every(p => Number.isFinite(p) && p > 0));
 console.log('PASS: GPS-derived pace changes with speed; gaps/invalid data fallback; exact final average.');
+
+// A selection box must inherit the route's live transform, including between React commits.
+function applyTransform(point, transforms) {
+  let { x, y } = point;
+  for (const op of [...transforms].reverse()) {
+    if ('translateX' in op) x += op.translateX;
+    if ('translateY' in op) y += op.translateY;
+    if ('scale' in op) { x *= op.scale; y *= op.scale; }
+    if ('rotate' in op) {
+      const c = Math.cos(op.rotate), s = Math.sin(op.rotate);
+      [x, y] = [x * c - y * s, x * s + y * c];
+    }
+  }
+  return { x, y };
+}
+for (const fit of ['contain', 'cover', 'cover-safe']) {
+  slots = [];
+  const live = { x: { value: 0 }, y: { value: 0 }, scale: { value: 1 }, rotationDeg: { value: 0 } };
+  const selected = { ...props, drawingSelected: true, transformShared: live, fit, bottomInset: 100 };
+  const selectedCanvas = canvas(selected);
+  const tree = selectedCanvas.type(selectedCanvas.props);
+  const group = nodes(tree).find(n => n.type === 'Group');
+  const box = group.props.children.find(n => n?.type === 'RoundedRect');
+  assert(box, 'selection must be a direct child of the same Group as the route');
+  assert(group.props.children.some(n => n?.type?.name === 'DefaultDrawingLayer'));
+  assert.equal(box.props.transform, undefined, 'no independent transform on selection');
+  assert.equal(box.props.style, 'stroke');
+  assert.equal(box.props.children.type, 'DashPathEffect');
+  const bounds = selectedCanvas.props.selectionBounds;
+  for (const p of projection.projectPoints(props.points)) {
+    assert(p.x >= box.props.x && p.x <= box.props.x + box.props.width);
+    assert(p.y >= box.props.y && p.y <= box.props.y + box.props.height);
+  }
+  const fitResult = preview.computeFitTransform(props.viewWidth, props.viewHeight, fit, 100);
+  for (const [x, y, scale, rotation] of [[180, -650, 1, 0], [-220, 310, .6, 45], [90, -100, 1.8, -90], [0, 0, 1, 0]]) {
+    live.x.value = x; live.y.value = y; live.scale.value = scale; live.rotationDeg.value = rotation;
+    // No render here: the original parent transform must read the current gesture values.
+    const actual = applyTransform({ x: bounds.cx, y: bounds.cy }, group.props.transform.value);
+    const angle = rotation * Math.PI / 180;
+    const dx = (bounds.cx - 540) * scale, dy = (bounds.cy - 960) * scale;
+    const expectedX = fitResult.offsetX + fitResult.fitScale * (540 + x + dx * Math.cos(angle) - dy * Math.sin(angle));
+    const expectedY = fitResult.offsetY + fitResult.fitScale * (960 + y + dx * Math.sin(angle) + dy * Math.cos(angle));
+    assert(Math.abs(actual.x - expectedX) < 1e-7 && Math.abs(actual.y - expectedY) < 1e-7);
+  }
+  for (let i = 1; i <= 12; i++) {
+    selectedCanvas.props.onProgressSample(i / 12);
+    const next = canvas(selected);
+    for (const key of Object.keys(next.props)) assert(Object.is(next.props[key], selectedCanvas.props[key]), `selected Canvas prop changed: ${key}`);
+  }
+  const unselected = canvas({ ...selected, drawingSelected: false });
+  assert.equal(unselected.props.selectionBounds, null);
+  assert(!nodes(unselected.type(unselected.props)).some(n => n.type === 'RoundedRect'));
+}
+console.log('PASS: selected route and box share one live transform for move/scale/rotation/reset and all fits; selected Canvas props remain stable; no box when unselected. Native device QA still required.');
