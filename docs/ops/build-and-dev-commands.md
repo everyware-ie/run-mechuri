@@ -38,7 +38,7 @@ npx expo prebuild            # ios/ 프로젝트 재생성 (+ pod install 겸함
 ```
 
 - `prebuild`는 `ios/`, `android/` 폴더를 설정 기준으로 다시 만든다. 기존 `ios/`가 있으면 덮어쓸지 물어본다.
-- 앱 표시 이름이 한글("메추리")이라 프로젝트 파일명이 `app.xcodeproj`/`app.xcworkspace`로 나오는 게 정상(알려진 특이사항).
+- 현재 표시 이름은 `Runary`다. 새로 prebuild한 iOS 프로젝트는 `Runary.xcworkspace`를 사용한다. 이름 변경 전에 생성한 로컬 프로젝트에는 `app.xcworkspace`가 남아 있을 수 있으므로 실제 파일명과 scheme을 확인한다.
 
 ## 3. 실기기/시뮬레이터에서 직접 확인 (Xcode)
 
@@ -129,4 +129,33 @@ xcrun swiftc -parse modules/route-renderer/ios/RouteRendererModule.swift
 
 표시 이름을 Runary로 바꾸고 첫 실행 안내·홈에 개인정보 처리방침 링크를 추가했다. iPhone Debug 빌드 성공 후 연결된 개발 아이폰에 설치했다. Expo app.json과 로컬 생성 iOS Info.plist의 CFBundleDisplayName·건강 권한 안내를 맞췄다. 배포 빌드는 app.json 설정을 사용한다. 번들 ID는 com.mechuri.runmechuri로 유지했다.
 
-오늘 편집 QA 수정은 사용자가 확인 완료했다. 이번 설치는 로컬 QA용이며 PR·TestFlight 배포는 아직 진행하지 않았다. 기능 근거와 검증은 [처리방침 링크](../product/features/privacy-policy-link.md), [제품명 반영](../product/features/runary-display-name.md)에 기록했다.
+오늘 편집 QA 수정은 사용자가 확인 완료했다. 이 설치 시점에는 로컬 QA용이었고, 이후 PR #62·#63을 머지해 아래의 빌드 23으로 TestFlight 내부 배포를 완료했다. 기능 근거와 검증은 [처리방침 링크](../product/features/privacy-policy-link.md), [제품명 반영](../product/features/runary-display-name.md)에 기록했다.
+
+
+## 2026-09-20: 출시 준비 배포 1.0.0(23)
+
+### 소스와 변경
+
+- [PR #62](https://github.com/everyware-ie/run-mechuri/pull/62): 경로 선택 박스의 이동·확대·회전 동기화, 원라인 기본 너비 보정, 러닝 데이터 크기 슬라이더, 항목별 터치 영역, 이동 후 되튀는 현상 제거, 전체 미리보기에서 대상 전환 시 접힘 상태 유지.
+- [PR #63](https://github.com/everyware-ie/run-mechuri/pull/63): Runary 표시 이름·화면 문구, 첫 실행·홈의 처리방침 링크, 공개 Notion 이름과 새 허브 주소 반영.
+- 배포 소스: `a280271a38a2d2b3b1450631218360957c95babe`. 머지된 main의 별도 깨끗한 체크아웃에서 기존 잠금 파일로 의존성을 설치하고 로컬 production 빌드를 실행했다.
+
+### 검증
+
+사용자가 오늘 편집 QA 항목을 확인 완료했다. 타입, 미리보기·편집 회귀 검사, 문서 검사와 diff 공백 검사가 통과했다. iOS Debug 빌드·개발 기기 설치도 완료했다. 전체 린트에는 기존 오류 16개·경고 5개가 남아 있으며 이번 변경에서 추가된 오류는 없다.
+
+빌드 중 Expo Doctor는 최신 권장 패치와 다른 의존성 21개를 보고했다. 배포 직전 의존성 변경을 추가하지 않고 검증한 잠금 파일을 유지했다. [확인 필요] 패치 업데이트는 별도 작업에서 호환성·회귀 검증 후 진행한다.
+
+### 제출 상태
+
+로컬 production 빌드가 성공했다. IPA의 표시 이름 `Runary`, 버전 `1.0.0(23)`, 기존 bundle ID `com.mechuri.runmechuri`, processing 모드·JS 번들 포함을 확인했다. macOS 신뢰 저장소 접근이 가능한 환경에서 `codesign --verify --deep --strict`가 통과했다.
+
+- IPA SHA-256: `06832392975d0a685ed4dc994949caf93358f56abcd71e68fb130f434fd7470b`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/55e05c3c-b903-4336-a06b-9ea5b1e44431): `FINISHED`, 2026-09-20 22:46 KST Apple 업로드 완료.
+- 2026-09-20 Apple 조회에서 빌드 `23`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+
+### 9월 22일 외부 공개 인계
+
+2026-09-20 Apple 조회에서 기존 빌드 `1.0.0(18)`은 `BETA_APPROVED`, 빌드 `1.0.0(22)`는 `READY_FOR_BETA_SUBMISSION`이었다. 이전 빌드 승인을 이번 빌드의 외부 배포 완료로 간주하지 않는다.
+
+사용자는 외부 베타 공개 설정을 다른 팀원에게 요청하거나 다음에 진행하기로 했다. 앱 관리 Apple 계정으로 [App Store Connect의 TestFlight](https://appstoreconnect.apple.com/apps/6807295594/testflight/ios)에 로그인하여 이번 빌드를 외부 베타 그룹에 추가하고, 표시되는 베타 심사·테스트 시작 절차를 진행한다. 공개 링크에서 새 빌드를 설치할 수 있는지 확인한 뒤 출시 안내에 사용한다. 이번 작업에서는 공개 링크 변경이나 스레드·지인 대상 메시지를 보내지 않았다.
