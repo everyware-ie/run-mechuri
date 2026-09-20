@@ -14,6 +14,18 @@ npx expo start
 - 화면이 이상하게 안 바뀌면 캐시 문제일 수 있다 — `npx expo start -c` (캐시 클리어).
 - 앱이 아예 안 켜져 있으면, 기기에서 앱을 직접 실행해 Metro(`expo start`)에 연결한다.
 
+### 흔들어도 개발 메뉴가 나오지 않을 때
+
+**TestFlight 앱에서는 개발 메뉴가 열리지 않는다.** 흔들기는 이미 설치된 개발용 앱에서 메뉴를 여는 동작이지, TestFlight를 개발용으로 바꾸는 동작이 아니다. [Expo 개발용 빌드 안내](https://docs.expo.dev/develop/development-builds/use-development-builds/).
+
+이 프로젝트는 개발용과 TestFlight의 bundle ID가 모두 `com.mechuri.runmechuri`다. 같은 아이폰에서는 나중에 설치한 버전으로 교체된다. TestFlight 업데이트 후 로컬 QA로 돌아오려면 개발용 앱을 다시 빌드·설치하고 개발 서버를 실행한다. 앱을 먼저 삭제할 필요는 없다.
+
+```bash
+npx expo start --dev-client --lan --port 8081
+```
+
+개발용 앱의 서버 선택 화면에서 연결하거나 Metro에 나온 QR 코드로 연다. LAN 연결은 Mac과 아이폰이 같은 네트워크에 있어야 한다. 개발용 앱이 연결된 뒤에는 Metro 터미널의 `m`으로도 개발 메뉴를 열 수 있다. [Expo 디버깅 도구 안내](https://docs.expo.dev/debugging/tools/).
+
 ## 2. 네이티브 쪽을 바꿨을 때 (새 패키지·설정·bridge 모듈)
 
 **Swift 파일 "내용"만 바꾼 거면 이 단계 없이 바로 3번(Xcode Run)으로 가도 된다** — 이미 링크된 로컬 모듈은 Xcode가 원본 경로를 그대로 참조해서, 다시 빌드만 해도 반영된다.

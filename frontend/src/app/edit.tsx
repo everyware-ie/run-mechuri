@@ -5,7 +5,6 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
-  Animated,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -263,15 +262,13 @@ export default function EditScreen() {
   }, [transform, transformXShared, transformYShared, transformScaleShared, transformRotationShared]);
   const baseStampPosition = useRef(stampConfig.position);
   const baseStampScale = useRef(stampConfig.scale ?? 1);
-  // 실기기 피드백(2026-09-02): 각인을 한 손가락으로 끌 때(위치만 바뀌는 경우)도
-  // stampConfig(React state) RAF 스로틀만으로는 여전히 렉이 있었다 — 이 클래식
-  // Animated.Value 두 개(useNativeDriver:true)에 직접 .setValue()를 불러서
-  // 진짜로 리렌더 없이 네이티브 쪽에서 위치만 움직인다(바텀시트 드래그와 같은
-  // 방식). 두 손가락(핀치 크기 조정)은 계속 RAF 스로틀 경로를 쓴다 — 크기까지
-  // 이 값으로 감당하려면 폰트 재계산과 별개로 다뤄야 해서 복잡도가 커지고,
-  // 핀치는 위치 드래그보다 훨씬 짧고 드문 제스처라 우선순위가 낮다.
-  const stampDragX = useRef(new Animated.Value(0)).current;
-  const stampDragY = useRef(new Animated.Value(0)).current;
+  // 드래그와 저장 후 표시가 같은 절대 위치를 사용한다. 상대 오프셋 인계는 없다.
+  const stampPositionX = useSharedValue(stampConfig.position.x);
+  const stampPositionY = useSharedValue(stampConfig.position.y);
+  useEffect(() => {
+    stampPositionX.set(stampConfig.position.x);
+    stampPositionY.set(stampConfig.position.y);
+  }, [stampConfig.position, stampPositionX, stampPositionY]);
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
   // 실기기 피드백(2026-09-02): 각인을 끌 때 손가락 이동마다(raw 터치 이벤트, 화면
   // 프레임보다 훨씬 잦다) updateStampConfig를 그대로 부르면 RoutePreview가 매번
@@ -302,6 +299,23 @@ export default function EditScreen() {
       });
     }
   };
+  const finishStampGesture = () => {
+    flushPendingStampConfig();
+    const next = { ...stampConfigRef.current, position: {
+      x: stampPositionX.value, y: stampPositionY.value,
+    } };
+    updateStampConfig(next);
+    commitStampConfig(next);
+  };
+  const handleStampScaleChange = (percent: number) => {
+    scheduleStampConfigUpdate({ ...stampConfigRef.current, scale: percent / 100 });
+  };
+  const handleStampScaleCommit = (percent: number) => {
+    flushPendingStampConfig();
+    const next = { ...stampConfigRef.current, scale: percent / 100 };
+    updateStampConfig(next);
+    commitStampConfig(next);
+  };
   // draft.selectedRun은 이 화면에 들어오기 전에 이미 정해져 안 바뀌지만, panResponder는
   // useRef라 첫 렌더 클로저를 그대로 들고 있으므로(아래) ref로 최신값을 보장한다.
   const selectedRunRef = useRef(draft.selectedRun);
@@ -320,13 +334,14 @@ export default function EditScreen() {
   const tappedTargetRef = useRef<'drawing' | 'stamp'>('drawing');
   const gestureMovedRef = useRef(false);
   const selectStep = (isStamp: boolean) => {
+    Keyboard.dismiss();
     flushPendingSmooth();
     commitSmoothOptions(smoothOptionsRef.current);
     flushPendingStampConfig();
     editTargetRef.current = isStamp ? 'stamp' : 'drawing';
     setStampSheetOpen(isStamp);
     setStampTargeted(isStamp);
-    animateSheetTo(true);
+    // 대상만 바꾸고 사용자가 선택한 전체 미리보기/도구 펼침 상태는 유지한다.
   };
 
   const panResponder = useRef(
@@ -375,10 +390,8 @@ export default function EditScreen() {
         if (isStamp) {
           baseStampPosition.current = stampConfigRef.current.position;
           baseStampScale.current = stampConfigRef.current.scale ?? 1;
-          // 방어적 초기화 — 정상적으로는 이전 드래그의 release에서 이미
-          // 0으로 돌아가 있지만, 제스처가 중간에 끊기는 등의 경우를 대비한다.
-          stampDragX.setValue(0);
-          stampDragY.setValue(0);
+          stampPositionX.set(baseStampPosition.current.x);
+          stampPositionY.set(baseStampPosition.current.y);
         } else {
           baseTransform.current = transformRef.current;
           // 방어적 동기화 — 보통은 위 useEffect가 이미 맞춰 놨겠지만, 만에 하나
@@ -405,39 +418,22 @@ export default function EditScreen() {
         if (!gestureMovedRef.current) return;
         const touches = evt.nativeEvent.touches;
         if (editTargetRef.current === 'stamp') {
-          // 각인은 끌기(위치) + 두 손가락 핀치(크기)만 반응한다 — 회전은 없음.
+          // 위치는 한 손가락과 핀치 모두 같은 공유 값만 갱신한다.
+          stampPositionX.set(baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current);
+          stampPositionY.set(baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current);
           if (touches.length === 2) {
             if (!gestureStart.current) {
               gestureStart.current = {
                 distance: touchDistance(touches[0], touches[1]),
                 angle: touchAngleDeg(touches[0], touches[1]),
               };
-              // 한 손가락 드래그 중 두 번째 손가락이 닿아 핀치로 넘어가는 순간 —
-              // 그 지점부터는 위치도 stampConfig(RAF 스로틀) 쪽이 다시 맡으므로,
-              // 네이티브 오프셋(stampDragX/Y)은 지금 값만큼 남아있으면 이중으로
-              // 더해져 튄다. 0으로 되돌린다.
-              stampDragX.setValue(0);
-              stampDragY.setValue(0);
             }
             const newDistance = touchDistance(touches[0], touches[1]);
             const scaleDelta = newDistance / (gestureStart.current.distance || 1);
-            // 한 손가락 release 커밋과 같은 이유로 dx/dy(뷰 픽셀)를 fitScale로
-            // 나눠 캔버스 좌표로 바꾼다 — 안 그러면 핀치 중 위치도 짧게 움직인다.
             scheduleStampConfigUpdate({
               ...stampConfigRef.current,
-              position: {
-                x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
-                y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
-              },
               scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
             });
-          } else {
-            // 한 손가락 드래그 — stampConfig(React state)를 안 건드리고 이
-            // Animated.Value에 직접 쓴다. RoutePreview가 각인 Svg 전체를 이
-            // 값만큼 오프셋하므로(stampDragOffset) 리렌더 없이 네이티브 쪽에서
-            // 움직인다.
-            stampDragX.setValue(gestureState.dx);
-            stampDragY.setValue(gestureState.dy);
           }
           return;
         }
@@ -464,7 +460,7 @@ export default function EditScreen() {
           transformYShared.value = baseTransform.current.y + gestureState.dy / gestureFitScaleRef.current;
         }
       },
-      onPanResponderRelease: (_evt, gestureState) => {
+      onPanResponderRelease: () => {
         setIsInteracting(false);
         // gestureStart가 non-null이면 이 제스처 동안 핀치(두 손가락)로 넘어간
         // 적이 있었다는 뜻 — 아래 reset 전에 먼저 읽어 둔다.
@@ -479,51 +475,7 @@ export default function EditScreen() {
           return;
         }
         if (editTargetRef.current === 'stamp') {
-          if (wasStampPinching) {
-            // 핀치(위치+크기) 경로 — scheduleStampConfigUpdate가 이미 최신값을
-            // stampConfigRef에 반영해 두고 있다. 마지막으로 예약된(아직 화면엔 안
-            // 반영된) 값까지 확실히 반영한 다음 커밋 — 안 그러면 손을 뗀 마지막
-            // 프레임 분의 미세한 변화가 씹힐 수 있다.
-            flushPendingStampConfig();
-            commitStampConfig(stampConfigRef.current);
-          } else {
-            // 한 손가락 드래그 — stampConfig(state)는 이번 드래그 동안 안
-            // 건드렸다(stampDragX/Y로만 네이티브에서 움직였다). 최종 위치를 여기서
-            // 계산해 커밋하고, 오프셋은 0으로 되돌린다(안 그러면 다음 렌더에서
-            // 실제 위치 + 남은 오프셋이 겹쳐 보인다).
-            //
-            // 실기기 피드백(2026-09-02): "놓은 자리에 정확히 안 놓인다" — 드래그
-            // 중 미리보기는 gestureState.dx/dy(뷰 픽셀)를 그대로 오프셋으로 썼는데,
-            // stampConfig.position은 캔버스 좌표(1080x1920)라 단위가 다르다. 뷰
-            // 픽셀을 그대로 더하면 화면이 캔버스보다 작은 만큼(fitScale<1) 실제
-            // 캔버스 상 이동량보다 훨씬 작게 반영돼 미리보기보다 짧게 움직인
-            // 자리에 놓였다 — 탭 히트테스트(위 grant)와 같은 fitScale(이번 제스처
-            // 시작 시점에 계산해 둔 값)로 나눠 캔버스 좌표로 변환해야 미리보기와
-            // 정확히 같은 자리에 커밋된다.
-            const finalPosition = {
-              x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
-              y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
-            };
-            const next = { ...stampConfigRef.current, position: finalPosition };
-            updateStampConfig(next);
-            commitStampConfig(next);
-            // 실기기 피드백(2026-09-02): "놓고 나서 원래 자리로 갔다가 다시 놓은
-            // 자리로 이동한다" — updateStampConfig(React state)는 렌더를 거쳐야
-            // 새 position이 각인 Svg에 실제로 반영되는데, 바로 다음 줄에서 오프셋을
-            // 0으로 되돌리면(Animated.Value, 네이티브로 즉시 반영) 그게 더 빠르다.
-            // 그 사이 한두 프레임 동안 "오프셋 0 + 아직 안 바뀐 옛 position" =
-            // 드래그 시작 전 자리로 보였다가, 그다음 프레임에 새 position이 반영돼
-            // 다시 최종 자리로 튀어 보인다. 오프셋 리셋을 다음 프레임 이후로
-            // 미뤄서(requestAnimationFrame 두 번 — 한 번만으로는 커밋이 실제
-            // 페인트까지 안 끝난 기기가 있을 수 있어 여유를 둠) state 쪽 렌더가
-            // 먼저 자리 잡은 뒤에 오프셋을 지운다.
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                stampDragX.setValue(0);
-                stampDragY.setValue(0);
-              });
-            });
-          }
+          finishStampGesture();
         } else {
           // 드래그 중엔 transform(state)을 안 건드렸다 — SharedValue에 마지막으로
           // 쓰인 값(위 onPanResponderMove)이 곧 최종값이니 그걸 그대로 커밋한다.
@@ -536,6 +488,11 @@ export default function EditScreen() {
           updateTransform(finalTransform);
           commitTransform(finalTransform);
         }
+      },
+      onPanResponderTerminate: () => {
+        setIsInteracting(false);
+        gestureStart.current = null;
+        if (editTargetRef.current === 'stamp') finishStampGesture();
       },
     })
   ).current;
@@ -701,7 +658,7 @@ export default function EditScreen() {
                     stampSelected={stampTargeted}
                     drawingSelected={!stampTargeted}
                     playing={isPlaying}
-                    stampDragOffset={{ x: stampDragX, y: stampDragY }}
+                    stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
                   />
                 </View>
               </View>
@@ -776,14 +733,14 @@ export default function EditScreen() {
                 <View style={styles.sliderRow}>
                   <Text style={styles.sliderLabel}>직선</Text>
                   <View style={styles.sliderTrack}>
-                    <Slider value={smoothOptions.smooth} onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingComplete={handleSmoothCommit} />
+                    <Slider value={smoothOptions.smooth} accessibilityLabel="직선 다듬기" onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingComplete={handleSmoothCommit} />
                   </View>
                   <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
                 </View>
                 <View style={styles.sliderRow}>
                   <Text style={styles.sliderLabel}>코너</Text>
                   <View style={styles.sliderTrack}>
-                    <Slider value={smoothOptions.corner} onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingComplete={handleSmoothCommit} />
+                    <Slider value={smoothOptions.corner} accessibilityLabel="코너 다듬기" onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingComplete={handleSmoothCommit} />
                   </View>
                   <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
                 </View>
@@ -815,6 +772,15 @@ export default function EditScreen() {
                       </Pressable>
                     </View>
                   )}
+                  <View style={styles.sliderRow}>
+                    <Text style={styles.sliderLabel}>크기</Text>
+                    <View style={styles.sliderTrack}>
+                      <Slider value={Math.round((stampConfig.scale ?? 1) * 100)}
+                        minimumValue={50} maximumValue={300} accessibilityLabel="러닝 데이터 크기"
+                        onChange={handleStampScaleChange} onSlidingComplete={handleStampScaleCommit} />
+                    </View>
+                    <Text style={styles.sliderValue}>{Math.round((stampConfig.scale ?? 1) * 100)} %</Text>
+                  </View>
                   {stampTab === 'layout' && (
                     <View style={styles.layoutChipRow}>
                       {STAMP_LAYOUTS.map((l) => {

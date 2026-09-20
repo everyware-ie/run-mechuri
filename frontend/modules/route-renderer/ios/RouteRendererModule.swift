@@ -802,6 +802,14 @@ public class RouteRendererModule: Module {
     }
   }
 
+  // JetBrains Mono의 원라인 전용 폭. TS estimateOneLineTextWidth와 동일하다.
+  private func estimateOneLineTextWidth(_ text: String, _ size: CGFloat) -> CGFloat {
+    text.unicodeScalars.reduce(CGFloat.zero) { sum, char in
+      let mono = char.value <= 127 || "·′″‘’“”".unicodeScalars.contains(char)
+      return sum + size * (mono ? 0.62 : 1.05)
+    }
+  }
+
   // TS fitStampColumns와 동일: 간격을 확보하고 통계 글자를 함께 축소한다.
   private func fitStampColumns(_ widths: [CGFloat], _ availableWidth: CGFloat, _ minGap: CGFloat) -> (scale: CGFloat, offsets: [CGFloat]) {
     let gaps = CGFloat(max(0, widths.count - 1))
@@ -1283,18 +1291,20 @@ public class RouteRendererModule: Module {
       let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
       let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + CGFloat(stamp.stampY)
       let gap = 12 * u
-      let oneLineFont = 11 * u
-      let titleFont = 26 * u
+      let titleFont = 22 * u
       let dividerW = 28 * u
 
-      var parts: [String] = []
-      if hasKey("distance") { parts.append(valueFor("distance").uppercased()) }
-      if hasKey("time") { parts.append(valueFor("time")) }
-      if hasKey("pace") { parts.append(valueFor("pace").uppercased()) }
-      if hasKey("heartRate") { parts.append(valueFor("heartRate").uppercased()) }
-      if hasKey("date") { parts.append(valueFor("date")) }
-      if hasKey("place") { parts.append(valueFor("place")) }
-      let oneLine = parts.joined(separator: " · ")
+      let lineItems = ["distance", "time", "pace", "heartRate", "date", "place"].filter(hasKey)
+      func lineText(_ getValue: (String) -> String) -> String {
+        lineItems.map { key in
+          let text = getValue(key)
+          return ["distance", "pace", "heartRate"].contains(key) ? text.uppercased() : text
+        }.joined(separator: " · ")
+      }
+      let oneLine = lineText(valueFor)
+      // 미리보기와 같은 완성 값 기준 너비 보정. 사용자 크기 배율은 유지한다.
+      let fitted = fitStampColumns([estimateOneLineTextWidth(lineText(finalValueFor), 11 * M)], canvasSize.width - 24 * M, 0)
+      let oneLineFont = 11 * u * fitted.scale
 
       // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
       // 간격까지 띄운 채였다.

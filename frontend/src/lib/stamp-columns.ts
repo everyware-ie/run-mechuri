@@ -7,6 +7,14 @@ export function estimateStampTextWidth(text: string, size: number): number {
   }, 0);
 }
 
+/** 원라인의 JetBrains Mono는 숫자·영문·구분 기호가 0.6em이다. 대체 서체에는 여유를 둔다. */
+export function estimateOneLineTextWidth(text: string, size: number): number {
+  return Array.from(text).reduce((sum, char) => {
+    const mono = char.codePointAt(0)! <= 127 || '·′″‘’“”'.includes(char);
+    return sum + size * (mono ? 0.62 : 1.05);
+  }, 0);
+}
+
 /** 최소 간격을 먼저 확보하고 글자를 함께 축소한다. 남는 공간은 칸 사이로 배분한다. */
 export function fitStampColumns(widths: number[], availableWidth: number, minGap: number) {
   const gaps = Math.max(0, widths.length - 1);

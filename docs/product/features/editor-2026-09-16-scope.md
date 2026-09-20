@@ -19,6 +19,10 @@ approved FRD([결과물 편집](../../specs/frd/result-editing.md), [경로 렌�
 
 ### 4-2. 각인 터치 영역 축소 + 경로 그림 점선 표기
 
+**2026-09-20 후속 QA:** 아래의 SVG AnimatedG 구현에서도 위치 이동 후 박스가 분리되는 제보가 있었다. 현재 수정은 선택 박스를 경로와 같은 Skia Group에 그리는 방식이며, [선택 박스 수정 노트](route-selection-bounds.md)에 원인·검증·남은 실기기 확인을 기록한다. 아래는 최초 구현과 당시 피드백 이력이다.
+
+**2026-09-20 터치 영역 후속 QA:** 아래의 거리 기준 연쇄 병합은 코너의 거리와 오른쪽 통계를 다시 하나로 묶었다. 현재는 [항목별 터치 영역](stamp-hit-regions.md)으로 대체했고 글래스의 실제 카드 배경은 유지한다. 아래 설명은 최초 구현 이력이다.
+
 **각인**: `computeStampBounds`(전체를 감싸는 envelope 하나)가 히트테스트·선택 박스에도 그대로 쓰이던 게 문제였다 — corner·rail처럼 항목이 네 귀퉁이에 흩어진 프리셋은 그 사이 빈 공간까지 "각인"으로 잡혔다. `stampNodeBoxes`(항목별 원시 박스 추출)를 공용 함수로 뽑고, `computeStampBounds`는 기존처럼 envelope 하나(썸네일 크롭에 계속 필요)를 반환하되, 새로 만든 `computeStampHitRects`는 `clusterStampBoxes`(gap=36px 이내면 한 덩어리로 묶는 union-find)로 항목을 몇 개의 사각형으로 나눠 반환한다. `edit.tsx`의 히트테스트는 이 중 **하나에라도** 들어가면 각인으로 판정하고(`hitRects.some(...)`), 선택 박스도 클러스터 개수만큼 점선 사각형을 그린다(패딩도 28→16으로 줄임).
 
 **경로 그림**: 이전엔 "각인이 아니면 전부 경로"였고 시각적 표시가 없었다. `computeRouteHitBounds`(신규)가 투영된 점들의 캔버스 바운즈 중심에 현재 transform(위치·회전·스케일)을 Group transform과 같은 순서로 적용하고, `RoutePreview`가 이 박스를 `<G transform="rotate(...)">`로 자기 중심 기준 회전시켜 점선으로 그린다. `drawingSelected` prop(경로 탭이 활성일 때 켬, `edit.tsx`가 `!stampTargeted`로 연결)이 이를 켠다.
