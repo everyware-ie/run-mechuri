@@ -13,7 +13,7 @@
 
 ## 바로 열어볼 문서
 
-- [공개 안내 허브](https://phs00.notion.site/mechuri-run?source=copy_link)
+- [공개 안내 허브](https://phs00.notion.site/runary)
 - [수정한 개인정보 처리방침](https://app.notion.com/p/3d540e8014f981caae27cb1eee320423)
 - [수정한 FAQ](https://app.notion.com/p/3d540e8014f981f488f8c83c128657dd)
 - [사진 선택·카메라 후속 계획](./photo-camera-rollout.md)

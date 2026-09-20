@@ -350,7 +350,7 @@ export default function ShareScreen() {
             stampConfig={draft.stampConfig}
             size={CARD_SIZE}
           />
-          <Text style={styles.cardTag}>메추리 · {selectedRun.date.slice(0, 10)}</Text>
+          <Text style={styles.cardTag}>Runary · {selectedRun.date.slice(0, 10)}</Text>
         </View>
         <Text style={styles.distance}>
           {(selectedRun.distanceMeters / 1000).toFixed(2)}

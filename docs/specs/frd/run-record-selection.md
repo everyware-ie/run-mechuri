@@ -3,7 +3,7 @@ title: 러닝 기록 선택 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-09-16
+updated: 2026-09-20
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 1번, §6 첫 진입, §6 데이터 진입"
 related:
@@ -95,6 +95,8 @@ HealthKit의 실외 달리기 워크아웃만 보여준다. 걷기, 자전거, �
 `[확인 필요]` 기록이 수백 개일 때의 목록 성능. 필요하면 나눠 불러온다.
 
 ## 3. 권한
+
+첫 실행 안내의 시작 버튼은 `러너리 시작하기`로 표시한다([제품명 결정](../../decisions/2026-09-16-product-name-runary.md), 2026-09-20 앱 반영). 버튼 아래와 홈에서 개인정보 처리방침을 미리 열 수 있다. 건강 권한 허용과 관계없이 제공하며 링크 동작은 [홈과 보관함 FRD](home-and-library.md) §1-2 개인정보 처리방침을 따른다(2026-09-20 사용자 요청).
 
 목록을 열려 할 때 건강 데이터 권한을 묻는다([공통 규칙](common-rules.md) §1-3). 앱을 열자마자가 아니다.
 

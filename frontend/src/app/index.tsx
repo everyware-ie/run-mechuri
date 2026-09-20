@@ -5,6 +5,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
@@ -123,10 +124,11 @@ export default function HomeScreen() {
         columnWrapperStyle={rest.length > 0 ? styles.row : undefined}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={PrivacyPolicyLink}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>메추리</Text>
+              <Text style={styles.title}>Runary</Text>
               <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
             </View>
 
