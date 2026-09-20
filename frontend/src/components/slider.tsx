@@ -8,29 +8,43 @@ import { Colors } from '@/constants/theme';
 // (edit.tsx의 드로잉 제스처와 같은 패턴).
 
 type Props = {
-  value: number; // 0~100
+  value: number;
+  minimumValue?: number;
+  maximumValue?: number;
+  accessibilityLabel?: string;
   onChange: (value: number) => void;
   onSlidingComplete?: (value: number) => void;
 };
 
-export function Slider({ value, onChange, onSlidingComplete }: Props) {
+export function Slider({ value, minimumValue = 0, maximumValue = 100, accessibilityLabel, onChange, onSlidingComplete }: Props) {
   const [trackWidth, setTrackWidth] = useState(0);
   const trackWidthRef = useRef(0);
   const valueRef = useRef(value);
+  const configRef = useRef({ minimumValue, maximumValue, onChange, onSlidingComplete });
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
+  useEffect(() => {
+    configRef.current = { minimumValue, maximumValue, onChange, onSlidingComplete };
+  }, [minimumValue, maximumValue, onChange, onSlidingComplete]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     trackWidthRef.current = e.nativeEvent.layout.width;
     setTrackWidth(e.nativeEvent.layout.width);
   };
 
+  const updateFromFraction = (fraction: number) => {
+    const config = configRef.current;
+    const next = Math.round(config.minimumValue + Math.max(0, Math.min(1, fraction)) * (config.maximumValue - config.minimumValue));
+    // 리렌더를 기다리지 않고 손을 뗄 때 마지막 입력값을 확정한다.
+    valueRef.current = next;
+    config.onChange(next);
+  };
   const updateFromLocationX = (locationX: number) => {
     const width = trackWidthRef.current;
     if (width <= 0) return;
     const fraction = Math.max(0, Math.min(1, locationX / width));
-    onChange(Math.round(fraction * 100));
+    updateFromFraction(fraction);
   };
 
   // 실기기 피드백(2026-09-02): 손가락을 대고 끄는 동안 값이 자꾸 0% 쪽으로
@@ -48,22 +62,35 @@ export function Slider({ value, onChange, onSlidingComplete }: Props) {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
         updateFromLocationX(evt.nativeEvent.locationX);
-        dragStartFractionRef.current = valueRef.current / 100;
+        const { minimumValue: min, maximumValue: max } = configRef.current;
+        dragStartFractionRef.current = (valueRef.current - min) / Math.max(1, max - min);
       },
       onPanResponderMove: (_evt, gestureState) => {
         const width = trackWidthRef.current;
         if (width <= 0) return;
         const fraction = Math.max(0, Math.min(1, dragStartFractionRef.current + gestureState.dx / width));
-        onChange(Math.round(fraction * 100));
+        updateFromFraction(fraction);
       },
-      onPanResponderRelease: () => onSlidingComplete?.(valueRef.current),
+      onPanResponderRelease: () => configRef.current.onSlidingComplete?.(valueRef.current),
+      onPanResponderTerminate: () => configRef.current.onSlidingComplete?.(valueRef.current),
     })
   ).current;
 
-  const fillWidth = trackWidth > 0 ? (value / 100) * trackWidth : 0;
+  const fraction = Math.max(0, Math.min(1, (value - minimumValue) / Math.max(1, maximumValue - minimumValue)));
+  const fillWidth = trackWidth * fraction;
 
   return (
-    <View style={styles.hitArea} onLayout={handleLayout} {...panResponder.panHandlers}>
+    <View style={styles.hitArea} onLayout={handleLayout} {...panResponder.panHandlers}
+      accessible accessibilityRole="adjustable" accessibilityLabel={accessibilityLabel}
+      accessibilityValue={{ min: minimumValue, max: maximumValue, now: value, text: `${value}%` }}
+      accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+      onAccessibilityAction={({ nativeEvent }) => {
+        if (!['increment', 'decrement'].includes(nativeEvent.actionName)) return;
+        const { minimumValue: min, maximumValue: max } = configRef.current;
+        const next = valueRef.current + (nativeEvent.actionName === 'increment' ? 1 : -1);
+        updateFromFraction((next - min) / Math.max(1, max - min));
+        configRef.current.onSlidingComplete?.(valueRef.current);
+      }}>
       <View style={styles.track}>
         <View style={[styles.fill, { width: fillWidth }]} />
       </View>

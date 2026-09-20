@@ -1,15 +1,17 @@
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
-import { estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
+import { estimateOneLineTextWidth, estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, DashPathEffect, Group, Path, RoundedRect, Shadow, Skia } from '@shopify/react-native-skia';
 import { memo, useEffect, useMemo, useState, type ComponentProps } from 'react';
-import { Animated, AppState, View } from 'react-native';
-import {
+import { AppState, View } from 'react-native';
+import Reanimated, {
+  useAnimatedStyle,
   useAnimatedReaction,
   useDerivedValue,
   useFrameCallback,
   useSharedValue,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
@@ -231,16 +233,8 @@ type Props = {
    * 돈다. 기본값은 true라 안 넘기는 기존 화면(background-selection.tsx 등)은
    * 원래 동작(항상 재생) 그대로 유지된다. */
   playing?: boolean;
-  /** 실기기 피드백(2026-09-02): "각인 옮기는 게 렉이 걸린다" — 각인은 SVG라
-   * Skia처럼 SharedValue를 프레임마다 바로 읽는 방식이 없다. 대신 각인 레이어를
-   * 별도 Svg로 떼어(안전 영역 가이드와는 분리) 이 클래식 Animated.Value 두
-   * 개(x/y)로 감싼 Animated.View에 넣는다 — 바텀시트 드래그 때 이미 쓰던
-   * 것과 같은 방식(useNativeDriver:true인 값에 onPanResponderMove에서
-   * .setValue()를 직접 호출)이라, edit.tsx가 드래그 중 stampConfig(React
-   * state)를 안 건드리고 이 값만 갱신하면 리렌더 없이 네이티브 쪽에서 위치가
-   * 움직인다. 손을 뗄 때만 실제 stampConfig.position을 커밋하고 이 오프셋을
-   * 0으로 되돌린다. 안 넘기면(다른 화면들) 각인은 원래 자리에 고정. */
-  stampDragOffset?: { x: Animated.Value; y: Animated.Value };
+  /** 편집 중과 저장 후에 동일한 캔버스 절대 위치로 표시한다. */
+  stampPositionShared?: { x: SharedValue<number>; y: SharedValue<number> };
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -274,7 +268,7 @@ export function RoutePreview({
   stampSelected = false,
   drawingSelected = false,
   playing = true,
-  stampDragOffset,
+  stampPositionShared,
 }: Props) {
   const isFocused = useIsFocused();
   const [appState, setAppState] = useState(AppState.currentState);
@@ -394,6 +388,16 @@ export function RoutePreview({
     [drawingSelected, points]
   );
 
+  const stampPositionX = stampPositionShared?.x;
+  const stampPositionY = stampPositionShared?.y;
+  const stampPositionStyle = useAnimatedStyle(() => ({ transform: [
+    { translateX: (stampPositionX?.value ?? 0) * fitScale },
+    { translateY: (stampPositionY?.value ?? 0) * fitScale },
+  ] }));
+  const renderedStampConfig = useMemo(() => stampPositionX && stampPositionY
+    ? { ...stampConfig, position: { x: 0, y: 0 } } : stampConfig,
+  [stampConfig, stampPositionX, stampPositionY]);
+
   if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
   // 정지 상태(재생 버튼 안 누름)면 완성된 모습(진행률 1)을 보여준다 — 보관함
@@ -414,7 +418,7 @@ export function RoutePreview({
 
   // 2026-09-16 결정 — 하나의 큰 envelope 대신, 서로 떨어진 항목 덩어리마다 각자의
   // 점선 박스를 그린다(computeStampHitRects, 코너·레일 등에서 특히 차이가 크다).
-  const stampHitRects = stampSelected ? computeStampHitRects(run, stampConfig) : [];
+  const stampHitRects = stampSelected ? computeStampHitRects(run, renderedStampConfig) : [];
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
@@ -439,22 +443,14 @@ export function RoutePreview({
         </Svg>
       )}
 
-      {/* 각인 텍스트(+선택 박스)는 안전 영역 가이드와 별도의 Svg — 실기기
-          피드백(2026-09-02) "각인 옮기는 게 렉이 걸린다": 각인은 Skia가 아니라
-          SVG라 SharedValue를 프레임마다 바로 읽는 길이 없다. 대신 이 Svg 전체를
-          클래식 Animated.Value 두 개(stampDragOffset)로 감싼 Animated.View에
-          넣어서, edit.tsx가 드래그 중 stampConfig(React state)를 안 건드리고
-          이 값에 직접 쓰면(바텀시트 드래그와 같은 방식) 리렌더 없이 네이티브
-          쪽에서만 위치가 움직인다. 손을 뗄 때만 실제 자리를 커밋한다. */}
-      <Animated.View
+      {/* 러닝 데이터와 선택 박스가 같은 절대 위치 변형을 공유한다. */}
+      <Reanimated.View
         pointerEvents="none"
         style={[
           { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight },
-          stampDragOffset
-            ? { transform: [{ translateX: stampDragOffset.x }, { translateY: stampDragOffset.y }] }
-            : null,
+          stampPositionStyle,
         ]}>
-        <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+        <StampPreviewLayer run={run} config={renderedStampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
           fitScale={fitScale} offsetX={offsetX} offsetY={offsetY} viewWidth={viewWidth} viewHeight={viewHeight} />
         {stampHitRects.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
           <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
@@ -464,7 +460,7 @@ export function RoutePreview({
             ))}
           </G>
         </Svg>}
-      </Animated.View>
+      </Reanimated.View>
     </View>
   );
 }
@@ -1511,7 +1507,6 @@ function stampLayoutDescriptors(
     const centerX = CANVAS_WIDTH / 2 + config.position.x;
     const bottomAnchor = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 30 * M + config.position.y;
     const gap = 12 * u;
-    const oneLineFont = 11 * u;
     // 2026-09-16 실기기 피드백 — 문구가 너무 크게 나온다. 26→22로 줄이고
     // 아래 titleBaseline도 함께 내렸다. 정확한 값은 실기기에서 다시 볼 것.
     const titleFont = 22 * u;
@@ -1519,15 +1514,15 @@ function stampLayoutDescriptors(
 
     // 시안의 oneLine 템플릿("{{d}} KM · {{t}} · {{pc}}/KM · {{b}} BPM · {{dt}}")을
     // 근사 — 정확한 대소문자·구분자 재조합 대신 이미 포맷된 값을 그대로 이어붙인다.
-    const parts = ([] as string[]).concat(
-      has('distance') ? [value('distance').toUpperCase()] : [],
-      has('time') ? [value('time')] : [],
-      has('pace') ? [value('pace').toUpperCase()] : [],
-      has('heartRate') ? [value('heartRate').toUpperCase()] : [],
-      has('date') ? [value('date')] : [],
-      has('place') ? [value('place')] : []
-    );
-    const oneLine = parts.join(' · ');
+    const lineItems = (['distance', 'time', 'pace', 'heartRate', 'date', 'place'] as StampItem[]).filter(has);
+    const lineText = (getValue: (item: StampItem) => string) => lineItems.map(item => {
+      const text = getValue(item);
+      return ['distance', 'pace', 'heartRate'].includes(item) ? text.toUpperCase() : text;
+    }).join(' · ');
+    const oneLine = lineText(value);
+    // 기본 너비는 완성 값으로 고정하고, 사용자 크기 배율은 그 위에 적용한다.
+    const fitted = fitStampColumns([estimateOneLineTextWidth(lineText(finalValue), 11 * M)], CANVAS_WIDTH - 24 * M, 0);
+    const oneLineFont = 11 * u * fitted.scale;
 
     // 실기기 피드백(2026-09-03): "글씨가 매우 멀리 떨어져 나온다" — 통계를 다 꺼서
     // 한 줄(oneLine)이 비어도 문구(caption)는 항상 그 몫의 간격까지 띄운 채였다.
@@ -1785,7 +1780,7 @@ function stampNodeBoxes(
   // 썸네일은 한글 문구·폭이 넓은 영문도 잘리지 않도록 보수적으로 추정한다.
   const textWidth = (text: string, size: number) => forThumbnail
     ? Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 || /[MW@%]/.test(char) ? 1.1 : 0.7), 0)
-    : text.length * size * 0.62;
+    : estimateOneLineTextWidth(text, size);
   const boxes: CanvasRect[] = texts.map((n) => {
     const width = n.key.startsWith('caption-')
       ? Math.max(textWidth(n.text, n.size), estimateStampTextWidth(n.text, n.size))
@@ -1837,59 +1832,35 @@ export function computeStampBounds(run: RunRecord, config: StampConfig, forThumb
   };
 }
 
-// 2026-09-16 결정 — "각인 터치 영역을 조금 더 최소화. 실제 영역에 가깝게(예:
-// 코너의 터치 영역이 가장 큰 사각형인데 드로잉을 선택하는 과정이 불편함)."
-// computeStampBounds는 흩어진 항목(코너·레일 등) 전부를 하나의 envelope으로
-// 감싸서 그 사이 빈 공간까지 "각인" 취급했다 — 그 빈 공간에서는 경로 그림을
-// 고르고 싶어도 늘 각인이 먼저 잡혔다. 여기서는 서로 가까운(간격 ≤ CLUSTER_GAP)
-// 항목끼리만 하나의 사각형으로 묶고, 멀리 떨어진 덩어리는 각자의 사각형으로
-// 나눠 반환한다 — edit.tsx는 이 중 하나에라도 들어가면 각인으로 판정한다.
-function clusterStampBoxes(boxes: CanvasRect[], gap: number): CanvasRect[] {
-  const n = boxes.length;
-  const parent = Array.from({ length: n }, (_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-  const overlaps = (a: CanvasRect, b: CanvasRect) =>
-    a.x - gap < b.x + b.width && a.x + a.width + gap > b.x &&
-    a.y - gap < b.y + b.height && a.y + a.height + gap > b.y;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const ri = find(i), rj = find(j);
-        if (ri !== rj && overlaps(boxes[i], boxes[j])) {
-          parent[ri] = rj;
-          changed = true;
-        }
-      }
-    }
-  }
-  const groups = new Map<number, CanvasRect>();
-  boxes.forEach((box, i) => {
-    const root = find(i);
-    const g = groups.get(root);
-    if (!g) { groups.set(root, { ...box }); return; }
-    const right = Math.max(g.x + g.width, box.x + box.width);
-    const bottom = Math.max(g.y + g.height, box.y + box.height);
-    g.x = Math.min(g.x, box.x);
-    g.y = Math.min(g.y, box.y);
-    g.width = right - g.x;
-    g.height = bottom - g.y;
-  });
-  return Array.from(groups.values());
-}
-
+// 항목 간 거리가 가까워도 합치지 않는다. 연쇄 병합은 코너의 거리와 오른쪽
+// 통계, 스탯바의 구분선 사이 빈 공간까지 큰 선택 사각형으로 만들었다.
 export function computeStampHitRects(run: RunRecord, config: StampConfig): CanvasRect[] {
   const { texts, rects } = stampLayoutDescriptors(run, config, 1);
-  if (texts.length === 0 && rects.length === 0) return [];
-  const CLUSTER_GAP = 36; // 이 거리 안이면 한 덩어리로 묶는다 — 실기기에서 다시 볼 값
-  const clusters = clusterStampBoxes(stampNodeBoxes(texts, rects, false), CLUSTER_GAP);
-  const padding = 16; // computeStampBounds의 28보다 줄임 — "실제 영역에 가깝게"
-  return clusters.map((c) => ({
-    x: c.x - padding,
-    y: c.y - padding,
-    width: c.width + padding * 2,
-    height: c.height + padding * 2,
+  const groups = new Map<string, CanvasRect[]>();
+  texts.forEach((text) => {
+    // 같은 항목의 이름과 값만 묶고 강조값·날짜·문구는 독립적으로 둔다.
+    const key = text.key.startsWith('caption-') ? 'caption'
+      : text.key.replace(/^(?:(stat|rail)-)?(?:label|value)-/, (_, prefix) => `${prefix ?? 'stat'}-field-`);
+    const boxes = groups.get(key) ?? [];
+    boxes.push(...stampNodeBoxes([text], [], false));
+    groups.set(key, boxes);
+  });
+  const regions = Array.from(groups.values(), (boxes) => {
+    const { left, right, top, bottom } = envelopeOf(boxes);
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  });
+  // 실제 카드 배경은 전체가 선택 대상이다. 장식 선은 자체 영역만 가진다.
+  const card = rects.find(rect => rect.key === 'glass-bg');
+  const outsideCard = card ? regions.filter(region =>
+    region.x < card.x || region.y < card.y ||
+    region.x + region.width > card.x + card.width ||
+    region.y + region.height > card.y + card.height) : regions;
+  const padding = 16;
+  return [...outsideCard, ...stampNodeBoxes([], rects, false)].map(region => ({
+    x: region.x - padding,
+    y: region.y - padding,
+    width: region.width + padding * 2,
+    height: region.height + padding * 2,
   }));
 }
 
