@@ -6,7 +6,7 @@
 
 ## 이 저장소가 무엇인가
 
-러닝 기록을 그림으로 만들어 인스타그램 스토리에 올리는 iOS 앱이다. React Native + Expo로 만들고 Swift 브릿지 셋(HealthKit, AVFoundation, 인스타 공유)을 쓴다.
+Runary(러너리)는 러닝 기록을 그림으로 만들어 인스타그램 스토리에 올리는 iOS 앱이다. React Native + Expo로 만들고 Swift 브릿지 셋(HealthKit, AVFoundation, 인스타 공유)을 쓴다.
 
 **기획 문서와 코드가 한 저장소에 있다.** 그래서 둘이 어긋나면 같은 PR에서 함께 고치는 것이 기본이다.
 

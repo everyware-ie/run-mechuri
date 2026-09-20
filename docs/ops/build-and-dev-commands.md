@@ -123,3 +123,10 @@ xcrun swiftc -parse modules/route-renderer/ios/RouteRendererModule.swift
 ```
 
 `No such module 'ExpoModulesCore'` 에러는 무시해도 된다 — CocoaPods로만 링크되는 모듈이라 이 명령으로는 못 찾는 게 정상이고, 문법 자체(괄호 짝, 타입 등)만 확인하는 용도다. 실제 컴파일 확인은 Xcode Run으로.
+
+
+## 2026-09-20: Runary 개발 앱 설치
+
+표시 이름을 Runary로 바꾸고 첫 실행 안내·홈에 개인정보 처리방침 링크를 추가했다. iPhone Debug 빌드 성공 후 연결된 개발 아이폰에 설치했다. Expo app.json과 로컬 생성 iOS Info.plist의 CFBundleDisplayName·건강 권한 안내를 맞췄다. 배포 빌드는 app.json 설정을 사용한다. 번들 ID는 com.mechuri.runmechuri로 유지했다.
+
+오늘 편집 QA 수정은 사용자가 확인 완료했다. 이번 설치는 로컬 QA용이며 PR·TestFlight 배포는 아직 진행하지 않았다. 기능 근거와 검증은 [처리방침 링크](../product/features/privacy-policy-link.md), [제품명 반영](../product/features/runary-display-name.md)에 기록했다.

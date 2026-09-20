@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IDENTITY_SMOOTH, IDENTITY_STAMP, IDENTITY_TRANSFORM, RoutePreview } from '@/components/route-preview';
 import { ThemedButton } from '@/components/ui';
+import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { markConnectedOnce } from '@/lib/connection-store';
 import type { Point } from '@/lib/route-projection';
@@ -111,7 +112,8 @@ export default function ConnectScreen() {
         </Text>
 
         <View style={styles.actions}>
-          <ThemedButton title="메추리 런 시작하기" onPress={handleConnect} />
+          <ThemedButton title="러너리 시작하기" onPress={handleConnect} />
+          <PrivacyPolicyLink />
         </View>
       </View>
     </SafeAreaView>

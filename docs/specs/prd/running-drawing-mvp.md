@@ -3,7 +3,7 @@ title: 러닝 드로잉 MVP 제품 요구 문서 (PRD)
 product: running
 type: prd
 status: draft
-updated: 2026-09-13
+updated: 2026-09-20
 related: [../../decisions/2026-08-18-native-ios-and-mvp-scope.md, ../../decisions/2026-08-25-react-native-expo-stack.md, ../../decisions/2026-09-01-frd-over-mockup.md]
 code_repo: https://github.com/everyware-ie/run-mechuri
 ---
@@ -15,6 +15,8 @@ code_repo: https://github.com/everyware-ie/run-mechuri
 > 이 문서는 "무엇을, 왜"까지만 다룬다. 화면 단위 규칙과 수치는 FRD로 내린다. **FRD 분할과 작성 순서는 [`docs/specs/frd/README.md`](../frd/README.md)에 있다.**
 
 ## 1. 한 줄 정의
+
+제품명은 **Runary(러너리)**다. 팀 이름은 팀 메추리로 유지한다.
 
 뛴 경로를 **배경 위에** 선으로 살려서, 인스타그램 스토리에 올릴 수 있는 세로 클립으로 만들어 주는 제품. **iOS 앱이다.** UI는 React Native + Expo로 짜고 HealthKit·AVFoundation·인스타 공유는 Swift 브릿지로 연결한다([2026-08-25 결정](../../decisions/2026-08-25-react-native-expo-stack.md)).
 
@@ -408,7 +410,7 @@ MVP에서는 프리셋마다 어울리는 3~5가지를 미리 골라 준다. 옵
 | 4 | **일정표** | phs00 | §13에 정리했다. [jminkkk 역산](../../ideation/jminkkk/2026-08-17-appstore-release-feasibility.md) §5-2에 9/1 1차 빌드를 얹은 형태이고 W 구조는 유지된다. 팀 확인 필요 | §13 |
 | 5 | ~~**백엔드 인력 배치**~~ | - | **닫혔다 (2026-08-25).** 역할이 나뉘었다. jminkkk 디자인 · JiEung2 개발 · phs00 홍보와 마케팅 | - |
 | 6 | **PRD의 phs00 단독 결정 승인** | 팀 | 배경(3번)은 08-18 결정으로 갱신됐고 9/22 출시 정의가 새로 추가됐다. 08-25 회의에서도 다루지 않았다 | 여러 곳 |
-| 7 | ~~**제품명**~~ | 팀 | **닫혔다 (2026-09-16). `Runary`(러너리)로 확정.** 빌드에는 아직 "메추리런"이 들어가 있고 최대한 빠르게 바꾼다. 번들 ID는 그대로 간다 ([결정문](../../decisions/2026-09-16-product-name-runary.md)) | - |
+| 7 | ~~**제품명**~~ | 팀 | **닫혔다 (2026-09-16). `Runary`(러너리)로 확정.** 2026-09-20 로컬 앱 표시 이름·화면 문구에 반영했다. TestFlight는 다음 배포에서 적용한다. 번들 ID는 그대로 간다 ([결정문](../../decisions/2026-09-16-product-name-runary.md)) | - |
 | 8 | **베타 심사** | JiEung2 | 1차 빌드는 올렸지만 **내부 테스트다.** 9/22의 공개 링크는 외부 테스트라 심사를 통과해야 한다. 제출 시점이 안 정해졌다 (2026-09-01) | §13 일정 전체 |
 
 > **9/22 "출시"의 정의는 닫혔다.** TestFlight 공개 링크다(§1). jminkkk의 1주차 추천안과 같은 방향이고, 08-18에 정해진 "앱스토어 등록 진행"은 정식 등재 트랙으로 그대로 살아 있다. 다만 **9/22의 기준에서는 빠진다.** (2026-08-19 phs00 결정)
@@ -522,6 +524,8 @@ MVP에서는 프리셋마다 어울리는 3~5가지를 미리 골라 준다. 옵
 **리젝이 나도 9/22 출시는 깨지지 않는다.** TestFlight 공개 링크가 이미 서 있기 때문이다. 이것이 출시 정의를 TestFlight로 둔 값어치다.
 
 두 가지가 함께 따라온다.
+
+앱 안에서도 첫 실행 안내와 홈에서 공개 개인정보 처리방침을 열 수 있게 한다([2026-09-16 출시 범위 결정](../../decisions/2026-09-16-release-and-editor-scope.md) §7 확인만 하고 넘어간 것, 2026-09-20 구현 요청).
 
 **스토어 제출물 준비를 W2~W3의 별도 트랙으로 둔다.** 아이콘, 스크린샷, 개인정보 처리방침 URL, HealthKit usage description, 위치 권한 설명, 인스타 공유용 Facebook App ID가 필요하다. 코드가 아니라서 아무도 안 잡을 위험이 크고, 첫 심사를 9/1로 당기면 8월 안에 필요해진다.
 
