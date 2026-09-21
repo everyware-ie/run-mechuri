@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # expo-env.d.ts는 `expo start`(Metro 개발 서버)가 처음 뜰 때 생성되는
+      # 파일이라 .gitignore 대상이다("커밋하지 말라"는 주석이 파일 자체에
+      # 있다). CI는 서버를 안 띄우니 내용(expo/types 참조 — CSS 모듈 등 Expo
+      # 전역 타입 선언을 끌어온다)을 직접 만들어 둔다. 로컬 `expo start`가
+      # 만드는 것과 정확히 같은 내용이다.
+      - name: Generate expo-env.d.ts
+        run: printf '/// <reference types="expo/types" />\n' > expo-env.d.ts
+
       - name: Lint
         run: npm run lint
 
