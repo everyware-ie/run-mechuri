@@ -159,3 +159,85 @@ xcrun swiftc -parse modules/route-renderer/ios/RouteRendererModule.swift
 2026-09-20 Apple 조회에서 기존 빌드 `1.0.0(18)`은 `BETA_APPROVED`, 빌드 `1.0.0(22)`는 `READY_FOR_BETA_SUBMISSION`이었다. 이전 빌드 승인을 이번 빌드의 외부 배포 완료로 간주하지 않는다.
 
 사용자는 외부 베타 공개 설정을 다른 팀원에게 요청하거나 다음에 진행하기로 했다. 앱 관리 Apple 계정으로 [App Store Connect의 TestFlight](https://appstoreconnect.apple.com/apps/6807295594/testflight/ios)에 로그인하여 이번 빌드를 외부 베타 그룹에 추가하고, 표시되는 베타 심사·테스트 시작 절차를 진행한다. 공개 링크에서 새 빌드를 설치할 수 있는지 확인한 뒤 출시 안내에 사용한다. 이번 작업에서는 공개 링크 변경이나 스레드·지인 대상 메시지를 보내지 않았다.
+
+
+## 2026-09-22: 빌드 23을 외부 베타에 공개 (출시)
+
+**지민이 회의 중에 빌드 `1.0.0(23)`을 외부 베타 그룹에 추가했고, 베타 심사 없이 바로 공개됐다.** 위 "9월 22일 외부 공개 인계"에 남긴 절차를 그대로 수행한 것이다.
+
+심사를 다시 받을 것으로 예상했으나 그러지 않았다. 빌드 18과 23이 둘 다 `1.0.0`이고 18이 9/13에 승인받았기 때문으로 보인다. **결정과 배경은 [공개 링크를 열었다](../decisions/2026-09-22-public-launch.md)에 있다.**
+
+현황은 App Store Connect 앱에서 조회할 수 있다.
+
+
+## 2026-09-22: 아이콘 배포 1.0.0(25)
+
+### 소스와 변경
+
+- [PR #68](https://github.com/everyware-ie/run-mechuri/pull/68): 아이콘과 스플래시를 Runary R 마크로 교체. 코드 변경 없이 자산 4개뿐이다.
+- 배포 소스: `19e8d38` (main).
+
+### 빌드 번호가 24를 건너뛴다
+
+첫 시도에서 클라우드 빌드가 실패했는데 그 과정에서 번호를 하나 먹었다. **24는 존재하지 않는다.**
+
+### 클라우드 빌드를 못 써서 로컬로 빌드했다
+
+```
+This account has used its iOS builds from the Free plan this month
+```
+
+**EAS 무료 플랜의 이번 달 iOS 빌드 한도가 소진됐다.** 2026-10-01에 초기화된다. 그래서 `--local`로 이 맥에서 빌드했다.
+
+```bash
+npx eas-cli build --platform ios --profile production --local --non-interactive
+```
+
+산출물은 같은 `.ipa`이므로 제출에는 차이가 없다. 다만 **클라우드 빌드보다 오래 걸리고(약 20분) 맥의 Xcode 상태에 좌우된다.**
+
+### Xcode 경로 문제
+
+`xcode-select`가 Xcode가 아니라 CommandLineTools를 가리키고 있어 `xcodebuild`가 동작하지 않았다.
+
+```
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer
+directory '/Library/Developer/CommandLineTools' is a command line tools instance
+```
+
+**이번에는 환경변수로 우회했다.** 바꾸려면 `sudo`가 필요해서 작업자 확인 없이는 못 고친다.
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+`[확인 필요]` **근본적으로는 한 번 고쳐 두는 편이 낫다.** 로컬 빌드를 계속 쓸 것이라면 매번 환경변수를 붙이게 된다.
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+### 검증
+
+빌드된 `.ipa`를 풀어 확인했다.
+
+| | |
+|---|---|
+| 버전 | `1.0.0` 빌드 `25` |
+| 표시 이름 | `Runary` |
+| 번들 ID | `com.mechuri.runmechuri` |
+| 아이콘 | 120×120 `AppIcon60x60@2x.png`, **알파 채널 없음** |
+| 크기 | 59.2 MB |
+
+**아이콘에 알파가 있으면 애플이 반려한다.** 원본 SVG를 PNG로 변환할 때 알파 채널이 남길래 직접 걷어냈다.
+
+### 제출 상태
+
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/cf674177-011d-49bb-83ba-7124b1d3d616): 2026-09-22 Apple 업로드 완료.
+- **내부 테스터는 애플 자동 처리(5~10분) 후 설치할 수 있다.**
+- 제출 시점에는 외부 그룹에 넣지 않았다. 다음 날 바뀌었다(아래).
+
+### 2026-09-23: 공개 링크를 빌드 25로 바꿨다
+
+**지민이 빌드 `1.0.0(25)`로 공개 링크를 열었다.** 9/22에 연 것은 아직 메추리 아이콘이던 빌드 23이었으므로, **공개 링크에서 받는 앱이 이제 R 마크를 단다.**
+
+`[확인 필요]` **베타 심사를 거쳤는지는 확인되지 않았다.** 빌드 23은 같은 `1.0.0`이라 심사가 생략됐는데, 25는 아이콘과 스플래시가 바뀌어서 다를 수 있다. App Store Connect에서 빌드 25의 외부 상태를 보면 알 수 있다. (2026-09-23 phs00)

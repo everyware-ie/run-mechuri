@@ -17,5 +17,7 @@ updated: 2026-09-02
 | 2026-09-08 | [배경 소재 두 가지를 MVP에 넣는다, 각인 표시 모드 개정, 역할 변경](2026-09-08-scope-and-roles.md) | decided | [2026-09-08](../meetings/2026-09-08/synthesis.md) |
 | 2026-09-16 | [제품명을 Runary로 확정한다](2026-09-16-product-name-runary.md) | decided | [2026-09-16](../meetings/2026-09-16/synthesis.md) |
 | 2026-09-16 | [심사가 막히면 출시일을 미룬다, 각인 가독성이 최우선, 편집 화면 손질](2026-09-16-release-and-editor-scope.md) | decided | [2026-09-16](../meetings/2026-09-16/synthesis.md) |
+| 2026-09-22 | [공개 링크를 열었다, 빌드 23이 심사 없이 나갔다](2026-09-22-public-launch.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
+| 2026-09-22 | [앱 아이콘을 R 마크로 바꾼다](2026-09-22-app-icon.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
