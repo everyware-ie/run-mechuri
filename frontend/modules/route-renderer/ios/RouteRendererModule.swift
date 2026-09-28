@@ -323,18 +323,24 @@ public class RouteRendererModule: Module {
   private func render(_ options: RenderClipOptionsInput, job: RenderJob) throws -> RenderClipResultPayload {
     try job.checkCancellation()
     guard options.points.count >= 2 else { throw RouteRendererError.notEnoughPoints }
+    let renderStart = CFAbsoluteTimeGetCurrent()
     guard let background = loadImage(path: options.backgroundImagePath) else {
       throw RouteRendererError.backgroundImageNotFound
     }
+    let imageLoadSeconds = CFAbsoluteTimeGetCurrent() - renderStart
+    let routeStart = CFAbsoluteTimeGetCurrent()
     let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
     let baseProjected = projectPoints(options.points)
     let smoothed = applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
     let projected = applyTransform(smoothed, transform: options.transform)
     let distances = cumulativeCanvasDistances(projected)
+    let routePreparationSeconds = CFAbsoluteTimeGetCurrent() - routeStart
     let output = outputURL(named: options.outputFileName)
     try writeClip(preset: preset, projectedPoints: projected, cumulativeDistances: distances,
                   totalDistance: distances.last ?? 0, background: background, stamp: options,
                   to: output, job: job)
+    NSLog("[encoding-preparation] load=%.4f route=%.4f nativeTotal=%.4f points=%d",
+          imageLoadSeconds, routePreparationSeconds, CFAbsoluteTimeGetCurrent() - renderStart, options.points.count)
     reportProgress(ClipSpec.totalFrames, job: job)
     var result = RenderClipResultPayload()
     result.outputPath = output.absoluteString
@@ -1406,7 +1412,9 @@ public class RouteRendererModule: Module {
     var rasterSeconds = 0.0, copySeconds = 0.0, waitSeconds = 0.0
     var renderedFrames = 0
     do {
+      let backgroundStart = CFAbsoluteTimeGetCurrent()
       let preparedBackground = prepareBackground(background)
+      let backgroundPreparationSeconds = CFAbsoluteTimeGetCurrent() - backgroundStart
       // 기존 format/scale 유지. 렌더러만 재사용하고 품질 설정은 바꾸지 않는다.
       let renderer = UIGraphicsImageRenderer(size: CGSize(width: ClipSpec.width, height: ClipSpec.height))
       var completedFrame: CVPixelBuffer?
@@ -1457,9 +1465,9 @@ public class RouteRendererModule: Module {
       try job.checkCancellation()
       guard writer.status == .completed else { throw writer.error ?? RouteRendererError.encodingFailed }
       completed = true
-      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f rendered=%d encoded=%d scale=%.1f",
+      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f background=%.4f rendered=%d encoded=%d scale=%.1f",
             CFAbsoluteTimeGetCurrent() - start, rasterSeconds, copySeconds, waitSeconds,
-            renderedFrames, ClipSpec.totalFrames, (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
+            backgroundPreparationSeconds, renderedFrames, ClipSpec.totalFrames, (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
     } catch {
       if writer.status == .writing { writer.cancelWriting() }
       try? FileManager.default.removeItem(at: outputURL)
