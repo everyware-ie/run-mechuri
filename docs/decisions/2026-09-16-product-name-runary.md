@@ -69,8 +69,8 @@ tags: [running, naming, branding, testflight]
 
 | 어디 | |
 |---|---|
-| App Store Connect 앱 이름 | TestFlight에 보이는 이름. 지금 "메추리 런"이다 |
+| App Store Connect 앱 이름 | 지인이 TestFlight 링크로 앱을 받을 때 보이는 이름. 지금 "메추리 런"이다 |
 
-**앱 표시 이름과는 다른 값이다.** 표시 이름은 빌드에 들어가고 9/20에 Runary로 바꿨다. 앱 이름은 App Store Connect에 앱을 처음 등록할 때 정한 것이라 빌드를 새로 올려도 바뀌지 않는다.
+**앱 표시 이름과는 다른 값이다.** 표시 이름은 빌드에 들어가고 9/20에 Runary로 바꿨다. 앱 이름은 App Store Connect에 따로 저장돼 있어서 **빌드를 새로 올리는 것으로는 바뀌지 않고, App Store Connect에서 직접 바꿔야 한다.** 정식 심사에 내지 않았으므로 지금 바꿀 수 있다.
 
 바꾸는 법과 담당은 [QA 기록](../ops/qa-log.md)의 "TestFlight 앱에 '메추리 런'으로 나온다"에 있다.
