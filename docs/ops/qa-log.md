@@ -64,10 +64,19 @@ updated: 2026-09-30
 - 원인: 홈 화면에 보이는 이름(빌드에 들어가는 표시 이름)은 9/20에 Runary로 바꿨다. **TestFlight는 빌드가 아니라 App Store Connect에 등록된 앱 이름을 보여 주는 것으로 보인다.** 빌드 25도 표시 이름이 Runary인데 "메추리 런"으로 나왔기 때문이다. 앱을 처음 등록할 때 쓴 이름이 남아 있다. [9/16 제품명 결정문](../decisions/2026-09-16-product-name-runary.md)의 "무엇이 바뀌나"에 이 자리가 빠져 있었다.
 - 바꾸는 법: App Store Connect의 앱 정보(App Information)에서 이름(Name)을 바꾼다. 애플 문서에 따르면 **정식 심사(App Review)에 내기 전까지는 바꿀 수 있고**, 그 뒤에는 새 버전을 만들 때 바꿀 수 있다. 바뀐 내용이 보이기까지 최대 24시간 걸릴 수 있다. 이름은 2~30자다.
   - 출처: [App information](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information/)의 Name 항목, [View and edit app information](https://developer.apple.com/help/app-store-connect/create-an-app-record/view-and-edit-app-information/)
-- 누가: **지민이 직접 하거나, 지민이 다른 사람에게 권한을 줘야 한다.** 앱 정보를 고칠 수 있는 역할은 계정 소유자(Account Holder), 관리자(Admin), 앱 관리자(App Manager), 마케팅(Marketing)이다. 개발자(Developer) 역할은 읽기만 된다. 현수는 개발자 역할이라 앱 정보에 편집 버튼이 보이지 않았다 (2026-09-30 확인). 역할을 바꿀 수 있는 것도 계정 소유자와 관리자뿐이다.
+- 누가: **지민이 직접 바꾼다** (2026-09-30 정함). 앱 정보를 고칠 수 있는 역할은 계정 소유자(Account Holder), 관리자(Admin), 앱 관리자(App Manager), 마케팅(Marketing)이다. 개발자(Developer) 역할은 읽기만 된다. 현수는 개발자 역할이라 앱 정보에 편집 버튼이 보이지 않았다.
   - 출처: [App Store Connect 역할별 권한](https://developer.apple.com/support/roles/)의 "Edit App Store details", "Manage Users and Access"
 
-**정식 심사에는 내지 않았다** (2026-09-30 현수 확인). **그러므로 지금 바로 바꿀 수 있다.** 이름 칸이 막혀 있으면 그때 다시 본다.
+**정식 심사에는 내지 않았다** (2026-09-30 현수 확인). **그러므로 지금 바로 바꿀 수 있다.**
+
+지민이 할 일:
+
+1. App Store Connect 웹에서 우리 앱(지금 이름 "메추리 런")을 연다
+2. 앱 정보(App Information)로 들어간다
+3. 이름(Name)을 `Runary`로 바꾸고 저장한다
+4. TestFlight 링크로 받을 때 보이는 이름이 바뀌기까지 최대 24시간 걸릴 수 있다
+
+이름 칸이 막혀 있거나 저장이 안 되면 그때 다시 본다.
 
 ## 2026-09-22 추가 제보
 
