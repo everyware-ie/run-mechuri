@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-30
 related_meeting: ../meetings/2026-09-16/synthesis.md
 tags: [running, naming, branding, testflight]
 ---
@@ -62,3 +62,15 @@ tags: [running, naming, branding, testflight]
 ## 팀 이름과는 다르다
 
 **팀은 계속 팀 메추리다.** 제품 이름만 바뀌는 것이고, 노션 워크스페이스와 조직 이름은 그대로다. 메추리런은 팀메추리의 세 번째 프로덕트라는 위치도 변하지 않는다.
+
+## 개정 (2026-09-30)
+
+**"무엇이 바뀌나"에 App Store Connect의 앱 이름이 빠져 있었다.** 9/29 회의에서 지인을 영업하다 알게 됐다. TestFlight 앱에 우리 앱이 옛 이름 "메추리 런"으로 나온다.
+
+| 어디 | |
+|---|---|
+| App Store Connect 앱 이름 | TestFlight에 보이는 이름. 지금 "메추리 런"이다 |
+
+**앱 표시 이름과는 다른 값이다.** 표시 이름은 빌드에 들어가고 9/20에 Runary로 바꿨다. 앱 이름은 App Store Connect에 앱을 처음 등록할 때 정한 것이라 빌드를 새로 올려도 바뀌지 않는다.
+
+바꾸는 법과 담당은 [QA 기록](../ops/qa-log.md)의 "TestFlight 앱에 '메추리 런'으로 나온다"에 있다.
