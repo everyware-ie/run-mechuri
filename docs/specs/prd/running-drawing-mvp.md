@@ -3,7 +3,7 @@ title: 러닝 드로잉 MVP 제품 요구 문서 (PRD)
 product: running
 type: prd
 status: draft
-updated: 2026-09-20
+updated: 2026-09-30
 related: [../../decisions/2026-08-18-native-ios-and-mvp-scope.md, ../../decisions/2026-08-25-react-native-expo-stack.md, ../../decisions/2026-09-01-frd-over-mockup.md]
 code_repo: https://github.com/everyware-ie/run-mechuri
 ---
@@ -488,6 +488,10 @@ MVP에서는 프리셋마다 어울리는 3~5가지를 미리 골라 준다. 옵
 | 9/9~9/15 | 실사용. 팀 3명이 실제로 뛰고 올린다 | W5 |
 | 9/16~9/21 | 버그와 배포 준비 | W6 |
 | **9/22 (화)** | **출시 = TestFlight 공개 링크 공개.** 스레드와 지인에게 공유한다 | W6 종료 |
+
+> **9/29 판정 (2026-09-30 phs00).** **"우와" 1회 이상은 달성으로 본다.** 현수가 올린 스토리를 본 지인이 DM으로 "이거 뭔 어플임?"이라고 물어 왔고 앱을 받았다. 스레드에도 긍정적인 반응이 있었다. 반응은 [반응 모음](../../marketing/reactions.md)에 모은다.
+>
+> **같은 기간 목표였던 App Store 정식 등재는 하지 않았다.** 정식 심사에 내지 않았다. ([2026-09-29 회의 종합](../../meetings/2026-09-29/synthesis.md))
 
 > **9/16 현재 상태 (2026-09-16 회의).** 베타 심사 대기 중이다. 9/15에 빌드 `1.0.0(18)`로 신청했다.
 >

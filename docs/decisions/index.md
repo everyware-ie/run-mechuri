@@ -19,5 +19,7 @@ updated: 2026-09-02
 | 2026-09-16 | [심사가 막히면 출시일을 미룬다, 각인 가독성이 최우선, 편집 화면 손질](2026-09-16-release-and-editor-scope.md) | decided | [2026-09-16](../meetings/2026-09-16/synthesis.md) |
 | 2026-09-22 | [공개 링크를 열었다, 빌드 23이 심사 없이 나갔다](2026-09-22-public-launch.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
 | 2026-09-22 | [앱 아이콘을 R 마크로 바꾼다](2026-09-22-app-icon.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
+| 2026-09-29 | [결과물을 장면 둘씩 동시에 그려 생성 시간을 줄인다](2026-09-29-export-parallel-rendering.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
+| 2026-09-29 | [매주 셋의 기록을 합쳐 스레드에 올린다, 반응은 레포에 모은다](2026-09-29-weekly-content-and-reactions.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
