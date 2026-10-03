@@ -38,6 +38,7 @@ npx expo prebuild            # ios/ 프로젝트 재생성 (+ pod install 겸함
 ```
 
 - `prebuild`는 `ios/`, `android/` 폴더를 설정 기준으로 다시 만든다. 기존 `ios/`가 있으면 덮어쓸지 물어본다.
+- **`ios/`에서 `pod install`만 다시 돌릴 때 `Unicode Normalization not appropriate for ASCII-8BIT` 오류가 나면** 터미널 문자 인코딩 문제다. `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`로 돌린다 (2026-10-03, 영상 배경 작업 중 확인).
 - 현재 표시 이름은 `Runary`다. 새로 prebuild한 iOS 프로젝트는 `Runary.xcworkspace`를 사용한다. 이름 변경 전에 생성한 로컬 프로젝트에는 `app.xcworkspace`가 남아 있을 수 있으므로 실제 파일명과 scheme을 확인한다.
 
 ## 3. 실기기/시뮬레이터에서 직접 확인 (Xcode)

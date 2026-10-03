@@ -19,7 +19,7 @@
 - [x] 4. JS: 갤러리에서 영상 고르기와 구도 조정
 - [x] 5. JS: expo-video 설치, 배경 선택·편집 미리보기에서 재생
 - [x] 6. JS: 공유 화면이 렌더러에 영상 정보를 넘긴다
-- [ ] 7. FRD §3-1 "현재 MVP는 사진만" 고치기, §1 표의 3번 범위 갱신
+- [x] 7. FRD §3-1 "현재 MVP는 사진만" 고치기, §1 표의 3번 범위 갱신
 - [ ] 8. 검사: 타입, 린트, 테스트, 문서 검사, iOS 빌드
 - [ ] 9. 실기기 확인은 사용자가 한다(아래 "확인할 위험")
 
@@ -58,6 +58,11 @@
 **렌더러.** `backgroundVideoPath`와 `backgroundVideoCrop`을 받는다. 영상 읽기와 함께 방향, 자르기, 1080×1920 축소, 색 공간을 한 번에 처리한다. 영상이 클립보다 짧으면 처음으로 되감고, 3초 미만이면 마지막 장면에서 멈추고, 길면 앞부분만 쓴다(FRD §5-1·§5-2). 마지막 3초를 한 장으로 재사용하던 최적화는 영상일 때 끈다. 배경이 계속 움직이기 때문이다.
 
 **미리보기.** expo-video로 소리 없이 재생하고, 다른 앱의 음악을 끊지 않게 섞어서 재생한다(`audioMixingMode: 'mixWithOthers'`). 3초 미만이면 반복하지 않고 마지막 장면에서 멈춘다.
+
+## 빌드할 때
+
+- 새 네이티브 모듈(expo-video)과 새 Swift 파일이 들어갔으므로 `ios/`에서 `pod install`을 다시 돌린다. 이 맥에서는 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`을 붙여야 돈다([빌드 문서](../../ops/build-and-dev-commands.md) §2)
+- `xcode-select`가 CommandLineTools를 가리키면 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`를 붙인다
 
 ## 확인할 위험
 
