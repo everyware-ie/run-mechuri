@@ -86,7 +86,8 @@
           "cameraPermission": "사진을 직접 찍어 러닝 드로잉의 배경으로 사용합니다.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

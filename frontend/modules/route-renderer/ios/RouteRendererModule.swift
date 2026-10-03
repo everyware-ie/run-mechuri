@@ -56,6 +56,9 @@ struct StampItemsInput: Record {
 struct RenderClipOptionsInput: Record {
   @Field var points: [RoutePointInput] = []
   @Field var backgroundImagePath: String = ""
+  /// 배경 영상(선택). 비어 있으면 backgroundImagePath만 쓴다. 있으면 backgroundImagePath는 첫 장면이다.
+  @Field var backgroundVideoPath: String = ""
+  @Field var backgroundVideoCrop: VideoCropInput? = nil
   @Field var outputFileName: String = ""
   @Field var preset: String = "default-drawing"
   @Field var transform: RouteTransformInput = RouteTransformInput()
@@ -278,6 +281,11 @@ public class RouteRendererModule: Module {
       DispatchQueue.main.async { self.leases[jobId]?.finish(success: persisted) }
     }
 
+    /// 배경 선택 FRD §5: 고른 영상의 앞부분만 보관하고 첫 장면 이미지를 만든다.
+    AsyncFunction("prepareVideoBackground") { (inputUri: String, maxSeconds: Double) async throws -> PreparedVideoPayload in
+      try await VideoBackground.prepare(inputUri: inputUri, maxSeconds: maxSeconds)
+    }
+
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
       let job = self.replaceActiveJob(outputFileName: options.outputFileName)
       return try await withCheckedThrowingContinuation { continuation in
@@ -327,6 +335,14 @@ public class RouteRendererModule: Module {
     guard let background = loadImage(path: options.backgroundImagePath) else {
       throw RouteRendererError.backgroundImageNotFound
     }
+    var videoSource: VideoBackgroundSource?
+    if !options.backgroundVideoPath.isEmpty {
+      let crop = options.backgroundVideoCrop.map { CGRect(x: $0.originX, y: $0.originY, width: $0.width, height: $0.height) } ?? .zero
+      videoSource = try VideoBackgroundSource(
+        path: options.backgroundVideoPath, crop: crop,
+        outputSize: CGSize(width: ClipSpec.width, height: ClipSpec.height), fps: ClipSpec.fps
+      )
+    }
     let imageLoadSeconds = CFAbsoluteTimeGetCurrent() - renderStart
     let routeStart = CFAbsoluteTimeGetCurrent()
     let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
@@ -337,8 +353,8 @@ public class RouteRendererModule: Module {
     let routePreparationSeconds = CFAbsoluteTimeGetCurrent() - routeStart
     let output = outputURL(named: options.outputFileName)
     try writeClip(preset: preset, projectedPoints: projected, cumulativeDistances: distances,
-                  totalDistance: distances.last ?? 0, background: background, stamp: options,
-                  to: output, job: job)
+                  totalDistance: distances.last ?? 0, background: background, videoSource: videoSource,
+                  stamp: options, to: output, job: job)
     NSLog("[encoding-preparation] load=%.4f route=%.4f nativeTotal=%.4f points=%d",
           imageLoadSeconds, routePreparationSeconds, CFAbsoluteTimeGetCurrent() - renderStart, options.points.count)
     reportProgress(ClipSpec.totalFrames, job: job)
@@ -1366,6 +1382,7 @@ public class RouteRendererModule: Module {
     cumulativeDistances: [Double],
     totalDistance: Double,
     background: UIImage,
+    videoSource: VideoBackgroundSource?,
     stamp: RenderClipOptionsInput,
     to outputURL: URL,
     job: RenderJob
@@ -1423,12 +1440,18 @@ public class RouteRendererModule: Module {
           try job.checkCancellation()
           guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
           let pixelBuffer: CVPixelBuffer
-          if let cached = completedFrame {
+          if videoSource == nil, let cached = completedFrame {
             pixelBuffer = cached
           } else {
+            // 배경 선택 FRD §5: 영상 배경이면 클립 시각에 맞는 장면을 깐다. 못 꺼내면 첫 장면을 쓴다.
+            var frameBackground = preparedBackground
+            if let videoSource,
+               let scene = try videoSource.image(atClipTime: Double(frameIndex) / Double(ClipSpec.fps)) {
+              frameBackground = UIImage(cgImage: scene)
+            }
             let rasterStart = CFAbsoluteTimeGetCurrent()
             let image = drawFrame(
-              preset: preset, background: preparedBackground, projectedPoints: projectedPoints,
+              preset: preset, background: frameBackground, projectedPoints: projectedPoints,
               cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
               progressFraction: min(1, Double(frameIndex) / Double(ClipSpec.drawFrames)),
               stamp: stamp, renderer: renderer
@@ -1442,7 +1465,8 @@ public class RouteRendererModule: Module {
             copySeconds += CFAbsoluteTimeGetCurrent() - copyStart
             renderedFrames += 1
             // 마지막 3초는 모든 프리셋·각인이 정지한다. 같은 버퍼를 수정 없이 전달한다.
-            if frameIndex == ClipSpec.drawFrames { completedFrame = buffer }
+            // 영상 배경은 계속 움직이므로 재사용하지 않는다.
+            if videoSource == nil, frameIndex == ClipSpec.drawFrames { completedFrame = buffer }
           }
           let waitStart = CFAbsoluteTimeGetCurrent()
           while !writerInput.isReadyForMoreMediaData {
@@ -1465,9 +1489,10 @@ public class RouteRendererModule: Module {
       try job.checkCancellation()
       guard writer.status == .completed else { throw writer.error ?? RouteRendererError.encodingFailed }
       completed = true
-      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f background=%.4f rendered=%d encoded=%d scale=%.1f",
+      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f background=%.4f video=%.3f rendered=%d encoded=%d scale=%.1f",
             CFAbsoluteTimeGetCurrent() - start, rasterSeconds, copySeconds, waitSeconds,
-            backgroundPreparationSeconds, renderedFrames, ClipSpec.totalFrames, (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
+            backgroundPreparationSeconds, videoSource?.readSeconds ?? 0, renderedFrames, ClipSpec.totalFrames,
+            (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
     } catch {
       if writer.status == .writing { writer.cancelWriting() }
       try? FileManager.default.removeItem(at: outputURL)

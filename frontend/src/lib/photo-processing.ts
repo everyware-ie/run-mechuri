@@ -15,8 +15,9 @@ export async function preparePhoto(uri: string, width: number, height: number) {
   } finally { context.release(); }
 }
 
+/** 확정한 구도를 1080×1920 JPEG로 만든다. 영상이면 첫 장면을 같은 구도로 자른다. */
 export async function renderPhotoBackground(photo: PhotoBackground) {
-  const context = ImageManipulator.manipulate(photo.sourceUri);
+  const context = ImageManipulator.manipulate(photo.posterUri ?? photo.sourceUri);
   context.crop(photoCropRect(photo.width, photo.height, photo.crop));
   context.resize({ width: 1080, height: 1920 });
   try {

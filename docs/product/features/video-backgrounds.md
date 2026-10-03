@@ -9,19 +9,28 @@
 
 이 노트는 인계 문서를 겸한다. 세션이 끊기면 여기부터 읽는다.
 
-**지금 어디까지:** 브랜치와 이 노트를 만들었다. 코드는 아직 손대지 않았다.
+**지금 어디까지:** 네이티브 준비 함수와 렌더러 연결, JS 데이터 타입과 규칙(테스트 포함)까지 커밋했다. **iOS 빌드로 Swift 컴파일은 아직 확인하지 않았다.** expo-video는 설치했다(app.json에 설정 플러그인이 추가됨).
 
 **다음 할 일**
 
-- [ ] 1. 네이티브: 영상 준비 함수(앞 20초 잘라 보관, 첫 장면 추출, 방향 반영한 크기·길이)
-- [ ] 2. 네이티브: 렌더러가 프레임마다 영상 장면을 깔게 한다
-- [ ] 3. JS: 데이터 타입·보관·경로 복원
+- [x] 1. 네이티브: 영상 준비 함수(앞 20초 잘라 보관, 첫 장면 추출, 방향 반영한 크기·길이)
+- [x] 2. 네이티브: 렌더러가 프레임마다 영상 장면을 깔게 한다
+- [x] 3. JS: 데이터 타입·보관·경로 복원
 - [ ] 4. JS: 갤러리에서 영상 고르기와 구도 조정
 - [ ] 5. JS: expo-video 설치, 배경 선택·편집 미리보기에서 재생
 - [ ] 6. JS: 공유 화면이 렌더러에 영상 정보를 넘긴다
 - [ ] 7. FRD §3-1 "현재 MVP는 사진만" 고치기, §1 표의 3번 범위 갱신
 - [ ] 8. 검사: 타입, 린트, 테스트, 문서 검사, iOS 빌드
 - [ ] 9. 실기기 확인은 사용자가 한다(아래 "확인할 위험")
+
+## 코드 위치
+
+| | |
+|---|---|
+| `modules/route-renderer/ios/VideoBackground.swift` | 영상 준비(`VideoBackground.prepare`)와 프레임마다 장면 꺼내기(`VideoBackgroundSource`) |
+| `modules/route-renderer/ios/RouteRendererModule.swift` | `prepareVideoBackground` 등록, `backgroundVideoPath`·`backgroundVideoCrop` 옵션, 프레임 루프 연결 |
+| `src/lib/background-storage.ts` | `PhotoBackground`에 `media`·`posterUri`·`durationSec`, `isVideoBackground` |
+| `src/lib/video-rules.ts` | 보관 길이 20초, 3초 미만 정지 규칙, 렌더러용 자르기 영역 |
 
 ## 정한 것
 
