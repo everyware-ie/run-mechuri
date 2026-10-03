@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-09-16
-updated: 2026-09-30
+updated: 2026-10-03
 related_meeting: ../meetings/2026-09-16/synthesis.md
 tags: [running, naming, branding, testflight]
 ---
@@ -74,3 +74,11 @@ tags: [running, naming, branding, testflight]
 **앱 표시 이름과는 다른 값이다.** 표시 이름은 빌드에 들어가고 9/20에 Runary로 바꿨다. 앱 이름은 App Store Connect에 따로 저장돼 있어서 **빌드를 새로 올리는 것으로는 바뀌지 않고, App Store Connect에서 직접 바꿔야 한다.** 정식 심사에 내지 않았으므로 지금 바꿀 수 있다.
 
 바꾸는 법과 담당은 [QA 기록](../ops/qa-log.md)의 "TestFlight 앱에 '메추리 런'으로 나온다"에 있다.
+
+## 개정 (2026-10-03)
+
+**App Store Connect 앱 이름을 "러너리 (Runary) - 나의 러닝 다이어리"로 정했다.** 10/3 카톡에서 지민과 현수가 정했다. 검색에 잘 걸리도록 제품명 뒤에 부가 설명을 붙였다. "나만의"가 아니라 "나의"로 한 것은 이 서비스가 자기 기록을 누군가와 나누는 재미라서다(현수).
+
+**제품명은 그대로 Runary(러너리)다.** 홈 화면에 보이는 앱 표시 이름도 Runary 그대로다.
+
+**반영됐다.** TestFlight 공개 링크 페이지에 이 이름으로 나오는 것을 확인했다 (2026-10-03).
