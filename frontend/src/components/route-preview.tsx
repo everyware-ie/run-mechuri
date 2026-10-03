@@ -1,5 +1,6 @@
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
+import { captionPlacement, isCaptionAttached } from '@/lib/stamp-caption';
 import { estimateOneLineTextWidth, estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, DashPathEffect, Group, Path, RoundedRect, Shadow, Skia } from '@shopify/react-native-skia';
@@ -246,6 +247,10 @@ type Props = {
   playing?: boolean;
   /** 편집 중과 저장 후에 동일한 캔버스 절대 위치로 표시한다. */
   stampPositionShared?: { x: SharedValue<number>; y: SharedValue<number> };
+  /** 스토리형 편집(2026-10-04): 문구는 러닝 데이터와 따로 옮긴다. stampPositionShared와 같이 준다. */
+  captionPositionShared?: { x: SharedValue<number>; y: SharedValue<number> };
+  /** 문구의 만질 수 있는 자리를 점선으로 보여 준다. */
+  captionSelected?: boolean;
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -280,6 +285,8 @@ export function RoutePreview({
   drawingSelected = false,
   playing = true,
   stampPositionShared,
+  captionPositionShared,
+  captionSelected = false,
 }: Props) {
   const isFocused = useIsFocused();
   const [appState, setAppState] = useState(AppState.currentState);
@@ -405,9 +412,15 @@ export function RoutePreview({
     { translateX: (stampPositionX?.value ?? 0) * fitScale },
     { translateY: (stampPositionY?.value ?? 0) * fitScale },
   ] }));
-  const renderedStampConfig = useMemo(() => stampPositionX && stampPositionY
-    ? { ...stampConfig, position: { x: 0, y: 0 } } : stampConfig,
-  [stampConfig, stampPositionX, stampPositionY]);
+  const captionPositionX = captionPositionShared?.x;
+  const captionPositionY = captionPositionShared?.y;
+  const captionPositionStyle = useAnimatedStyle(() => ({ transform: [
+    { translateX: (captionPositionX?.value ?? 0) * fitScale },
+    { translateY: (captionPositionY?.value ?? 0) * fitScale },
+  ] }));
+  // 편집 화면은 러닝 데이터와 문구 레이어를 각자의 SharedValue로 옮긴다. 그때는 자리를
+  // 0으로 계산하고 레이어 변형이 절대 위치를 맡는다. 다른 화면은 저장된 자리로 한 번에 그린다.
+  const splitLayers = !!stampPositionShared && !!captionPositionShared;
 
   if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
@@ -429,7 +442,18 @@ export function RoutePreview({
 
   // 2026-09-16 결정 — 하나의 큰 envelope 대신, 서로 떨어진 항목 덩어리마다 각자의
   // 점선 박스를 그린다(computeStampHitRects, 코너·레일 등에서 특히 차이가 크다).
-  const stampHitRects = stampSelected ? computeStampHitRects(run, renderedStampConfig) : [];
+  const stampHitRects = stampSelected ? computeStampHitRects(run, stampConfig, splitLayers) : [];
+  const captionHitRect = captionSelected ? computeCaptionHitRect(run, stampConfig, splitLayers) : null;
+  const dashedBoxes = (boxes: CanvasRect[]) => boxes.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
+    <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+      {boxes.map((box, i) => (
+        <SvgRect key={i} x={box.x} y={box.y} width={box.width} height={box.height}
+          rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
+      ))}
+    </G>
+  </Svg>;
+  const layerStyle = { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight } as const;
+  const fitProps = { fitScale, offsetX, offsetY, viewWidth, viewHeight };
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
@@ -454,24 +478,22 @@ export function RoutePreview({
         </Svg>
       )}
 
-      {/* 러닝 데이터와 선택 박스가 같은 절대 위치 변형을 공유한다. */}
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight },
-          stampPositionStyle,
-        ]}>
-        <StampPreviewLayer run={run} config={renderedStampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
-          fitScale={fitScale} offsetX={offsetX} offsetY={offsetY} viewWidth={viewWidth} viewHeight={viewHeight} />
-        {stampHitRects.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
-          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-            {stampHitRects.map((box, i) => (
-              <SvgRect key={i} x={box.x} y={box.y} width={box.width} height={box.height}
-                rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
-            ))}
-          </G>
-        </Svg>}
-      </Reanimated.View>
+      {/* 러닝 데이터와 선택 박스가 같은 절대 위치 변형을 공유한다. 문구도 자기 레이어에서 같은 방식이다. */}
+      {splitLayers ? <>
+        <Reanimated.View pointerEvents="none" style={[layerStyle, stampPositionStyle]}>
+          <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+            part="items" zeroOffsets {...fitProps} />
+          {dashedBoxes(stampHitRects)}
+        </Reanimated.View>
+        <Reanimated.View pointerEvents="none" style={[layerStyle, captionPositionStyle]}>
+          <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+            part="caption" zeroOffsets {...fitProps} />
+          {dashedBoxes(captionHitRect ? [captionHitRect] : [])}
+        </Reanimated.View>
+      </> : <View pointerEvents="none" style={layerStyle}>
+        <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+          {...fitProps} />
+      </View>}
     </View>
   );
 }
@@ -1092,7 +1114,50 @@ function splitHeroValue(text: string, size: number): StampTextPart[] {
 // StampLayerSvg(그리기)와 computeStampBounds(탭 히트테스트·선택 박스)가 같은 좌표
 // 계산을 나눠 갖고 있으면 둘이 조용히 어긋나기 쉬워서, 실제 위치·크기 계산은 여기
 // 한 곳에만 두고 둘 다 이 함수를 부른다(2026-09-02, 각인 탭-선택 기능 추가하며 분리).
+//
+// 스토리형 편집(2026-10-04)부터 문구는 러닝 데이터와 따로 움직인다. 프리셋마다 문구
+// 자리가 배치 안에 섞여 있어서, 배치 계산(stampLayoutPass)은 그대로 두고 러닝 데이터와
+// 문구를 각자의 자리·크기로 한 번씩 돌린다. 붙어 있으면(lib/stamp-caption.ts) 지금처럼
+// 한 번만 돌려 프리셋이 정한 모습을 유지한다. RouteRendererModule.swift drawStamps도
+// 같은 규칙이다.
+type StampPart = 'all' | 'items' | 'caption';
+type StampDescriptorOptions = {
+  part?: StampPart;
+  /** 편집 화면은 끄는 동안 레이어를 통째로 옮긴다(SharedValue). 그때는 자리를 0으로 계산한다. */
+  zeroOffsets?: boolean;
+};
+const ZERO_OFFSET = { x: 0, y: 0 };
+const isCaptionNode = (node: StampTextDescriptor) => node.key.startsWith('caption-');
+
 function stampLayoutDescriptors(
+  run: RunRecord,
+  config: StampConfig,
+  progressFraction: number,
+  paceSeconds = run.averagePaceSecPerKm,
+  { part = 'all', zeroOffsets = false }: StampDescriptorOptions = {}
+): { texts: StampTextDescriptor[]; rects: StampRectDescriptor[] } {
+  const wantItems = part !== 'caption' && !config.hidden;
+  const wantCaption = part !== 'items';
+  const caption = captionPlacement(config);
+  const itemPosition = zeroOffsets ? ZERO_OFFSET : config.position;
+  if (isCaptionAttached(config)) {
+    const all = stampLayoutPass(run, { ...config, position: itemPosition }, progressFraction, paceSeconds);
+    return {
+      texts: all.texts.filter(node => isCaptionNode(node) ? wantCaption : wantItems),
+      rects: wantItems ? all.rects : [],
+    };
+  }
+  const items = wantItems
+    ? stampLayoutPass(run, { ...config, caption: '', position: itemPosition }, progressFraction, paceSeconds)
+    : { texts: [], rects: [] };
+  const captionTexts = wantCaption
+    ? stampLayoutPass(run, { ...config, position: zeroOffsets ? ZERO_OFFSET : caption.offset, scale: caption.scale },
+      progressFraction, paceSeconds).texts.filter(isCaptionNode)
+    : [];
+  return { texts: [...items.texts, ...captionTexts], rects: items.rects };
+}
+
+function stampLayoutPass(
   run: RunRecord,
   config: StampConfig,
   progressFraction: number,
@@ -1715,16 +1780,18 @@ const StampPreviewShapes = memo(function StampPreviewShapes({ rects, fitScale, o
   </Svg>;
 });
 
-function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], ...fit }:
-  { run: RunRecord; config: StampConfig; progressFraction: number; paceTimeline?: number[] } & StampPreviewFit) {
-  const finalLayout = useMemo(() => stampLayoutDescriptors(run, config, 1), [run, config]);
+function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], part = 'all', zeroOffsets = false, ...fit }:
+  { run: RunRecord; config: StampConfig; progressFraction: number; paceTimeline?: number[] }
+  & StampDescriptorOptions & StampPreviewFit) {
+  const finalLayout = useMemo(() => stampLayoutDescriptors(run, config, 1, undefined, { part, zeroOffsets }),
+    [run, config, part, zeroOffsets]);
   const viewports = useMemo(() => new Map(finalLayout.texts.map(node => {
     const viewport = stampTextViewport(node);
     // 구간 페이스가 평균보다 자릿수가 길어져도 그림자/글자가 잘리지 않게 한다.
     return [node.key, { ...viewport, x: viewport.x - node.size, width: viewport.width + node.size * 2 }];
   })), [finalLayout]);
   const { texts, rects } = stampLayoutDescriptors(run, config, progressFraction,
-    paceAtProgress(paceTimeline, progressFraction, run.averagePaceSecPerKm));
+    paceAtProgress(paceTimeline, progressFraction, run.averagePaceSecPerKm), { part, zeroOffsets });
   if (!texts.length && !rects.length) return null;
   const softShadow = !['row', 'hero'].includes(config.layout ?? 'row');
   return <>
@@ -1845,8 +1912,9 @@ export function computeStampBounds(run: RunRecord, config: StampConfig, forThumb
 
 // 항목 간 거리가 가까워도 합치지 않는다. 연쇄 병합은 코너의 거리와 오른쪽
 // 통계, 스탯바의 구분선 사이 빈 공간까지 큰 선택 사각형으로 만들었다.
-export function computeStampHitRects(run: RunRecord, config: StampConfig): CanvasRect[] {
-  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
+export function computeStampHitRects(run: RunRecord, config: StampConfig, zeroOffsets = false): CanvasRect[] {
+  // 문구는 따로 잡는다(computeCaptionHitRect).
+  const { texts, rects } = stampLayoutDescriptors(run, config, 1, undefined, { part: 'items', zeroOffsets });
   const groups = new Map<string, CanvasRect[]>();
   texts.forEach((text) => {
     // 같은 항목의 이름과 값만 묶고 강조값·날짜·문구는 독립적으로 둔다.
@@ -1873,6 +1941,15 @@ export function computeStampHitRects(run: RunRecord, config: StampConfig): Canva
     width: region.width + padding * 2,
     height: region.height + padding * 2,
   }));
+}
+
+/** 문구 전체를 감싸는 탭 영역. 문구가 없으면 null. */
+export function computeCaptionHitRect(run: RunRecord, config: StampConfig, zeroOffsets = false): CanvasRect | null {
+  const { texts } = stampLayoutDescriptors(run, config, 1, undefined, { part: 'caption', zeroOffsets });
+  if (texts.length === 0) return null;
+  const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(texts, [], false));
+  const padding = 16;
+  return { x: left - padding, y: top - padding, width: right - left + padding * 2, height: bottom - top + padding * 2 };
 }
 
 // route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.
