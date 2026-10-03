@@ -68,6 +68,12 @@ export type RenderClipOptions = {
   caption: string;
   /** 미리보기와 공유하는 자동/직접 줄바꿈 결과. 원문 저장과는 별개다. */
   captionLines?: string[];
+  /** 스토리형 편집(2026-10-04): 문구 자리·크기. 러닝 데이터와 같으면 붙어 있는 것으로 보고 한 번에 그린다. */
+  captionX?: number;
+  captionY?: number;
+  captionScale?: number;
+  /** 러닝 데이터를 숨겼는지. 문구는 남는다. */
+  stampHidden?: boolean;
   /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */
   placeName: string;
   /** '날짜' 각인 값 계산용 — 러닝한 날 (ISO). */
