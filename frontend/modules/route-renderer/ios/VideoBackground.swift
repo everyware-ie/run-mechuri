@@ -130,7 +130,7 @@ enum VideoBackground {
       }
       try data.write(to: posterURL)
 
-      var payload = PreparedVideoPayload()
+      let payload = PreparedVideoPayload()
       payload.videoPath = videoURL.absoluteString
       payload.posterPath = posterURL.absoluteString
       payload.width = Double(oriented.size.width)
@@ -271,7 +271,7 @@ final class VideoBackgroundSource {
     }
     if let latest {
       var image: CGImage?
-      VTCreateCGImageFromCVPixelBuffer(latest, options: nil, imageOut: &image)
+      _ = VTCreateCGImageFromCVPixelBuffer(latest, options: nil, imageOut: &image)
       if let image { currentImage = image }
     }
     return currentImage

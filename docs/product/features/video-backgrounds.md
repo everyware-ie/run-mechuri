@@ -63,6 +63,7 @@
 
 - 새 네이티브 모듈(expo-video)과 새 Swift 파일이 들어갔으므로 `ios/`에서 `pod install`을 다시 돌린다. 이 맥에서는 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8`을 붙여야 돈다([빌드 문서](../../ops/build-and-dev-commands.md) §2)
 - `xcode-select`가 CommandLineTools를 가리키면 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`를 붙인다
+- **2026-10-03 확인:** 새 Swift 파일 두 개는 컴파일된다(경고만 있다. 렌더 경로의 동기식 AVFoundation API가 iOS 16부터 폐기 예정이라는 경고). 개발용(Debug) 시뮬레이터 빌드는 **링크에서 실패했는데, 원인은 이 작업이 아니다.** 빠진 심볼이 `RCTPackagerConnection`(expo-dev-launcher)과 `facebook::react::Sealable`(제스처·리애니메이티드·SVG)이라 React Native 기본 모듈 쪽이다. `[확인 필요]` main에서도 같은지는 확인하지 않았다
 
 ## 확인할 위험
 
