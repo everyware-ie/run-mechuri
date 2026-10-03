@@ -34,6 +34,19 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
       top: height / 2 - crop.value.centerY * imageHeight * scale,
     };
   });
+  // 영상은 크기를 바꾸면 iOS가 영상 표시 영역을 다시 배치하며 전환 효과를 붙여 확대가 끊겨 보인다.
+  // 그래서 영상은 확대 전 크기로 고정해 두고 transform으로 옮기고 키운다. 보이는 위치는 imageStyle과 같다.
+  const videoBase = { width: imageWidth * baseScale, height: imageHeight * baseScale };
+  const videoStyle = useAnimatedStyle(() => {
+    const zoom = crop.value.zoom;
+    return {
+      transform: [
+        { translateX: width / 2 - videoBase.width / 2 + videoBase.width * zoom * (0.5 - crop.value.centerX) },
+        { translateY: height / 2 - videoBase.height / 2 + videoBase.height * zoom * (0.5 - crop.value.centerY) },
+        { scale: zoom },
+      ],
+    };
+  });
   const pan = Gesture.Pan().maxPointers(1)
     .onStart(() => { start.value = crop.value; })
     .onUpdate(e => {
@@ -69,7 +82,7 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
       <Animated.View style={{ width, height, overflow: 'hidden' }}
         accessibilityLabel={`배경 ${video ? '영상' : '사진'}. 드래그로 이동하고 두 손가락으로 크기를 조절하세요.`}>
         {video
-          ? <Animated.View style={[styles.image, imageStyle]} pointerEvents="none">
+          ? <Animated.View style={[styles.video, videoBase, videoStyle]} pointerEvents="none">
               <BackgroundVideo uri={uri} durationSec={video.durationSec} />
             </Animated.View>
           : <Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" />}
@@ -79,4 +92,7 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
   );
 }
 
-const styles = StyleSheet.create({ image: { position: 'absolute' } });
+const styles = StyleSheet.create({
+  image: { position: 'absolute' },
+  video: { position: 'absolute', left: 0, top: 0 },
+});
