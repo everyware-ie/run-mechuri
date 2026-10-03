@@ -84,9 +84,11 @@ const TOOLS: { id: Tool; label: string; symbol: SymbolViewProps['name'] }[] = [
 ];
 
 type DragTarget = 'route' | 'stamp' | 'caption';
-// 크기 슬라이더 범위(%). 핀치와 같은 값을 쓴다. 경로 그림은 FRD가 상한을 두지 않지만(§4-4)
-// 슬라이더에는 끝이 필요하다. 핀치로는 이보다 크게도 키울 수 있다.
-const SIZE_RANGE: Record<DragTarget, [number, number]> = { route: [30, 300], stamp: [50, 300], caption: [50, 300] };
+// 크기 슬라이더 범위(%). 1/3배~3배로 대칭이라 기본 크기(100%)가 슬라이더 가운데에 온다.
+// 러닝 데이터·문구는 핀치도 같은 범위다. 경로 그림은 FRD가 상한을 두지 않아(§4-4) 핀치로는
+// 더 키울 수 있다.
+const SIZE_MIN = 100 / 3;
+const SIZE_MAX = 300;
 
 // §2 미리보기: 평소에 반복 재생한다. 2026-09-02에는 반복 재생 중 조작이 느려서 멈춰 두고
 // 재생 버튼을 눌러야 그렸다. 실기기에서 다시 느려지면 false로 두고 재생 버튼을 되살린다.
@@ -106,7 +108,7 @@ function touchAngleDeg(t1: { pageX: number; pageY: number }, t2: { pageX: number
 
 const contains = (rect: CanvasRect, x: number, y: number) =>
   x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
-const clampScale = (value: number) => Math.min(3, Math.max(0.5, value));
+const clampScale = (value: number) => Math.min(SIZE_MAX / 100, Math.max(SIZE_MIN / 100, value));
 
 export default function EditScreen() {
   const {
@@ -764,7 +766,7 @@ export default function EditScreen() {
 
               {sizeTarget && <View style={styles.sizeSlider}>
                 <VerticalSlider value={sizeDraft ?? committedSize}
-                  minimumValue={SIZE_RANGE[sizeTarget][0]} maximumValue={SIZE_RANGE[sizeTarget][1]}
+                  minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
                   accessibilityLabel={sizeLabel} onChange={handleSizeChange} onSlidingComplete={handleSizeCommit} />
               </View>}
             </View>
@@ -925,7 +927,7 @@ const styles = StyleSheet.create({
   },
   toolIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG },
   toolIconOn: { backgroundColor: Colors.accent },
-  sizeSlider: { position: 'absolute', left: 4, top: '18%', height: '34%' },
+  sizeSlider: { position: 'absolute', left: 4, top: '26%', height: '40%' },
   bottomBar: { height: BOTTOM_BAR_HEIGHT, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 20 },
   doneButton: { minHeight: 44, minWidth: 120, paddingHorizontal: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 22 },
   doneText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
