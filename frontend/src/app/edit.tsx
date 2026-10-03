@@ -248,6 +248,9 @@ export default function EditScreen() {
     if (isCaptionOnlyChange(previous, current)) {
       if (captionSessionRef.current === 'pushed') return;
       if (captionSessionRef.current === 'open') captionSessionRef.current = 'pushed';
+    } else if (captionSessionRef.current === 'pushed') {
+      // 입력 사이에 문구를 옮기는 등 다른 편집을 했으면, 그 뒤의 입력은 새 단계로 쌓는다.
+      captionSessionRef.current = 'open';
     }
     setHistory((h) => pushHistory(h, previous));
   }, [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
