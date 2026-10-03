@@ -1485,7 +1485,9 @@ public class RouteRendererModule: Module {
           let batchStart = frameIndex
           let isHoldingStill = videoSource == nil && completedFrame != nil
           let remainingToDraw = (videoSource == nil ? ClipSpec.drawFrames + 1 : ClipSpec.totalFrames) - frameIndex
-          let count = isHoldingStill ? 1 : min(budget.allowsParallel ? 2 : 1, remainingToDraw)
+          // 영상은 두 프레임 연속 입력에서 압축 픽셀 차이가 확인돼 기존 직렬 입력을 유지한다.
+          let canRenderParallel = videoSource == nil && budget.allowsParallel
+          let count = isHoldingStill ? 1 : min(canRenderParallel ? 2 : 1, remainingToDraw)
           if count == 2, renderers.count == 1 {
             renderers.append(UIGraphicsImageRenderer(size: size))
           } else if count == 1, renderers.count == 2 {
