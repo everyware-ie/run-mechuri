@@ -85,7 +85,7 @@ tags: [running, release, testflight, icon, branding, qa, ci]
 
 **스레드 홍보를 하기로는 했는데 무엇을 올릴지는 정하지 않았다.** 다음 주까지 각자 생각해 오기로 했다.
 
-`[확인 필요]` **반응을 어디에 모을지도 정하지 않았다.** 안건에 올렸으나 논의가 이어지지 않았다.
+**반응을 어디에 모을지도 정하지 않았다.** 안건에 올렸으나 논의가 이어지지 않았다. → 9/29 회의에서 레포에 [반응 모음](../../marketing/reactions.md)을 따로 두기로 했다.
 
 ### 스트라바
 
@@ -104,7 +104,7 @@ tags: [running, release, testflight, icon, branding, qa, ci]
 | 린트 오류 16개 | 지응 | **9/22 완료** |
 | 의존성 21개 | | **아직 안 했다.** 경고 수준으로 둔다 |
 
-`[확인 필요]` **코드 안정성 작업은 레포에 아직 안 들어와 있다.** 지응의 [PR #65](https://github.com/everyware-ie/run-mechuri/pull/65)(Jest 테스트 56개 + GitHub Actions CI)가 9/21부터 열린 채로 있고, `main`에는 `.github/workflows`가 없다. 회의에서는 완료로 보고됐으므로 **머지만 남은 것으로 보이나 확인이 필요하다.** (2026-09-23 phs00)
+**코드 안정성 작업은 레포에 아직 안 들어와 있었다.** → 9/24에 머지됐다. 지응의 [PR #65](https://github.com/everyware-ie/run-mechuri/pull/65)(Jest 테스트 56개 + GitHub Actions CI)가 9/21부터 열린 채로 있고, `main`에는 `.github/workflows`가 없다. 회의에서는 완료로 보고됐으므로 **머지만 남은 것으로 보이나 확인이 필요하다.** (2026-09-23 phs00)
 
 ---
 

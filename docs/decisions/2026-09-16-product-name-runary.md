@@ -81,4 +81,4 @@ tags: [running, naming, branding, testflight]
 
 **제품명은 그대로 Runary(러너리)다.** 홈 화면에 보이는 앱 표시 이름도 Runary 그대로다.
 
-`[확인 필요]` 최종 이름이 App Store Connect에 반영됐는지. 10/3 낮에는 "러너리"까지 바꾼 상태였다.
+**반영됐다.** TestFlight 공개 링크 페이지에 이 이름으로 나오는 것을 확인했다 (2026-10-03).
