@@ -2,14 +2,16 @@
 title: 편집 화면을 인스타 스토리 편집처럼 바꾼다
 product: running
 type: decision
-status: proposed
+status: decided
 date: 2026-10-04
 tags: [running, editor, ux]
 ---
 
 # 편집 화면을 인스타 스토리 편집처럼 바꾼다
 
-> **status: `proposed`.** 지민이나 지응이 PR을 보고 동의하면 `decided`로 올린다. 편집 FRD를 바꾸는 결정이라 쓴 사람 혼자 확정하지 않는다([FRD 목록](../specs/frd/README.md) "누가 `approved`로 올리나").
+> **status: `decided`. 현수가 2026-10-04에 바로 확정했다.** 원래는 지민이나 지응이 PR을 보고 동의한 뒤 확정할 생각이었다. 편집 FRD를 바꾸는 결정은 쓴 사람 혼자 확정하지 않는 것이 규칙이라([FRD 목록](../specs/frd/README.md) "누가 `approved`로 올리나") **이번은 그 예외다.** 시안을 만든 지민의 제안을 받아 정리한 것이고, 개발을 바로 시작하려고 현수가 확정했다.
+>
+> **지민과 지응은 [PR #77](https://github.com/everyware-ie/run-mechuri/pull/77)에서 내용을 볼 수 있다.** 이의가 있으면 이 문서에 개정으로 덧붙이고 FRD를 함께 고친다.
 
 ## 무엇을 정했나
 
