@@ -1,4 +1,3 @@
-import { Asset } from 'expo-asset';
 import { SymbolView } from 'expo-symbols';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -14,7 +13,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useBackgroundTask } from '@/hooks/use-background-task';
-import { BACKGROUNDS_DIR, isVideoBackground, persistBackground, type PhotoBackground } from '@/lib/background-storage';
+import { BACKGROUNDS_DIR, isVideoBackground, persistBackground, persistDefaultBackground, type PhotoBackground } from '@/lib/background-storage';
 import { INITIAL_PHOTO_CROP, type PhotoCrop } from '@/lib/photo-crop';
 import { preparePhoto, renderPhotoBackground } from '@/lib/photo-processing';
 import { VIDEO_KEEP_SECONDS } from '@/lib/video-rules';
@@ -29,7 +28,8 @@ const removeFiles = (paths: (string | undefined)[]) => Promise.all(paths.filter(
 // FRD: 배경 선택 §3 사진·영상 선택과 사진 촬영, §4 빈틈없는 9:16 조정, §5 영상 처리, §6 취소 시 앞선 선택 유지.
 export default function BackgroundSelectionScreen() {
   const { draft, setBackground } = useCreationFlow();
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  // pick: 편집 화면의 배경 시트에서 갤러리·카메라를 누르고 왔으면 바로 연다(result-editing §1).
+  const { returnTo, pick } = useLocalSearchParams<{ returnTo?: string; pick?: 'gallery' | 'camera' }>();
   const [selection, setSelection] = useState<Selection>(() => draft.backgroundPhoto
     ? { kind: 'photo', photo: draft.backgroundPhoto }
     : draft.backgroundImagePath ? { kind: 'existing', uri: draft.backgroundImagePath }
@@ -118,6 +118,16 @@ export default function BackgroundSelectionScreen() {
     });
   }
 
+  // 편집의 배경 시트에서 갤러리·카메라를 누르고 왔으면 한 번만 바로 연다.
+  const pickedOnEntry = useRef(false);
+  useEffect(() => {
+    if (!pick || pickedOnEntry.current) return;
+    pickedOnEntry.current = true;
+    pickPhoto(pick);
+    // 들어온 순간 한 번만 연다. pickPhoto는 렌더마다 새로 만들어져 의존성에 넣지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pick]);
+
   function cancelPhotoSelection() {
     setCandidate(null);
     setShowSources(true);
@@ -153,8 +163,7 @@ export default function BackgroundSelectionScreen() {
       try {
         if (active.kind === 'default') {
           const background = DEFAULT_BACKGROUNDS.find(bg => bg.id === active.id)!;
-          const asset = await Asset.fromModule(background.source).downloadAsync();
-          const path = await persistBackground(asset.localUri ?? asset.uri, `${background.id}.jpg`);
+          const path = await persistDefaultBackground(background);
           return { path, photo: undefined, created };
         }
         if (active.kind === 'existing') {
