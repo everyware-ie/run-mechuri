@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { BackgroundVideo } from '@/components/background-video';
 import { constrainPhotoCrop, type PhotoCrop } from '@/lib/photo-crop';
 
 type Props = {
@@ -14,10 +15,12 @@ type Props = {
   height: number;
   initialCrop: PhotoCrop;
   onChange: (crop: PhotoCrop) => void;
+  /** 배경 선택 FRD §5. 있으면 사진 대신 영상을 같은 구도 조작으로 보여 준다. */
+  video?: { durationSec?: number };
   children?: ReactNode;
 };
 
-export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, height, initialCrop, onChange, children }: Props) {
+export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, height, initialCrop, onChange, video, children }: Props) {
   const crop = useSharedValue(initialCrop);
   const start = useSharedValue(initialCrop);
   const focal = useSharedValue({ x: 0, y: 0 });
@@ -29,6 +32,19 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
       height: imageHeight * scale,
       left: width / 2 - crop.value.centerX * imageWidth * scale,
       top: height / 2 - crop.value.centerY * imageHeight * scale,
+    };
+  });
+  // 영상은 크기를 바꾸면 iOS가 영상 표시 영역을 다시 배치하며 전환 효과를 붙여 확대가 끊겨 보인다.
+  // 그래서 영상은 확대 전 크기로 고정해 두고 transform으로 옮기고 키운다. 보이는 위치는 imageStyle과 같다.
+  const videoBase = { width: imageWidth * baseScale, height: imageHeight * baseScale };
+  const videoStyle = useAnimatedStyle(() => {
+    const zoom = crop.value.zoom;
+    return {
+      transform: [
+        { translateX: width / 2 - videoBase.width / 2 + videoBase.width * zoom * (0.5 - crop.value.centerX) },
+        { translateY: height / 2 - videoBase.height / 2 + videoBase.height * zoom * (0.5 - crop.value.centerY) },
+        { scale: zoom },
+      ],
     };
   });
   const pan = Gesture.Pan().maxPointers(1)
@@ -63,12 +79,20 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
     .onFinalize(() => { scheduleOnRN(onChange, crop.value); });
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
-      <Animated.View style={{ width, height, overflow: 'hidden' }} accessibilityLabel="배경 사진. 드래그로 이동하고 두 손가락으로 크기를 조절하세요.">
-        <Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" />
+      <Animated.View style={{ width, height, overflow: 'hidden' }}
+        accessibilityLabel={`배경 ${video ? '영상' : '사진'}. 드래그로 이동하고 두 손가락으로 크기를 조절하세요.`}>
+        {video
+          ? <Animated.View style={[styles.video, videoBase, videoStyle]} pointerEvents="none">
+              <BackgroundVideo uri={uri} durationSec={video.durationSec} />
+            </Animated.View>
+          : <Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" />}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">{children}</View>
       </Animated.View>
     </GestureDetector>
   );
 }
 
-const styles = StyleSheet.create({ image: { position: 'absolute' } });
+const styles = StyleSheet.create({
+  image: { position: 'absolute' },
+  video: { position: 'absolute', left: 0, top: 0 },
+});

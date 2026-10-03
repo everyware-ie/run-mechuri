@@ -18,10 +18,27 @@ export type RouteTransform = {
 export type StampMode = 'always' | 'after' | 'hidden';
 export type StampLayout = 'row' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
+/** 배경 선택 FRD §5. 영상 방향을 반영한 화면 기준 픽셀 좌표의 9:16 영역. */
+export type VideoCrop = { originX: number; originY: number; width: number; height: number };
+
+/** prepareVideoBackground 결과. 경로는 앱 캐시의 임시 파일이라 확정할 때 보관 폴더로 옮긴다. */
+export type PreparedVideo = {
+  videoPath: string;
+  /** 첫 장면 이미지. 영상 방향을 반영한 원래 크기다. */
+  posterPath: string;
+  /** 영상 방향을 반영한 화면 기준 크기(px). */
+  width: number;
+  height: number;
+  durationSec: number;
+};
+
 export type RenderClipOptions = {
   points: RoutePoint[];
-  /** 기기 로컬 파일 경로 (file://). 배경 사진. */
+  /** 기기 로컬 파일 경로 (file://). 배경 사진. 영상 배경이면 첫 장면 이미지이고 대체용으로 쓴다. */
   backgroundImagePath: string;
+  /** 배경 영상(선택). 있으면 프레임마다 영상 장면을 깐다. */
+  backgroundVideoPath?: string;
+  backgroundVideoCrop?: VideoCrop;
   /** 저장할 파일 이름 (확장자 없이). */
   outputFileName: string;
   preset: RoutePreset;

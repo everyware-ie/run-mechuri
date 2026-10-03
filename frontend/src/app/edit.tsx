@@ -36,10 +36,12 @@ import {
   type StampItem,
   type StampLayout,
 } from '@/components/route-preview';
+import { CroppedBackgroundVideo } from '@/components/background-video';
 import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { isVideoBackground } from '@/lib/background-storage';
 import { saveDraft } from '@/lib/draft-store';
 import { CAPTION_MAX_LINES, captionLines, limitCaptionInput } from '@/lib/caption-layout';
 import { fitPortraitPreview } from '@/lib/preview-layout';
@@ -634,7 +636,9 @@ export default function EditScreen() {
         <View style={styles.previewArea} onLayout={handlePreviewLayout}>
           {previewSize.width > 0 && (
             <View style={[styles.previewFrame, previewSize]}>
-              <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+              {isVideoBackground(draft.backgroundPhoto)
+                ? <CroppedBackgroundVideo video={draft.backgroundPhoto} width={previewSize.width} height={previewSize.height} />
+                : <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
               <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, isInteracting && styles.previewActive]}>
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   <RoutePreview
