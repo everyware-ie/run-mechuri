@@ -210,11 +210,6 @@ export default function EditScreen() {
     rememberStampLayout(layout);
     commitStamp({ ...stampConfigRef.current, layout });
   };
-  // §7: 화면에서 러닝 데이터를 탭하면 다음 프리셋으로. 마지막 다음은 처음이다.
-  const cycleStampLayout = () => {
-    const index = STAMP_LAYOUTS.findIndex((l) => l.id === (stampConfigRef.current.layout ?? 'row'));
-    handleLayoutSelect(STAMP_LAYOUTS[(index + 1) % STAMP_LAYOUTS.length].id);
-  };
   // §4-3 초기화: 되돌리는 단위는 그 도구의 대상뿐이다. 켠 항목·프리셋·문구는 그대로 둔다.
   const handleStampReset = () => {
     commitStamp({ ...stampConfigRef.current, position: { x: 0, y: 0 }, scale: 1 });
@@ -412,9 +407,11 @@ export default function EditScreen() {
     toolRef.current = null;
     setTool(null);
   };
+  // §4-1: 글자를 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를
+  // 탭하면 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을 받아 바꿨다.
   const handleTap = (target: DragTarget) => {
     if (target === 'caption') openTool('caption');
-    else if (target === 'stamp') cycleStampLayout();
+    else if (target === 'stamp') openTool('stamp');
     else if (toolRef.current) closeTool();
   };
 
@@ -888,7 +885,7 @@ export default function EditScreen() {
               })}
             </View>
           )}
-          <Text style={styles.hint}>화면에서 끌어서 옮기고, 탭하면 프리셋이 바뀌어요. 아래 동그라미로 끌면 숨겨요.</Text>
+          <Text style={styles.hint}>화면에서 끌어서 옮기고, 아래 동그라미로 끌면 숨겨요.</Text>
         </>}
 
         {tool === 'caption' && <>
