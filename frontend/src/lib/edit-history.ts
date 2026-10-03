@@ -18,18 +18,6 @@ export type EditSnapshot = {
 /** 기록을 무한히 쌓지 않는다. 오래된 단계부터 버린다. */
 export const MAX_HISTORY = 60;
 
-/** 문구만 바뀌었는지. 글자를 칠 때마다 한 단계씩 쌓이지 않게 한 번의 입력으로 묶는 데 쓴다. */
-export function isCaptionOnlyChange(previous: EditSnapshot, next: EditSnapshot) {
-  if (previous.backgroundImagePath !== next.backgroundImagePath
-    || previous.backgroundPhoto !== next.backgroundPhoto
-    || previous.preset !== next.preset
-    || previous.transform !== next.transform
-    || previous.smoothOptions !== next.smoothOptions) return false;
-  const { caption: a, ...restA } = previous.stampConfig;
-  const { caption: b, ...restB } = next.stampConfig;
-  return a !== b && JSON.stringify(restA) === JSON.stringify(restB);
-}
-
 /** 쌓을 때. 가득 차면 가장 오래된 단계를 버린다. */
 export function pushHistory(history: EditSnapshot[], snapshot: EditSnapshot): EditSnapshot[] {
   const next = [...history, snapshot];

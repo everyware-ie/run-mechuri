@@ -13,7 +13,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
   type GestureResponderEvent,
@@ -23,8 +22,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CroppedBackgroundVideo } from '@/components/background-video';
+import { CaptionEditor } from '@/components/caption-editor';
 import {
-  computeCaptionHitRect,
+  computeCaptionHitRects,
   computeFitTransform,
   computeRouteLocalBounds,
   computeStampHitRects,
@@ -33,6 +33,7 @@ import {
   RoutePreview,
   STAMP_LAYOUTS,
   type CanvasRect,
+  type CaptionItem,
   type RoutePreset,
   type RouteTransform,
   type StampConfig,
@@ -46,14 +47,14 @@ import { VerticalSlider } from '@/components/vertical-slider';
 import { DEFAULT_BACKGROUNDS, type DefaultBackground } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
-import { CAPTION_MAX_LINES, captionLines, limitCaptionInput } from '@/lib/caption-layout';
+import { limitFreeCaptionInput } from '@/lib/caption-layout';
 import { saveDraft } from '@/lib/draft-store';
-import { dragTargetFor, selectedTarget, tapActionFor, type EditTarget, type TextHit } from '@/lib/edit-gesture';
-import { isCaptionOnlyChange, pushHistory, type EditSnapshot } from '@/lib/edit-history';
+import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
+import { pushHistory, type EditSnapshot } from '@/lib/edit-history';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
-import { captionPlacement, isFreeCaption } from '@/lib/stamp-caption';
+import { captionItems, newCaptionId } from '@/lib/stamp-caption';
 import {
   formatDistanceKm,
   formatDuration,
@@ -78,9 +79,10 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'segment-lighting', label: '구간 점등' },
 ];
 
-type Tool = 'background' | 'route' | 'stamp' | 'caption';
-// 1단계는 넷만 둔다. 그리기·내 스타일은 3단계에서 만들 때 버튼도 같이 넣는다.
-const TOOLS: { id: Tool; label: string; symbol: SymbolViewProps['name'] }[] = [
+type Tool = 'background' | 'route' | 'stamp';
+// 1단계는 넷만 둔다. 그리기·내 스타일은 3단계에서 만들 때 버튼도 같이 넣는다. 문구는 시트 없이
+// 화면에서 바로 쓴다(§7).
+const TOOLS: { id: Tool | 'caption'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
   { id: 'route', label: '경로', symbol: 'scribble' },
   { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
@@ -131,11 +133,9 @@ export default function EditScreen() {
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
   const [stampTab, setStampTab] = useState<'layout' | 'items'>('layout');
-  const [captionLimited, setCaptionLimited] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [applyingBackground, setApplyingBackground] = useState<string | null>(null);
-  const captionInputRef = useRef<TextInput>(null);
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -209,10 +209,40 @@ export default function EditScreen() {
     const current = stampConfigRef.current;
     commitStamp({ ...current, enabled: { ...current.enabled, [item]: !current.enabled[item] } });
   };
-  const handleCaptionChange = (text: string) => {
-    const constrained = limitCaptionInput(text, stampConfigRef.current.caption ?? '', stampConfigRef.current);
-    setCaptionLimited(constrained.limited);
-    commitStamp({ ...stampConfigRef.current, caption: constrained.text });
+  // §7 문구: 인스타처럼 화면에서 바로 쓰고 여러 개다(components/caption-editor.tsx). 새 문구는 화면
+  // 가운데에 놓인다. 다 지우고 마치면 그 문구는 빠진다.
+  type EditingCaption = { id: string; text: string; scale: number; isNew: boolean; limited: boolean };
+  const [editingCaption, setEditingCaption] = useState<EditingCaption | null>(null);
+  const updateCaptions = (update: (items: CaptionItem[]) => CaptionItem[]) =>
+    commitStamp({ ...stampConfigRef.current, captions: update(captionItems(stampConfigRef.current)) });
+  const startNewCaption = () => {
+    closeTool();
+    setEditingCaption({ id: newCaptionId(), text: '', scale: 1, isNew: true, limited: false });
+  };
+  const startEditCaption = (id: string) => {
+    const item = captionItems(stampConfigRef.current).find((c) => c.id === id);
+    if (!item) return;
+    closeTool();
+    setEditingCaption({ id, text: item.text, scale: item.scale, isNew: false, limited: false });
+  };
+  const handleEditingText = (text: string) => setEditingCaption((prev) => {
+    if (!prev) return prev;
+    const constrained = limitFreeCaptionInput(text, prev.text, prev.scale);
+    return { ...prev, text: constrained.text, limited: constrained.limited };
+  });
+  const handleEditingScale = (scale: number) => setEditingCaption((prev) => prev ? { ...prev, scale } : prev);
+  const finishEditingCaption = () => {
+    Keyboard.dismiss();
+    const editing = editingCaption;
+    setEditingCaption(null);
+    if (!editing) return;
+    const { id, text, scale, isNew } = editing;
+    const empty = !text.trim();
+    if (isNew) {
+      if (!empty) updateCaptions((items) => [...items, { id, text, offset: { x: 0, y: 0 }, scale }]);
+    } else {
+      updateCaptions((items) => empty ? items.filter((c) => c.id !== id) : items.map((c) => c.id === id ? { ...c, text, scale } : c));
+    }
   };
   const handleLayoutSelect = (layout: StampLayout) => {
     rememberStampLayout(layout);
@@ -230,10 +260,9 @@ export default function EditScreen() {
   // §4-3 되돌리기. 초안이 바뀔 때마다(값을 확정할 때마다) 바뀌기 전 모습을 한 단계로 쌓는다.
   const [history, setHistory] = useState<EditSnapshot[]>([]);
   const lastSnapshotRef = useRef<EditSnapshot | null>(null);
-  // 되돌리기 자체와 장소 이름 채우기처럼 사용자가 한 편집이 아닌 변화는 쌓지 않는다.
+  // 되돌리기 자체와 장소 이름 채우기처럼 사용자가 한 편집이 아닌 변화는 쌓지 않는다. 문구는 다 쓰고
+  // 마칠 때 한 번에 들어가므로 한 단계가 된다.
   const skipHistoryRef = useRef(false);
-  // 문구 시트를 연 동안 글자 입력은 한 단계로 묶는다. 한 글자마다 쌓이면 되돌리기가 의미 없다.
-  const captionSessionRef = useRef<'closed' | 'open' | 'pushed'>('closed');
   useEffect(() => {
     const current: EditSnapshot = {
       backgroundImagePath: draft.backgroundImagePath,
@@ -250,20 +279,14 @@ export default function EditScreen() {
       skipHistoryRef.current = false;
       return;
     }
-    if (isCaptionOnlyChange(previous, current)) {
-      if (captionSessionRef.current === 'pushed') return;
-      if (captionSessionRef.current === 'open') captionSessionRef.current = 'pushed';
-    } else if (captionSessionRef.current === 'pushed') {
-      // 입력 사이에 문구를 옮기는 등 다른 편집을 했으면, 그 뒤의 입력은 새 단계로 쌓는다.
-      captionSessionRef.current = 'open';
-    }
     setHistory((h) => pushHistory(h, previous));
   }, [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
 
   // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
   // 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 문구를 프리셋 안으로 되돌린다.
   useEffect(() => {
-    if (isFreeCaption(draft.stampConfig)) return;
+    // 문구 목록이 이미 있으면 바꿀 것이 없다. 옛 저장분과 개발 중 쓰던 문구 하나짜리 형식만 바꾼다.
+    if (draft.stampConfig.captions) return;
     skipHistoryRef.current = true;
     commitStampConfig(stampConfigRef.current);
     // 들어올 때 한 번만.
@@ -322,16 +345,11 @@ export default function EditScreen() {
     stampPositionX.set(stampConfig.position.x);
     stampPositionY.set(stampConfig.position.y);
   }, [stampConfig.position, stampPositionX, stampPositionY]);
-  const initialCaption = captionPlacement(stampConfig);
-  const baseCaptionPosition = useRef(initialCaption.offset);
-  const baseCaptionScale = useRef(initialCaption.scale);
-  const captionPositionX = useSharedValue(initialCaption.offset.x);
-  const captionPositionY = useSharedValue(initialCaption.offset.y);
-  const captionOffset = captionPlacement(stampConfig).offset;
-  useEffect(() => {
-    captionPositionX.set(captionOffset.x);
-    captionPositionY.set(captionOffset.y);
-  }, [captionOffset, captionPositionX, captionPositionY]);
+  // 끌고 있는 문구 하나의 자리. 끌기 시작할 때 그 문구의 자리로 맞춘다.
+  const baseCaptionPosition = useRef({ x: 0, y: 0 });
+  const baseCaptionScale = useRef(1);
+  const captionPositionX = useSharedValue(0);
+  const captionPositionY = useSharedValue(0);
 
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
   // 실기기 피드백(2026-09-02): 핀치 중 손가락 이동마다 state를 바꾸면 RoutePreview가 매번
@@ -365,9 +383,15 @@ export default function EditScreen() {
     flushPendingStampConfig();
     commitStamp({ ...stampConfigRef.current, position: { x: stampPositionX.value, y: stampPositionY.value } });
   };
-  const finishCaptionGesture = () => {
+  const finishCaptionGesture = (id: string) => {
     flushPendingStampConfig();
-    commitStamp({ ...stampConfigRef.current, captionOffset: { x: captionPositionX.value, y: captionPositionY.value } });
+    const offset = { x: captionPositionX.value, y: captionPositionY.value };
+    updateCaptions((items) => items.map((c) => c.id === id ? { ...c, offset } : c));
+  };
+  // §7-2: 문구는 아래 휴지통에 놓으면 지운다.
+  const deleteCaption = (id: string) => {
+    flushPendingStampConfig();
+    updateCaptions((items) => items.filter((c) => c.id !== id));
   };
   // §7-2: 숨기기 자리에 놓으면 숨긴다. 숨기기 전 자리는 그대로 둔다. 다시 열면 그 자리로 돌아온다.
   const hideStamp = () => {
@@ -384,7 +408,7 @@ export default function EditScreen() {
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewSizeRef = useRef(previewSize);
   const gestureFitScaleRef = useRef(1);
-  const dragTargetRef = useRef<DragTarget>('route');
+  const dragTargetRef = useRef<DragTarget>({ kind: 'route' });
   const gestureMovedRef = useRef(false);
 
   // §4-1: 손가락이 닿은 글자. 겹친 곳은 문구가 러닝 데이터보다 위다. 무엇을 움직이고 탭하면 무엇을
@@ -393,9 +417,12 @@ export default function EditScreen() {
     const run = selectedRunRef.current;
     const config = stampConfigRef.current;
     if (!run) return null;
-    const caption = computeCaptionHitRect(run, config);
-    if (caption && contains(caption, canvasX, canvasY)) return 'caption';
-    if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return 'stamp';
+    // 나중에 넣은 문구가 위에 그려지므로 뒤에서부터 본다.
+    const captions = computeCaptionHitRects(run, config);
+    for (let i = captions.length - 1; i >= 0; i--) {
+      if (contains(captions[i].rect, canvasX, canvasY)) return { kind: 'caption', id: captions[i].id };
+    }
+    if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return { kind: 'stamp' };
     return null;
   };
   const textHitRef = useRef<TextHit>(null);
@@ -431,20 +458,16 @@ export default function EditScreen() {
   };
 
   const openTool = (next: Tool) => {
-    if (next !== 'caption') Keyboard.dismiss();
+    Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
     // §7-2: 숨긴 러닝 데이터는 러닝 데이터 도구를 다시 열면 돌아온다.
     if (next === 'stamp' && stampConfigRef.current.hidden) commitStamp({ ...stampConfigRef.current, hidden: false });
-    // 문구 시트가 이미 열려 있고 키보드만 내렸다면 다시 올린다. 처음 열 때는 autoFocus가 올린다.
-    if (next === 'caption' && toolRef.current === 'caption') captionInputRef.current?.focus();
-    else captionSessionRef.current = next === 'caption' ? 'open' : 'closed';
     toolRef.current = next;
     setTool(next);
   };
   const closeTool = () => {
     Keyboard.dismiss();
-    captionSessionRef.current = 'closed';
     toolRef.current = null;
     setTool(null);
   };
@@ -453,7 +476,8 @@ export default function EditScreen() {
   // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
   const handleTap = () => {
     const action = tapActionFor(textHitRef.current, isOnRoute(tapPointRef.current), toolRef.current !== null);
-    if (action.kind === 'open') openTool(action.target);
+    if (action.kind === 'open') openTool(action.tool);
+    else if (action.kind === 'editCaption') startEditCaption(action.id);
     else if (action.kind === 'close') closeTool();
   };
 
@@ -475,17 +499,17 @@ export default function EditScreen() {
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
         const config = stampConfigRef.current;
-        if (target === 'stamp') {
+        if (target.kind === 'stamp') {
           baseStampPosition.current = config.position;
           baseStampScale.current = config.scale ?? 1;
           stampPositionX.set(config.position.x);
           stampPositionY.set(config.position.y);
-        } else if (target === 'caption') {
-          const caption = captionPlacement(config);
-          baseCaptionPosition.current = caption.offset;
-          baseCaptionScale.current = caption.scale;
-          captionPositionX.set(caption.offset.x);
-          captionPositionY.set(caption.offset.y);
+        } else if (target.kind === 'caption') {
+          const caption = captionItems(config).find((c) => c.id === target.id);
+          baseCaptionPosition.current = caption?.offset ?? { x: 0, y: 0 };
+          baseCaptionScale.current = caption?.scale ?? 1;
+          captionPositionX.set(baseCaptionPosition.current.x);
+          captionPositionY.set(baseCaptionPosition.current.y);
         } else {
           baseTransform.current = transformRef.current;
           transformXShared.value = baseTransform.current.x;
@@ -514,8 +538,8 @@ export default function EditScreen() {
         const scaleDelta = touches.length === 2 && gestureStart.current
           ? touchDistance(touches[0], touches[1]) / (gestureStart.current.distance || 1) : 1;
 
-        if (target === 'stamp' || target === 'caption') {
-          const isStamp = target === 'stamp';
+        if (target.kind === 'stamp' || target.kind === 'caption') {
+          const isStamp = target.kind === 'stamp';
           const base = isStamp ? baseStampPosition.current : baseCaptionPosition.current;
           (isStamp ? stampPositionX : captionPositionX).set(base.x + gestureState.dx / fitScale);
           (isStamp ? stampPositionY : captionPositionY).set(base.y + gestureState.dy / fitScale);
@@ -526,10 +550,11 @@ export default function EditScreen() {
               setOverHideZone(false);
             }
             const config = stampConfigRef.current;
-            scheduleStampConfigUpdate(isStamp
-              ? { ...config, scale: clampScale(baseStampScale.current * scaleDelta) }
-              : { ...config, captionScale: clampScale(baseCaptionScale.current * scaleDelta) });
-          } else if (isStamp && touches[0]) {
+            const scale = clampScale((isStamp ? baseStampScale.current : baseCaptionScale.current) * scaleDelta);
+            scheduleStampConfigUpdate(target.kind === 'caption'
+              ? { ...config, captions: captionItems(config).map((c) => c.id === target.id ? { ...c, scale } : c) }
+              : { ...config, scale });
+          } else if (touches[0]) {
             const over = isOverHideZone(touches[0]);
             if (over !== overHideZoneRef.current) {
               overHideZoneRef.current = over;
@@ -572,12 +597,13 @@ export default function EditScreen() {
     overHideZoneRef.current = false;
     setOverHideZone(false);
   }
-  function commitGesture(target: DragTarget, overHide: boolean) {
-    if (target === 'stamp') {
-      if (overHide) hideStamp();
+  function commitGesture(target: DragTarget, overDropZone: boolean) {
+    if (target.kind === 'stamp') {
+      if (overDropZone) hideStamp();
       else finishStampGesture();
-    } else if (target === 'caption') {
-      finishCaptionGesture();
+    } else if (target.kind === 'caption') {
+      if (overDropZone) deleteCaption(target.id);
+      else finishCaptionGesture(target.id);
     } else {
       const finalTransform: RouteTransform = {
         x: transformXShared.value,
@@ -591,17 +617,15 @@ export default function EditScreen() {
   }
 
   // §4-2: 시트를 열면 왼쪽에 크기 슬라이더가 나온다. 핀치와 같은 값을 쓴다.
-  const sizeTarget: DragTarget | null = tool === 'route' || tool === 'stamp' || tool === 'caption' ? tool : null;
-  const committedSize = sizeTarget === 'route' ? Math.round(transform.scale * 100)
-    : sizeTarget === 'stamp' ? Math.round((stampConfig.scale ?? 1) * 100)
-      : Math.round(captionPlacement(stampConfig).scale * 100);
+  // 문구 크기는 문구를 쓰는 화면의 슬라이더에서 바꾼다(caption-editor.tsx).
+  const sizeTarget: SheetTarget | null = selectedTarget(tool);
+  const committedSize = sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
   // 손잡이는 슬라이더가 바로 그린다. 여기서는 경로 그림이면 SharedValue만 바꿔 다시 그리지 않는다.
   const handleSizeChange = (percent: number) => {
     if (!sizeTarget) return;
     const scale = percent / 100;
     if (sizeTarget === 'route') transformScaleShared.value = scale;
-    else scheduleStampConfigUpdate(sizeTarget === 'stamp'
-      ? { ...stampConfigRef.current, scale } : { ...stampConfigRef.current, captionScale: scale });
+    else scheduleStampConfigUpdate({ ...stampConfigRef.current, scale });
   };
   const handleSizeCommit = (percent: number) => {
     setIsInteracting(false);
@@ -612,7 +636,7 @@ export default function EditScreen() {
       commitTransform(next);
     } else if (sizeTarget) {
       flushPendingStampConfig();
-      commitStamp(sizeTarget === 'stamp' ? { ...stampConfigRef.current, scale } : { ...stampConfigRef.current, captionScale: scale });
+      commitStamp({ ...stampConfigRef.current, scale });
     }
   };
 
@@ -714,7 +738,6 @@ export default function EditScreen() {
   }
 
   const run = draft.selectedRun;
-  const captionLineCount = captionLines(stampConfig.caption ?? '', stampConfig).length;
   const stampItems = STAMP_ITEMS.filter((item) => item !== 'heartRate' || run.averageHeartRate !== undefined);
   const stampChipLabel = (item: StampItem): string => {
     switch (item) {
@@ -732,9 +755,11 @@ export default function EditScreen() {
         return `심박 ${run.averageHeartRate ? formatHeartRate(run.averageHeartRate) : ''}`;
     }
   };
-  const showChrome = dragging === null;
-  const selectionFor = (target: DragTarget) => dragging ? dragging === target : tool === target;
-  const sizeLabel = sizeTarget === 'route' ? '경로 그림 크기' : sizeTarget === 'stamp' ? '러닝 데이터 크기' : '문구 크기';
+  const showChrome = dragging === null && !editingCaption;
+  const selectionFor = (target: SheetTarget) => dragging ? dragging.kind === target : tool === target;
+  const sizeLabel = sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
+  const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
+  const dropZone = dragging ? dropZoneFor(dragging) : null;
   const resetChip = (label: string, onPress: () => void) => (
     <Pressable onPress={onPress} style={styles.resetButton} accessibilityRole="button" accessibilityLabel={label}>
       {({ pressed }) => (
@@ -777,7 +802,8 @@ export default function EditScreen() {
                     fit="contain"
                     drawingSelected={selectionFor('route')}
                     stampSelected={selectionFor('stamp') && !stampConfig.hidden}
-                    captionSelected={selectionFor('caption')}
+                    activeCaptionId={activeCaptionId}
+                    hiddenCaptionId={editingCaption && !editingCaption.isNew ? editingCaption.id : null}
                     playing={LOOP_PREVIEW}
                     stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
                     captionPositionShared={{ x: captionPositionX, y: captionPositionY }}
@@ -800,7 +826,8 @@ export default function EditScreen() {
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
-                    <Pressable key={t.id} onPress={() => on ? closeTool() : openTool(t.id)} style={styles.toolButton}
+                    <Pressable key={t.id} onPress={() => t.id === 'caption' ? startNewCaption() : on ? closeTool() : openTool(t.id)}
+                      style={styles.toolButton}
                       accessibilityRole="button" accessibilityLabel={t.label} accessibilityState={{ selected: on }}>
                       <Text style={styles.toolLabel}>{t.label}</Text>
                       <View style={[styles.toolIcon, on && styles.toolIconOn]}>
@@ -826,10 +853,10 @@ export default function EditScreen() {
         </View>
       </SafeAreaView>
 
-      {dragging === 'stamp' && <View pointerEvents="none"
+      {dropZone && <View pointerEvents="none"
         style={[styles.hideZone, overHideZone && styles.hideZoneOn, { bottom: hideZoneBottom, left: window.width / 2 - HIDE_ZONE / 2 }]}
-        accessibilityLabel="여기에 놓으면 러닝 데이터를 숨겨요">
-        <SymbolView name="eye.slash" size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
+        accessibilityLabel={dropZone === 'delete' ? '여기에 놓으면 문구를 지워요' : '여기에 놓으면 러닝 데이터를 숨겨요'}>
+        <SymbolView name={dropZone === 'delete' ? 'trash' : 'eye.slash'} size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
       </View>}
 
       {tool && <View style={[styles.sheet, { bottom: keyboardHeight, paddingBottom: keyboardHeight > 0 ? Spacing.sm : insets.bottom + Spacing.sm }]}
@@ -938,18 +965,12 @@ export default function EditScreen() {
           <Text style={styles.hint}>화면에서 끌어서 옮기고, 아래 동그라미로 끌면 숨겨요.</Text>
         </>}
 
-        {tool === 'caption' && <>
-          <TextInput ref={captionInputRef} value={stampConfig.caption ?? ''} onChangeText={handleCaptionChange} autoFocus
-            placeholder="예) 비 오는 날의 한강" placeholderTextColor={Colors.textMuted}
-            accessibilityLabel="문구, 미리보기 기준 최대 3줄" style={styles.captionInput}
-            multiline submitBehavior="newline" textAlignVertical="top" />
-          <Text accessibilityLiveRegion="polite" style={styles.note}>
-            {captionLineCount > CAPTION_MAX_LINES ? '크기를 바꿔서 3줄을 넘었어요. 새 입력은 3줄 안에서 할 수 있어요.'
-              : captionLimited ? '최대 3줄까지 쓸 수 있어요. 문구를 줄이거나 크기를 줄여 주세요.'
-                : `${captionLineCount}/${CAPTION_MAX_LINES}줄 · 화면에서 끌어서 옮겨요`}
-          </Text>
-        </>}
       </View>}
+
+      {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
+        fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
+        limited={editingCaption.limited} onChangeText={handleEditingText} onScaleChange={handleEditingScale}
+        onDone={finishEditingCaption} />}
     </View>
   );
 }
@@ -1019,7 +1040,6 @@ const styles = StyleSheet.create({
   itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
   itemChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   itemChipTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
-  captionInput: { minHeight: 64, maxHeight: 104, lineHeight: 22, fontFamily: Fonts.sans, fontSize: 15, color: Colors.text, borderBottomWidth: 1, borderBottomColor: Colors.borderStrong, paddingVertical: 8 },
   backgroundRow: { gap: 10, paddingVertical: 2 },
   backgroundSwatch: { width: 64, height: 112, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: Colors.border },
   backgroundSwatchOn: { borderColor: Colors.accent },

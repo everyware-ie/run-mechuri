@@ -1,4 +1,4 @@
-import { isCaptionOnlyChange, MAX_HISTORY, pushHistory, type EditSnapshot } from './edit-history';
+import { MAX_HISTORY, pushHistory, type EditSnapshot } from './edit-history';
 
 function snapshot(overrides: Partial<EditSnapshot> = {}): EditSnapshot {
   return {
@@ -18,25 +18,6 @@ function snapshot(overrides: Partial<EditSnapshot> = {}): EditSnapshot {
     ...overrides,
   };
 }
-
-describe('isCaptionOnlyChange', () => {
-  it('is true when only the caption text changed', () => {
-    const before = snapshot();
-    const after = { ...before, stampConfig: { ...before.stampConfig, caption: '한강' } };
-    expect(isCaptionOnlyChange(before, after)).toBe(true);
-  });
-
-  it('is false when the caption moved too', () => {
-    const before = snapshot();
-    const after = { ...before, stampConfig: { ...before.stampConfig, caption: '한강', captionOffset: { x: 0, y: 40 } } };
-    expect(isCaptionOnlyChange(before, after)).toBe(false);
-  });
-
-  it('is false when something other than the running data changed', () => {
-    const before = snapshot();
-    expect(isCaptionOnlyChange(before, { ...before, preset: 'light-runner' })).toBe(false);
-  });
-});
 
 describe('pushHistory', () => {
   it('keeps only the most recent steps', () => {

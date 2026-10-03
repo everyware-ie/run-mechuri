@@ -80,13 +80,11 @@ struct RenderClipOptionsInput: Record {
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
   @Field var captionLines: [String]? = nil
-  /// 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다.
-  /// 참이면 문구를 화면 가운데에서 (captionX, captionY)만큼 옮긴 자리에 captionScale 크기로 그린다.
-  /// 거짓이면 옛 저장분이라 문구가 프리셋 배치 안에 있다. route-preview.tsx StampConfig와 같은 값이다.
+  /// 스토리형 편집(2026-10-04, result-editing §7): 참이면 문구는 인스타처럼 화면에 바로 쓰는 글자들
+  /// (freeCaptions)이고 러닝 데이터 프리셋과 상관없다. 거짓이면 옛 저장분이라 문구(caption) 하나가
+  /// 프리셋 배치 안에 있다. route-preview.tsx StampConfig.captions와 같은 값이다.
   @Field var captionFree: Bool = false
-  @Field var captionX: Double = 0
-  @Field var captionY: Double = 0
-  @Field var captionScale: Double = 1
+  @Field var freeCaptions: [FreeCaptionInput] = []
   /// 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 남는다.
   @Field var stampHidden: Bool = false
   /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
@@ -100,6 +98,15 @@ struct RenderClipOptionsInput: Record {
   @Field var paceSamples: [Double] = []
   /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
   @Field var averageHeartRate: Double? = nil
+}
+
+/// 화면에 바로 쓰는 문구 하나. 자리(x, y)는 화면 가운데로부터의 오프셋(캔버스 px), scale은
+/// freeCaptionSize에 곱한다. 줄은 JS(caption-layout.ts freeCaptionLines)가 나눠 보낸다.
+struct FreeCaptionInput: Record {
+  @Field var lines: [String] = []
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var scale: Double = 1
 }
 
 struct RenderClipResultPayload: Record {
@@ -895,7 +902,7 @@ public class RouteRendererModule: Module {
           ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
           caption: "", itemPass: true, captionPass: false)
       }
-      drawFreeCaption(stamp, progressFraction: progressFraction, canvasSize: canvasSize)
+      drawFreeCaptions(stamp, progressFraction: progressFraction, canvasSize: canvasSize)
       return
     }
     drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
@@ -906,28 +913,28 @@ public class RouteRendererModule: Module {
   /// 자유 문구의 기본 글자 크기(캔버스 px). caption-layout.ts FREE_CAPTION_SIZE와 같다.
   private static let freeCaptionSize: CGFloat = 64
 
-  /// 자유 문구. 가운데 정렬이고 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다
-  /// 글자 크기의 0.35배 위로 본다. route-preview.tsx freeCaptionNodes와 같은 식이다.
-  private func drawFreeCaption(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+  /// 화면에 바로 쓰는 문구들. 넣은 순서대로 그려 나중에 넣은 것이 위에 온다. 가운데 정렬이고 줄
+  /// 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다 글자 크기의 0.35배 위로 본다.
+  /// route-preview.tsx freeCaptionNodes와 같은 식이다.
+  private func drawFreeCaptions(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
     if stamp.stampMode == "hidden" { return }
     if stamp.stampMode == "after" && progressFraction < 1 { return }
-    if stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
-    // JS의 caption-layout.ts에서 계산한 줄을 받아 미리보기와 줄 구성을 맞춘다.
-    let lines = stamp.captionLines ?? stamp.caption.components(separatedBy: "\n")
-    let size = Self.freeCaptionSize * CGFloat(stamp.captionScale)
-    let font = UIFont(name: "NotoSansKR-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
-    let lineHeight = size * 1.3
-    let centerX = canvasSize.width / 2 + CGFloat(stamp.captionX)
-    let top = canvasSize.height / 2 + CGFloat(stamp.captionY) - CGFloat(lines.count) * lineHeight / 2
-    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
     ctx.saveGState()
     // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
     ctx.setShadow(offset: .zero, blur: 6, color: UIColor.black.withAlphaComponent(0.55).cgColor)
-    for (i, line) in lines.enumerated() {
-      let baseline = top + (CGFloat(i) + 0.5) * lineHeight + size * 0.35
-      let width = (line as NSString).size(withAttributes: attrs).width
-      (line as NSString).draw(at: CGPoint(x: centerX - width / 2, y: baseline - font.ascender), withAttributes: attrs)
+    for caption in stamp.freeCaptions where !caption.lines.isEmpty {
+      let size = Self.freeCaptionSize * CGFloat(caption.scale)
+      let font = UIFont(name: "NotoSansKR-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let lineHeight = size * 1.3
+      let centerX = canvasSize.width / 2 + CGFloat(caption.x)
+      let top = canvasSize.height / 2 + CGFloat(caption.y) - CGFloat(caption.lines.count) * lineHeight / 2
+      for (i, line) in caption.lines.enumerated() {
+        let baseline = top + (CGFloat(i) + 0.5) * lineHeight + size * 0.35
+        let width = (line as NSString).size(withAttributes: attrs).width
+        (line as NSString).draw(at: CGPoint(x: centerX - width / 2, y: baseline - font.ascender), withAttributes: attrs)
+      }
     }
     ctx.restoreGState()
   }
