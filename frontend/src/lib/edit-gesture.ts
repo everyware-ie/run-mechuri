@@ -7,6 +7,8 @@
 // - "러닝 데이터를 선택했는데 경로가 움직인다": 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다.
 // - 문구는 인스타처럼 화면에 바로 쓰고 여러 개다. 탭하면 그 문구를 고쳐 쓰고, 아래 휴지통에 놓으면
 //   지운다. 러닝 데이터는 같은 자리에 놓으면 숨긴다.
+// - "아무것도 선택되지 않은 상태에서 경로의 선택 범위가 너무 크다": 아무것도 선택하지 않았으면 경로
+//   그림 영역(점선 상자) 안에서 끌 때만 경로 그림이 움직인다. 빈 곳을 끌면 아무것도 움직이지 않는다.
 
 export type EditTarget = { kind: 'route' } | { kind: 'stamp' } | { kind: 'caption'; id: string };
 /** 손가락이 닿은 글자. 글자가 아닌 곳이면 null. */
@@ -19,9 +21,14 @@ export function selectedTarget(tool: string | null): SheetTarget | null {
   return tool === 'route' || tool === 'stamp' ? tool : null;
 }
 
-/** 끌기·핀치가 움직일 대상. 글자를 직접 짚으면 그 글자, 아니면 선택된 대상, 그것도 없으면 경로 그림. */
-export function dragTargetFor(hit: TextHit, selected: SheetTarget | null): EditTarget {
-  return hit ?? { kind: selected ?? 'route' };
+/**
+ * 끌기·핀치가 움직일 대상. 글자를 직접 짚으면 그 글자, 아니면 선택된 대상, 선택된 것이 없으면 경로
+ * 그림 영역 안일 때만 경로 그림. 아무것도 아니면 null이다.
+ */
+export function dragTargetFor(hit: TextHit, selected: SheetTarget | null, onRoute: boolean): EditTarget | null {
+  if (hit) return hit;
+  if (selected) return { kind: selected };
+  return onRoute ? { kind: 'route' } : null;
 }
 
 export type TapAction =

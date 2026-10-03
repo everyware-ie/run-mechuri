@@ -18,18 +18,25 @@ describe('selectedTarget', () => {
 describe('dragTargetFor', () => {
   it('moves the text the finger lands on, whatever is selected', () => {
     for (const selected of [null, 'route', 'stamp'] as const) {
-      expect(dragTargetFor(stamp, selected)).toEqual(stamp);
-      expect(dragTargetFor(caption('a'), selected)).toEqual(caption('a'));
+      for (const onRoute of [true, false]) {
+        expect(dragTargetFor(stamp, selected, onRoute)).toEqual(stamp);
+        expect(dragTargetFor(caption('a'), selected, onRoute)).toEqual(caption('a'));
+      }
     }
   });
 
   it('moves the selected running data when dragging near it, not the route', () => {
-    expect(dragTargetFor(null, 'stamp')).toEqual({ kind: 'stamp' });
+    expect(dragTargetFor(null, 'stamp', true)).toEqual({ kind: 'stamp' });
+    expect(dragTargetFor(null, 'stamp', false)).toEqual({ kind: 'stamp' });
   });
 
-  it('moves the route when nothing is selected or the route is selected', () => {
-    expect(dragTargetFor(null, null)).toEqual({ kind: 'route' });
-    expect(dragTargetFor(null, 'route')).toEqual({ kind: 'route' });
+  it('moves the selected route from anywhere so a small route is easy to pinch', () => {
+    expect(dragTargetFor(null, 'route', false)).toEqual({ kind: 'route' });
+  });
+
+  it('moves the route only inside its area when nothing is selected', () => {
+    expect(dragTargetFor(null, null, true)).toEqual({ kind: 'route' });
+    expect(dragTargetFor(null, null, false)).toBeNull();
   });
 });
 

@@ -420,7 +420,7 @@ export default function EditScreen() {
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewSizeRef = useRef(previewSize);
   const gestureFitScaleRef = useRef(1);
-  const dragTargetRef = useRef<DragTarget>({ kind: 'route' });
+  const dragTargetRef = useRef<DragTarget | null>(null);
   const gestureMovedRef = useRef(false);
 
   // §4-1: 손가락이 닿은 글자. 겹친 곳은 문구가 러닝 데이터보다 위다. 무엇을 움직이고 탭하면 무엇을
@@ -541,12 +541,15 @@ export default function EditScreen() {
         tapPointRef.current = { x: (touch.locationX - offsetX) / fitScale, y: (touch.locationY - offsetY) / fitScale };
         textHitRef.current = textHitAt(tapPointRef.current.x, tapPointRef.current.y);
         // 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다(선택된 러닝 데이터를 끌다 경로가 움직이지 않게).
-        const target = dragTargetFor(textHitRef.current, selectedTarget(toolRef.current));
+        // 선택된 것이 없으면 경로 그림 영역 안일 때만 경로 그림을 움직인다.
+        const target = dragTargetFor(textHitRef.current, selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
         dragTargetRef.current = target;
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
         const config = stampConfigRef.current;
-        if (target.kind === 'stamp') {
+        if (!target) {
+          // 빈 곳. 끌어도 아무것도 움직이지 않고, 탭만 받는다.
+        } else if (target.kind === 'stamp') {
           baseStampPosition.current = config.position;
           baseStampScale.current = config.scale ?? 1;
           stampPositionX.set(config.position.x);
@@ -568,16 +571,16 @@ export default function EditScreen() {
         gestureStart.current = touches.length === 2
           ? { distance: touchDistance(touches[0], touches[1]), angle: touchAngleDeg(touches[0], touches[1]) }
           : null;
-        if (gestureMovedRef.current) setDragging(target);
+        if (gestureMovedRef.current && target) setDragging(target);
       },
       onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const touches = evt.nativeEvent.touches;
         if (!gestureMovedRef.current && (touches.length > 1 || Math.abs(gestureState.dx) >= 6 || Math.abs(gestureState.dy) >= 6)) {
           gestureMovedRef.current = true;
-          setDragging(dragTargetRef.current);
+          if (dragTargetRef.current) setDragging(dragTargetRef.current);
         }
-        if (!gestureMovedRef.current) return;
         const target = dragTargetRef.current;
+        if (!gestureMovedRef.current || !target) return;
         const fitScale = gestureFitScaleRef.current;
         if (touches.length === 2 && !gestureStart.current) {
           gestureStart.current = { distance: touchDistance(touches[0], touches[1]), angle: touchAngleDeg(touches[0], touches[1]) };
@@ -630,11 +633,11 @@ export default function EditScreen() {
           handleTap();
           return;
         }
-        commitGesture(target, over);
+        if (target) commitGesture(target, over);
       },
       onPanResponderTerminate: () => {
         endGesture();
-        if (gestureMovedRef.current) commitGesture(dragTargetRef.current, false);
+        if (gestureMovedRef.current && dragTargetRef.current) commitGesture(dragTargetRef.current, false);
       },
     })
   ).current;
