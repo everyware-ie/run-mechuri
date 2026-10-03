@@ -3,10 +3,11 @@ import BackgroundTasks
 import CoreGraphics
 import ExpoModulesCore
 import UIKit
+import os
 
 // FRD: docs/specs/frd/route-rendering.md, docs/specs/frd/result-editing.md
 //
-// 접근: 실시간 화면 캡처가 아니라 프레임을 하나씩 오프라인으로 그려
+// 접근: 실시간 화면 캡처가 아니라 프레임을 최대 둘씩 오프라인으로 그려
 // AVAssetWriter로 인코딩한다 (2026-08-16 mp4 스파이크 테스트에서
 // 실시간 캡처가 배경 합성과 함께 무너지는 것을 확인하고 전환하기로 한 방향).
 //
@@ -149,6 +150,34 @@ private final class RenderJob {
   func checkCancellation() throws {
     lock.lock(); let reason = cancellation; lock.unlock()
     if let reason { throw reason }
+  }
+}
+
+// 한 작업에서 최대 두 프레임만 유지한다. 압박이 생기면 남은 작업은 직렬로 유지한다.
+private final class ParallelRenderBudget {
+  private let lock = NSLock()
+  private var serialOnly = false
+  private let pressure = DispatchSource.makeMemoryPressureSource(
+    eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility)
+  )
+
+  init() {
+    pressure.setEventHandler { [weak self] in self?.useSerial() }
+    pressure.resume()
+  }
+  deinit { pressure.cancel() }
+
+  private func useSerial() {
+    lock.lock(); serialOnly = true; lock.unlock()
+  }
+
+  var allowsParallel: Bool {
+    if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+      || os_proc_available_memory() < 256 * 1024 * 1024 {
+      useSerial()
+    }
+    lock.lock(); defer { lock.unlock() }
+    return !serialOnly
   }
 }
 
@@ -1376,6 +1405,14 @@ public class RouteRendererModule: Module {
     return tempDir.appendingPathComponent("\(name).mp4")
   }
 
+  // 각 slot은 한 worker만 쓰고, 합류 후 renderQueue에서 읽는다.
+  private final class FrameSlot {
+    var buffer: CVPixelBuffer?
+    var error: Error?
+    var rasterSeconds = 0.0
+    var copySeconds = 0.0
+  }
+
   private func writeClip(
     preset: RoutePreset,
     projectedPoints: [CGPoint],
@@ -1432,56 +1469,109 @@ public class RouteRendererModule: Module {
       let backgroundStart = CFAbsoluteTimeGetCurrent()
       let preparedBackground = prepareBackground(background)
       let backgroundPreparationSeconds = CFAbsoluteTimeGetCurrent() - backgroundStart
-      // 기존 format/scale 유지. 렌더러만 재사용하고 품질 설정은 바꾸지 않는다.
-      let renderer = UIGraphicsImageRenderer(size: CGSize(width: ClipSpec.width, height: ClipSpec.height))
+      // renderer별 컨텍스트를 재사용하며 기존 format/scale은 유지한다.
+      let budget = ParallelRenderBudget()
+      let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+      var renderers = [UIGraphicsImageRenderer(size: size)]
       var completedFrame: CVPixelBuffer?
-      for frameIndex in 0..<ClipSpec.totalFrames {
+      var frameIndex = 0
+      var parallelBatches = 0
+      var serialBatches = 0
+      var renderScale: CGFloat = 0
+      while frameIndex < ClipSpec.totalFrames {
         try autoreleasepool {
           try job.checkCancellation()
           guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
-          let pixelBuffer: CVPixelBuffer
-          if videoSource == nil, let cached = completedFrame {
-            pixelBuffer = cached
+          let batchStart = frameIndex
+          let isHoldingStill = videoSource == nil && completedFrame != nil
+          let remainingToDraw = (videoSource == nil ? ClipSpec.drawFrames + 1 : ClipSpec.totalFrames) - frameIndex
+          let count = isHoldingStill ? 1 : min(budget.allowsParallel ? 2 : 1, remainingToDraw)
+          if count == 2, renderers.count == 1 {
+            renderers.append(UIGraphicsImageRenderer(size: size))
+          } else if count == 1, renderers.count == 2 {
+            renderers.removeLast()
+          }
+          renderScale = (renderers[0].format as? UIGraphicsImageRendererFormat)?.scale ?? 0
+          let slots = (0..<count).map { _ in FrameSlot() }
+          if isHoldingStill {
+            slots[0].buffer = completedFrame
           } else {
-            // 배경 선택 FRD §5: 영상 배경이면 클립 시각에 맞는 장면을 깐다. 못 꺼내면 첫 장면을 쓴다.
-            var frameBackground = preparedBackground
-            if let videoSource,
-               let scene = try videoSource.image(atClipTime: Double(frameIndex) / Double(ClipSpec.fps)) {
-              frameBackground = UIImage(cgImage: scene)
+            // 영상 reader는 시간순으로 한 큐에서만 읽는다. immutable 장면만 worker에 전달한다.
+            var backgrounds: [UIImage] = []
+            for lane in 0..<count {
+              try job.checkCancellation()
+              if let videoSource,
+                 let scene = try videoSource.image(atClipTime: Double(batchStart + lane) / Double(ClipSpec.fps)) {
+                backgrounds.append(UIImage(cgImage: scene))
+              } else {
+                backgrounds.append(preparedBackground)
+              }
             }
-            let rasterStart = CFAbsoluteTimeGetCurrent()
-            let image = drawFrame(
-              preset: preset, background: frameBackground, projectedPoints: projectedPoints,
-              cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
-              progressFraction: min(1, Double(frameIndex) / Double(ClipSpec.drawFrames)),
-              stamp: stamp, renderer: renderer
-            )
-            rasterSeconds += CFAbsoluteTimeGetCurrent() - rasterStart
-            let copyStart = CFAbsoluteTimeGetCurrent()
-            guard let buffer = self.pixelBuffer(from: image, pool: adaptor.pixelBufferPool) else {
-              throw RouteRendererError.pixelBufferPoolMissing
+            let scenes = backgrounds
+            let pool = adaptor.pixelBufferPool
+            let lanes = renderers
+            let draw: (Int) -> Void = { lane in
+              autoreleasepool {
+                do {
+                  try job.checkCancellation()
+                  let rasterStart = CFAbsoluteTimeGetCurrent()
+                  let image = self.drawFrame(
+                    preset: preset, background: scenes[lane], projectedPoints: projectedPoints,
+                    cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
+                    progressFraction: min(1, Double(batchStart + lane) / Double(ClipSpec.drawFrames)),
+                    stamp: stamp, renderer: lanes[lane]
+                  )
+                  slots[lane].rasterSeconds = CFAbsoluteTimeGetCurrent() - rasterStart
+                  try job.checkCancellation()
+                  let copyStart = CFAbsoluteTimeGetCurrent()
+                  guard let buffer = self.pixelBuffer(from: image, pool: pool) else {
+                    throw RouteRendererError.pixelBufferPoolMissing
+                  }
+                  slots[lane].buffer = buffer
+                  slots[lane].copySeconds = CFAbsoluteTimeGetCurrent() - copyStart
+                  try job.checkCancellation()
+                } catch { slots[lane].error = error }
+              }
             }
-            pixelBuffer = buffer
-            copySeconds += CFAbsoluteTimeGetCurrent() - copyStart
-            renderedFrames += 1
-            // 마지막 3초는 모든 프리셋·각인이 정지한다. 같은 버퍼를 수정 없이 전달한다.
-            // 영상 배경은 계속 움직이므로 재사용하지 않는다.
-            if videoSource == nil, frameIndex == ClipSpec.drawFrames { completedFrame = buffer }
+            if count == 2 {
+              parallelBatches += 1
+              DispatchQueue.concurrentPerform(iterations: count, execute: draw)
+            } else {
+              serialBatches += 1
+              draw(0)
+            }
+            for slot in slots { if let error = slot.error { throw error } }
           }
-          let waitStart = CFAbsoluteTimeGetCurrent()
-          while !writerInput.isReadyForMoreMediaData {
+          // writer와 진행률은 renderQueue에서만 다루며 입력 순서를 유지한다.
+          for lane in 0..<count {
             try job.checkCancellation()
-            guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
-            Thread.sleep(forTimeInterval: 0.002)
+            let index = batchStart + lane
+            let slot = slots[lane]
+            guard let buffer = slot.buffer else { throw RouteRendererError.encodingFailed }
+            let waitStart = CFAbsoluteTimeGetCurrent()
+            while !writerInput.isReadyForMoreMediaData {
+              try job.checkCancellation()
+              guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
+              Thread.sleep(forTimeInterval: 0.002)
+            }
+            waitSeconds += CFAbsoluteTimeGetCurrent() - waitStart
+            try job.checkCancellation()
+            guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(index), timescale: ClipSpec.fps)) else {
+              throw writer.error ?? RouteRendererError.encodingFailed
+            }
+            if !isHoldingStill {
+              renderedFrames += 1
+              rasterSeconds += slot.rasterSeconds
+              copySeconds += slot.copySeconds
+            }
+            if videoSource == nil, index == ClipSpec.drawFrames { completedFrame = buffer }
+            slot.buffer = nil
+            if index % 6 == 0 { reportProgress(index, job: job) }
           }
-          waitSeconds += CFAbsoluteTimeGetCurrent() - waitStart
-          try job.checkCancellation()
-          guard adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)) else {
-            throw writer.error ?? RouteRendererError.encodingFailed
-          }
-          if frameIndex % 6 == 0 { reportProgress(frameIndex, job: job) }
+          frameIndex += count
         }
       }
+      NSLog("[encoding-batches] parallel=%d serial=%d", parallelBatches, serialBatches)
       writerInput.markAsFinished()
       let semaphore = DispatchSemaphore(value: 0)
       writer.finishWriting { semaphore.signal() }
@@ -1492,7 +1582,7 @@ public class RouteRendererModule: Module {
       NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f background=%.4f video=%.3f rendered=%d encoded=%d scale=%.1f",
             CFAbsoluteTimeGetCurrent() - start, rasterSeconds, copySeconds, waitSeconds,
             backgroundPreparationSeconds, videoSource?.readSeconds ?? 0, renderedFrames, ClipSpec.totalFrames,
-            (renderer.format as? UIGraphicsImageRendererFormat)?.scale ?? 0)
+            renderScale)
     } catch {
       if writer.status == .writing { writer.cancelWriting() }
       try? FileManager.default.removeItem(at: outputURL)

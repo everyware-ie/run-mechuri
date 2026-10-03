@@ -3,7 +3,7 @@ title: 내보내기·공유·저장 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-09-28
+updated: 2026-10-03
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 4번, §6 내보낸 다음, §12 인코딩 대기"
 related:
@@ -92,6 +92,8 @@ related:
 - 시스템이 중단시키면 미완성 파일을 완성품으로 등록하지 않는다. 편집값을 유지하고 앱으로 돌아왔을 때 재시도할 수 있게 한다.
 - 완료 신호는 영상 파일의 정상 종료를 확인한 뒤에만 보낸다. 보관함 저장까지 백그라운드 실행 범위에 포함한다.
 - 속도 개선은 기존 1080×1920·30fps·12초 및 인코딩 품질 설정을 유지한다. 같은 장면을 중복 계산하는 비용부터 줄이고, 출력 영상과 소요 시간을 비교한다.
+
+[9/29 결정](../../decisions/2026-09-29-export-parallel-rendering.md)에 따라 두 프레임 병렬 생성을 적용한다. 출력 규격과 품질 정책은 유지하며, 메모리·발열 상황에서 직렬 처리하는 방어와 검증 결과는 [제품 적용 노트](../../product/features/export-parallel-rendering.md)에 둔다. 목표 시간과 정지 이미지 폴백은 이번 결정에서 확정하지 않았다.
 
 ## 3. 인스타그램 스토리로 공유
 
