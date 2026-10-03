@@ -80,6 +80,13 @@ struct RenderClipOptionsInput: Record {
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
   @Field var captionLines: [String]? = nil
+  /// 스토리형 편집(2026-10-04, result-editing §7): 참이면 문구는 인스타처럼 화면에 바로 쓰는 글자들
+  /// (freeCaptions)이고 러닝 데이터 프리셋과 상관없다. 거짓이면 옛 저장분이라 문구(caption) 하나가
+  /// 프리셋 배치 안에 있다. route-preview.tsx StampConfig.captions와 같은 값이다.
+  @Field var captionFree: Bool = false
+  @Field var freeCaptions: [FreeCaptionInput] = []
+  /// 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 남는다.
+  @Field var stampHidden: Bool = false
   /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
   @Field var placeName: String = ""
   /// '날짜' 각인 값 계산용 — 러닝한 날 (ISO 8601).
@@ -91,6 +98,15 @@ struct RenderClipOptionsInput: Record {
   @Field var paceSamples: [Double] = []
   /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
   @Field var averageHeartRate: Double? = nil
+}
+
+/// 화면에 바로 쓰는 문구 하나. 자리(x, y)는 화면 가운데로부터의 오프셋(캔버스 px), scale은
+/// freeCaptionSize에 곱한다. 줄은 JS(caption-layout.ts freeCaptionLines)가 나눠 보낸다.
+struct FreeCaptionInput: Record {
+  @Field var lines: [String] = []
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var scale: Double = 1
 }
 
 struct RenderClipResultPayload: Record {
@@ -876,7 +892,58 @@ public class RouteRendererModule: Module {
     return (scale, offsets)
   }
 
+  // 스토리형 편집(2026-10-04): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다. 프리셋 배치는
+  // 문구 없이 그리고 문구는 drawFreeCaption이 따로 그린다. 옛 저장분은 문구가 프리셋 안에 있던
+  // 모습 그대로 그린다. route-preview.tsx stampLayoutDescriptors와 같은 규칙이다.
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    if stamp.captionFree {
+      if !stamp.stampHidden {
+        drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
+          ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+          caption: "", itemPass: true, captionPass: false)
+      }
+      drawFreeCaptions(stamp, progressFraction: progressFraction, canvasSize: canvasSize)
+      return
+    }
+    drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
+      ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+      caption: stamp.caption, itemPass: !stamp.stampHidden, captionPass: true)
+  }
+
+  /// 자유 문구의 기본 글자 크기(캔버스 px). caption-layout.ts FREE_CAPTION_SIZE와 같다.
+  private static let freeCaptionSize: CGFloat = 64
+
+  /// 화면에 바로 쓰는 문구들. 넣은 순서대로 그려 나중에 넣은 것이 위에 온다. 가운데 정렬이고 줄
+  /// 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다 글자 크기의 0.35배 위로 본다.
+  /// route-preview.tsx freeCaptionNodes와 같은 식이다.
+  private func drawFreeCaptions(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    if stamp.stampMode == "hidden" { return }
+    if stamp.stampMode == "after" && progressFraction < 1 { return }
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    ctx.saveGState()
+    // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
+    ctx.setShadow(offset: .zero, blur: 6, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+    for caption in stamp.freeCaptions where !caption.lines.isEmpty {
+      let size = Self.freeCaptionSize * CGFloat(caption.scale)
+      let font = UIFont(name: "NotoSansKR-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let lineHeight = size * 1.3
+      let centerX = canvasSize.width / 2 + CGFloat(caption.x)
+      let top = canvasSize.height / 2 + CGFloat(caption.y) - CGFloat(caption.lines.count) * lineHeight / 2
+      for (i, line) in caption.lines.enumerated() {
+        let baseline = top + (CGFloat(i) + 0.5) * lineHeight + size * 0.35
+        let width = (line as NSString).size(withAttributes: attrs).width
+        (line as NSString).draw(at: CGPoint(x: centerX - width / 2, y: baseline - font.ascender), withAttributes: attrs)
+      }
+    }
+    ctx.restoreGState()
+  }
+
+  /// 프리셋 배치 한 번. itemPass가 거짓이면 러닝 데이터를, captionPass가 거짓이면 프리셋 안의 문구를
+  /// 그리지 않는다. 그리지 않아도 자리 계산에는 들어간다. 옛 저장분은 숨긴 러닝 데이터 자리에
+  /// 문구가 그대로 남아야 해서 이렇게 나눴다.
+  private func drawStampPass(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize,
+    ox: CGFloat, oy: CGFloat, s: CGFloat, caption rawCaption: String, itemPass: Bool, captionPass: Bool) {
     let isComplete = progressFraction >= 1
     if stamp.stampMode == "hidden" { return }
     if stamp.stampMode == "after" && !isComplete { return }
@@ -896,7 +963,7 @@ public class RouteRendererModule: Module {
       keyed.append(("heartRate", formatHeartRate(hr, includeUnit: !hasUnitLabel)))
     }
 
-    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : stamp.caption
+    let caption = rawCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : rawCaption
     if keyed.isEmpty && caption.isEmpty { return }
 
     // route-preview.tsx SAFE_AREA_TOP/BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
@@ -942,7 +1009,10 @@ public class RouteRendererModule: Module {
     // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
     // color 생략 시 기본 밝은 톤. 라벨류(muted)는 호출부에서 mutedColor를 넘긴다
     // (route-preview.tsx StampTextDescriptor.muted와 같은 개념, 2026-09-02).
+    // drawCaption 안에서만 참이다. 문구와 러닝 데이터를 이 값으로 갈라 그린다.
+    var drawingCaption = false
     func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
+      if drawingCaption ? !captionPass : !itemPass { return }
       let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
       let w = (text as NSString).size(withAttributes: attrs).width
       let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
@@ -961,9 +1031,8 @@ public class RouteRendererModule: Module {
     }
     let mutedColor = self.lineWarm.withAlphaComponent(0.5)
 
-    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(stampX/Y)는 그대로 두고
-    // 글자 크기·내부 간격에만 곱한다.
-    let s = CGFloat(stamp.stampScale)
+    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(ox/oy)는 그대로 두고
+    // 글자 크기·내부 간격에만 곱한다. 문구 배치에서는 문구 크기(captionScale)가 들어온다.
 
     // route-preview.tsx splitHeroValue와 같은 규칙 — "5.23km"처럼 끝의 단위 글자(있으면,
     // "/km"처럼 슬래시 포함)를 떼어 작게 그린다. "28:14"처럼 단위가 없으면 nil.
@@ -977,6 +1046,7 @@ public class RouteRendererModule: Module {
     // 곳과 같은 "베이스라인" 기준 — main·unit 둘 다 자기 font.ascender로 top y를
     // 구해서 같은 베이스라인(origin.y)에 나란히 앉힌다(위 draw()와 같은 이유의 같은 수정).
     func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
+      if !itemPass { return }
       guard let split = splitHeroValue(text) else {
         draw(text, origin, heroValueFont(size), align)
         return
@@ -1015,6 +1085,7 @@ public class RouteRendererModule: Module {
     }
     // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
     func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
+      if !itemPass { return }
       let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
       ctx.saveGState()
       color.setFill()
@@ -1047,10 +1118,13 @@ public class RouteRendererModule: Module {
       ? estimateStampTextWidth("00.00", 11 * M * s) + 12 * M : 0
     let captionWidth = max(captionSize, captionRight - captionLeft - captionDateSpace)
     func drawCaption(_ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, fromTop: Bool = false) {
+      if !captionPass { return }
+      drawingCaption = true
+      defer { drawingCaption = false }
       let half: CGFloat = align == .center ? captionWidth / 2 : 0
       let minX = captionLeft + (align == .right ? captionWidth : half)
       let maxX = captionRight - (align == .left ? captionWidth : half)
-      let x = min(maxX, max(minX, origin.x - CGFloat(stamp.stampX))) + CGFloat(stamp.stampX)
+      let x = min(maxX, max(minX, origin.x - ox)) + ox
       for (i, line) in captionLines.enumerated() {
         let y = origin.y + CGFloat(i) * captionLineHeight - (fromTop ? 0 : captionExtra)
         draw(line, CGPoint(x: x, y: y), font, align)
@@ -1061,10 +1135,10 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "stack" {
       // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
       let u = M * s
-      let leftX = 24 * M + CGFloat(stamp.stampX)
+      let leftX = 24 * M + ox
       // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
       // 빠뜨렸던 버그. 26*M로 맞춘다.
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
       let hero = keyed.first { heroKeys.contains($0.0) }
       let metaItems = keyed.filter { $0.0 != hero?.0 }
 
@@ -1112,9 +1186,9 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "bar" {
       // 2b "하단 스탯 바" — 문구+날짜 머리글, 구분선, 그 아래 4칸 통계(거리 칸이 더 넓다).
       let u = M * s
-      let leftX = 20 * M + CGFloat(stamp.stampX)
-      let rightX = canvasSize.width - 20 * M + CGFloat(stamp.stampX)
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+      let leftX = 20 * M + ox
+      let rightX = canvasSize.width - 20 * M + ox
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + oy
       let dateText = valueFor("date")
       let statOrder = ["distance", "time", "pace", "heartRate", "place"].filter(hasKey)
 
@@ -1163,10 +1237,10 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "corner" {
       // 2c "코너 분산" — 위쪽 문구·날짜, 오른쪽에 시간·페이스·평균심박 스택, 왼쪽 아래에 큰 숫자.
       let u = M * s
-      let topLeftX = 24 * M + CGFloat(stamp.stampX)
-      let topRightX = canvasSize.width - 24 * M + CGFloat(stamp.stampX)
+      let topLeftX = 24 * M + ox
+      let topRightX = canvasSize.width - 24 * M + ox
       let headerFont = 13 * u
-      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
+      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + oy
 
       if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left, fromTop: true) }
       let dateText = valueFor("date")
@@ -1192,8 +1266,8 @@ public class RouteRendererModule: Module {
         let heroSize = 66 * u
         // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
         // 빠뜨렸던 버그. 26*M로 맞춘다.
-        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
-        drawHeroValue(hero.1, CGPoint(x: 22 * M + CGFloat(stamp.stampX), y: heroBaseline), heroSize, align: .left)
+        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
+        drawHeroValue(hero.1, CGPoint(x: 22 * M + ox, y: heroBaseline), heroSize, align: .left)
       }
       return
     }
@@ -1234,11 +1308,11 @@ public class RouteRendererModule: Module {
       let rowWidth = min(contentWidth, statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1)))
       let fitted = fitStampColumns(statWidths, rowWidth, min(colGap, 12 * M))
 
-      let panelLeft = 16 * M + CGFloat(stamp.stampX)
+      let panelLeft = 16 * M + ox
       let panelRight = panelLeft + panelWidth
       // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:18px, M 곱하는 걸
       // 빠뜨렸던 버그. 18*M로 맞춘다.
-      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + CGFloat(stamp.stampY)
+      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + oy
       let panelTop = panelBottom - panelHeight
 
       fillRect(
@@ -1294,7 +1368,7 @@ public class RouteRendererModule: Module {
       if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
       if hasKey("place") { rows.append(("PLACE", valueFor("place"), false)) }
 
-      let railX = CGFloat(stamp.stampX)
+      let railX = ox
       let hasRail = !rows.isEmpty
       // 실기기 피드백: "위치도 저기가 최선인가?" — 스택(rows)만 캔버스 세로
       // 중앙에 놓고 문구를 그 아래 덧붙이던 것을, 문구 몫까지 포함한 블록
@@ -1306,7 +1380,7 @@ public class RouteRendererModule: Module {
       let safeTop = canvasSize.height * safeAreaTopRatio
       let safeBottom = canvasSize.height * (1 - safeAreaBottomRatio)
       let blockTop = safeTop + max(0, (safeBottom - safeTop - combinedHeight) / 2)
-      let railTop = blockTop + CGFloat(stamp.stampY)
+      let railTop = blockTop + oy
       var railBottom = railTop
 
       if hasRail {
@@ -1327,10 +1401,10 @@ public class RouteRendererModule: Module {
         // 실기기 피드백(2026-09-03), TS와 동일 — 원본 디자인의 오른쪽 아래 고립
         // 배치 대신, 스택이 있으면 그 바로 아래(왼쪽 정렬)로 붙인다. 스택이 아예
         // 없을 때만 기존 자리(안전 영역 하단, 오른쪽 정렬)로 돌아간다.
-        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + CGFloat(stamp.stampX)
+        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + ox
         let y = hasRail
           ? railBottom + rowGap + captionFont * 0.8
-          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + oy
         drawCaption(CGPoint(x: x, y: y), hangulFont(captionFont, bold: true), hasRail ? .left : .right, fromTop: hasRail)
       }
       return
@@ -1339,8 +1413,8 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "line" {
       // 2f "원 라인" — 문구(크게) 아래 짧은 구분선, 그 아래 통계를 한 줄로 이어붙인다.
       let u = M * s
-      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + CGFloat(stamp.stampY)
+      let centerX = canvasSize.width / 2 + ox
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + oy
       let gap = 12 * u
       let titleFont = 22 * u
       let dividerW = 28 * u
@@ -1379,8 +1453,8 @@ public class RouteRendererModule: Module {
 
     // 'row' — 가운데 한 줄 + 문구는 그 위.
     let items = keyed.map { $0.1 }
-    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
+    let centerX = canvasSize.width / 2 + ox
+    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + oy
 
     if !caption.isEmpty {
       drawCaption(CGPoint(x: centerX, y: baseY - 58 * s), hangulFont(34 * s, bold: false), .center)

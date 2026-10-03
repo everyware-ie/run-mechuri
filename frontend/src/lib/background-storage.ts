@@ -1,4 +1,7 @@
+import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
+
+import type { DefaultBackground } from '@/constants/default-backgrounds';
 import type { PhotoCrop } from './photo-crop';
 
 /**
@@ -40,6 +43,12 @@ export function resolvePhotoBackground(photo?: PhotoBackground): PhotoBackground
     sourceUri: resolveBackgroundPath(photo.sourceUri),
     ...(photo.posterUri ? { posterUri: resolveBackgroundPath(photo.posterUri) } : {}),
   };
+}
+
+/** 앱에 들어 있는 기본 배경을 파일로 꺼내 보관한다. 배경 선택과 편집의 배경 시트가 함께 쓴다. */
+export async function persistDefaultBackground(background: DefaultBackground): Promise<string> {
+  const asset = await Asset.fromModule(background.source).downloadAsync();
+  return persistBackground(asset.localUri ?? asset.uri, `${background.id}.jpg`);
 }
 
 export async function persistBackground(sourceUri: string, name: string): Promise<string> {

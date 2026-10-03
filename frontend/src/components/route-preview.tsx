@@ -1,5 +1,6 @@
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
-import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
+import { captionLines, captionMetrics, freeCaptionLines, freeCaptionMetrics, normalizeCaption } from '@/lib/caption-layout';
+import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { estimateOneLineTextWidth, estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, DashPathEffect, Group, Path, RoundedRect, Shadow, Skia } from '@shopify/react-native-skia';
@@ -62,6 +63,10 @@ export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
   // fallback 대상이라서(아래 stampLayoutDescriptors 'row' 분기 참고).
 ];
 
+/** 화면에 바로 쓰는 문구 하나. 자리는 화면 가운데로부터의 오프셋(캔버스 px), 크기는
+ * FREE_CAPTION_SIZE(caption-layout.ts)에 곱하는 배율이다. */
+export type CaptionItem = { id: string; text: string; offset: { x: number; y: number }; scale: number };
+
 export type StampConfig = {
   /** §7-3 표시 타이밍. 시안 S6엔 UI가 없어(2026-09-01) 항상 'always' — 확인 노트 참고. */
   mode: StampMode;
@@ -78,6 +83,15 @@ export type StampConfig = {
    * 내부 간격만 이 값을 곱해 키우거나 줄인다 — 기존 저장분엔 없는 필드라 읽을 때
    * `?? 1`로 방어. */
   scale?: number;
+  /** 스토리형 편집(2026-10-04, result-editing §7): 인스타처럼 화면에 바로 쓰는 문구들. 러닝 데이터
+   * 프리셋과 상관없고 여러 개다. 있으면 위의 caption은 쓰지 않는다. 없으면 옛 저장분이라 문구
+   * 하나가 프리셋 안에 있다(lib/stamp-caption.ts). */
+  captions?: CaptionItem[];
+  /** 개발 중에만 쓰던 문구 하나짜리 형식(2026-10-04). 읽을 때 captions로 바꾼다. */
+  captionOffset?: { x: number; y: number };
+  captionScale?: number;
+  /** 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 숨기지 않는다. */
+  hidden?: boolean;
 };
 
 export const IDENTITY_STAMP: StampConfig = {
@@ -88,6 +102,8 @@ export const IDENTITY_STAMP: StampConfig = {
   placeName: '',
   position: { x: 0, y: 0 },
   scale: 1,
+  captions: [],
+  hidden: false,
 };
 
 // route-rendering FRD §7-5: 인스타 스토리에서 안 가려지는 영역. 원래 상단 14%·하단 20%
@@ -235,6 +251,12 @@ type Props = {
   playing?: boolean;
   /** 편집 중과 저장 후에 동일한 캔버스 절대 위치로 표시한다. */
   stampPositionShared?: { x: SharedValue<number>; y: SharedValue<number> };
+  /** 스토리형 편집(2026-10-04): 끌고 있는 문구의 자리. stampPositionShared와 같이 준다. */
+  captionPositionShared?: { x: SharedValue<number>; y: SharedValue<number> };
+  /** 끌고 있는 문구. 자기 레이어에서 captionPositionShared로 옮기고 점선을 그린다. */
+  activeCaptionId?: string | null;
+  /** 고쳐 쓰고 있는 문구. 편집 화면이 따로 보여 주므로 여기서는 그리지 않는다. */
+  hiddenCaptionId?: string | null;
 };
 
 // 애니메이션 중(최대 60fps)마다 불리므로 SVG 문자열을 만들었다가 다시 파싱하는
@@ -269,6 +291,9 @@ export function RoutePreview({
   drawingSelected = false,
   playing = true,
   stampPositionShared,
+  captionPositionShared,
+  activeCaptionId = null,
+  hiddenCaptionId = null,
 }: Props) {
   const isFocused = useIsFocused();
   const [appState, setAppState] = useState(AppState.currentState);
@@ -394,9 +419,15 @@ export function RoutePreview({
     { translateX: (stampPositionX?.value ?? 0) * fitScale },
     { translateY: (stampPositionY?.value ?? 0) * fitScale },
   ] }));
-  const renderedStampConfig = useMemo(() => stampPositionX && stampPositionY
-    ? { ...stampConfig, position: { x: 0, y: 0 } } : stampConfig,
-  [stampConfig, stampPositionX, stampPositionY]);
+  const captionPositionX = captionPositionShared?.x;
+  const captionPositionY = captionPositionShared?.y;
+  const captionPositionStyle = useAnimatedStyle(() => ({ transform: [
+    { translateX: (captionPositionX?.value ?? 0) * fitScale },
+    { translateY: (captionPositionY?.value ?? 0) * fitScale },
+  ] }));
+  // 편집 화면은 러닝 데이터와 문구 레이어를 각자의 SharedValue로 옮긴다. 그때는 자리를
+  // 0으로 계산하고 레이어 변형이 절대 위치를 맡는다. 다른 화면은 저장된 자리로 한 번에 그린다.
+  const splitLayers = !!stampPositionShared && !!captionPositionShared;
 
   if (projected.length < 2 || fitScale <= 0) return <View style={{ width: viewWidth, height: viewHeight }} />;
 
@@ -418,7 +449,21 @@ export function RoutePreview({
 
   // 2026-09-16 결정 — 하나의 큰 envelope 대신, 서로 떨어진 항목 덩어리마다 각자의
   // 점선 박스를 그린다(computeStampHitRects, 코너·레일 등에서 특히 차이가 크다).
-  const stampHitRects = stampSelected ? computeStampHitRects(run, renderedStampConfig) : [];
+  const stampHitRects = stampSelected ? computeStampHitRects(run, stampConfig, splitLayers) : [];
+  const activeCaption = splitLayers && activeCaptionId ? activeCaptionId : undefined;
+  const excludeCaptionIds = [activeCaption, hiddenCaptionId ?? undefined].filter((id): id is string => !!id);
+  const activeCaptionRects = activeCaption
+    ? computeCaptionHitRects(run, stampConfig, { captionId: activeCaption, zeroOffsets: true }).map(hit => hit.rect) : [];
+  const dashedBoxes = (boxes: CanvasRect[]) => boxes.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
+    <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
+      {boxes.map((box, i) => (
+        <SvgRect key={i} x={box.x} y={box.y} width={box.width} height={box.height}
+          rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
+      ))}
+    </G>
+  </Svg>;
+  const layerStyle = { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight } as const;
+  const fitProps = { fitScale, offsetX, offsetY, viewWidth, viewHeight };
 
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
@@ -443,24 +488,27 @@ export function RoutePreview({
         </Svg>
       )}
 
-      {/* 러닝 데이터와 선택 박스가 같은 절대 위치 변형을 공유한다. */}
-      <Reanimated.View
-        pointerEvents="none"
-        style={[
-          { position: 'absolute', top: 0, left: 0, width: viewWidth, height: viewHeight },
-          stampPositionStyle,
-        ]}>
-        <StampPreviewLayer run={run} config={renderedStampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
-          fitScale={fitScale} offsetX={offsetX} offsetY={offsetY} viewWidth={viewWidth} viewHeight={viewHeight} />
-        {stampHitRects.length > 0 && <Svg width={viewWidth} height={viewHeight} style={{ position: 'absolute' }}>
-          <G transform={`translate(${offsetX} ${offsetY}) scale(${fitScale})`}>
-            {stampHitRects.map((box, i) => (
-              <SvgRect key={i} x={box.x} y={box.y} width={box.width} height={box.height}
-                rx={16} stroke={GLOW} strokeWidth={3} strokeDasharray="10,8" fill="none" />
-            ))}
-          </G>
-        </Svg>}
-      </Reanimated.View>
+      {/* 러닝 데이터와 선택 박스가 같은 절대 위치 변형을 공유한다. 문구도 자기 레이어에서 같은 방식이다. */}
+      {splitLayers ? <>
+        <Reanimated.View pointerEvents="none" style={[layerStyle, stampPositionStyle]}>
+          <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+            options={{ part: 'items', zeroOffsets: true }} {...fitProps} />
+          {dashedBoxes(stampHitRects)}
+        </Reanimated.View>
+        {/* 가만히 있는 문구들은 저장된 자리에 그대로 그린다. 끌고 있는 문구만 자기 레이어로 옮긴다. */}
+        <View pointerEvents="none" style={layerStyle}>
+          <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+            options={{ part: 'caption', excludeCaptionIds }} {...fitProps} />
+        </View>
+        {activeCaption && <Reanimated.View pointerEvents="none" style={[layerStyle, captionPositionStyle]}>
+          <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+            options={{ part: 'caption', captionId: activeCaption, zeroOffsets: true }} {...fitProps} />
+          {dashedBoxes(activeCaptionRects)}
+        </Reanimated.View>}
+      </> : <View pointerEvents="none" style={layerStyle}>
+        <StampPreviewLayer run={run} config={stampConfig} progressFraction={stampProgressFraction} paceTimeline={paceTimeline}
+          options={{ excludeCaptionIds: hiddenCaptionId ? [hiddenCaptionId] : undefined }} {...fitProps} />
+      </View>}
     </View>
   );
 }
@@ -1035,6 +1083,8 @@ type StampTextDescriptor = {
   /** 실물 사진 참고(2026-09-02): "TIME"·"08.21" 같은 라벨/날짜는 값보다 흐리게 — 카드·분할·
    * 격자 프리셋에서 라벨과 값을 구분하는 데 쓴다. row/hero/stack엔 없음(전부 밝은 톤). */
   muted?: boolean;
+  /** 프리셋과 상관없이 옅은 그림자로 그린다. 자유 문구가 쓴다. */
+  softShadow?: boolean;
 };
 
 /** 카드·격자 프리셋의 통계 칸 위 라벨. */
@@ -1081,7 +1131,102 @@ function splitHeroValue(text: string, size: number): StampTextPart[] {
 // StampLayerSvg(그리기)와 computeStampBounds(탭 히트테스트·선택 박스)가 같은 좌표
 // 계산을 나눠 갖고 있으면 둘이 조용히 어긋나기 쉬워서, 실제 위치·크기 계산은 여기
 // 한 곳에만 두고 둘 다 이 함수를 부른다(2026-09-02, 각인 탭-선택 기능 추가하며 분리).
+//
+// 스토리형 편집(2026-10-04)부터 문구는 인스타처럼 화면에 바로 쓰는 글자다. 러닝 데이터 프리셋과
+// 상관없고 여러 개다. 프리셋 배치(stampLayoutPass)는 문구 없이 돌리고, 문구는 화면 가운데를
+// 기준으로 하나씩 놓는다(freeCaptionNodes). 옛 저장분은 문구가 프리셋 안에 있던 모습 그대로
+// 그린다. 보관함 썸네일이 바뀌지 않게 하려는 것이다. RouteRendererModule.swift drawStamps도 같다.
+type StampPart = 'all' | 'items' | 'caption';
+type StampDescriptorOptions = {
+  part?: StampPart;
+  /** 편집 화면은 끄는 동안 레이어를 통째로 옮긴다(SharedValue). 그때는 러닝 데이터 자리를 0으로 계산한다. */
+  zeroOffsets?: boolean;
+  /** 이 문구만. zeroOffsets면 이 문구도 자리를 0으로 계산한다(끌고 있는 문구). */
+  captionId?: string;
+  /** 이 문구들은 빼고. 끌고 있거나 고쳐 쓰고 있는 문구다. */
+  excludeCaptionIds?: string[];
+};
+const ZERO_OFFSET = { x: 0, y: 0 };
+const EMPTY_STAMP = { texts: [] as StampTextDescriptor[], rects: [] as StampRectDescriptor[] };
+const isCaptionNode = (node: StampTextDescriptor) => node.key.startsWith('caption-');
+
 function stampLayoutDescriptors(
+  run: RunRecord,
+  config: StampConfig,
+  progressFraction: number,
+  paceSeconds = run.averagePaceSecPerKm,
+  { part = 'all', zeroOffsets = false, captionId, excludeCaptionIds }: StampDescriptorOptions = {}
+): { texts: StampTextDescriptor[]; rects: StampRectDescriptor[] } {
+  const wantItems = part !== 'caption' && !config.hidden;
+  const wantCaption = part !== 'items';
+  const itemPosition = zeroOffsets ? ZERO_OFFSET : config.position;
+  if (!isFreeCaption(config)) {
+    const all = stampLayoutPass(run, { ...config, position: itemPosition }, progressFraction, paceSeconds);
+    return {
+      texts: all.texts.filter(node => isCaptionNode(node) ? wantCaption : wantItems),
+      rects: wantItems ? all.rects : [],
+    };
+  }
+  const items = wantItems
+    ? stampLayoutPass(run, { ...config, caption: '', position: itemPosition }, progressFraction, paceSeconds)
+    : EMPTY_STAMP;
+  const captions = !wantCaption ? [] : captionItems(config)
+    .filter(item => (captionId === undefined || item.id === captionId) && !excludeCaptionIds?.includes(item.id));
+  const captionTexts = captions.flatMap(item =>
+    freeCaptionNodes(config, item, progressFraction, zeroOffsets && captionId !== undefined));
+  return { texts: [...items.texts, ...captionTexts], rects: items.rects };
+}
+
+// 문구 하나. 가운데 정렬이고, 여러 줄이면 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는
+// 기준선보다 글자 크기의 0.35배 위로 본다. Swift drawFreeCaptions와 같은 식이다.
+function freeCaptionNodes(config: StampConfig, item: CaptionItem, progressFraction: number, zeroOffset: boolean): StampTextDescriptor[] {
+  if (config.mode === 'hidden' || (config.mode === 'after' && progressFraction < 1)) return [];
+  const text = normalizeCaption(item.text);
+  if (!text.trim()) return [];
+  const { size, lineHeight } = freeCaptionMetrics(item.scale);
+  const lines = freeCaptionLines(text, item.scale);
+  const offset = zeroOffset ? ZERO_OFFSET : item.offset;
+  const centerX = CANVAS_WIDTH / 2 + offset.x;
+  const top = CANVAS_HEIGHT / 2 + offset.y - (lines.length * lineHeight) / 2;
+  return lines.map((line, i) => ({
+    key: `caption-${item.id}-${i}`,
+    x: centerX,
+    y: top + (i + 0.5) * lineHeight + size * 0.35,
+    size,
+    family: 'NotoSansKR_700Bold',
+    text: line,
+    anchor: 'middle',
+    softShadow: true,
+  }));
+}
+
+/**
+ * 옛 저장분의 문구를 화면에 바로 쓰는 문구로 바꾼다. 프리셋이 놓았던 자리와 크기 근처에 둔다.
+ * 글꼴만 문구 글꼴로 바뀐다(2026-10-04 사용자 결정). 편집 화면에 들어올 때 한 번 부른다.
+ */
+export function migrateLegacyCaption(run: RunRecord | null, config: StampConfig): StampConfig {
+  if (config.captions) return config;
+  const clean = { ...config, caption: '', captionOffset: undefined, captionScale: undefined };
+  // 개발 중 쓰던 문구 하나짜리 형식.
+  if (config.captionOffset !== undefined) return { ...clean, captions: captionItems(config) };
+  const text = normalizeCaption(config.caption ?? '');
+  if (!run || !text.trim()) return { ...clean, captions: [] };
+  const old = stampLayoutPass(run, config, 1).texts.filter(isCaptionNode);
+  if (old.length === 0) return { ...clean, captions: [] };
+  const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(old, [], false));
+  const scale = Math.min(3, Math.max(1 / 3, old[0].size / freeCaptionMetrics(1).size));
+  return {
+    ...clean,
+    captions: [{
+      id: 'caption-0',
+      text: config.caption,
+      offset: { x: (left + right) / 2 - CANVAS_WIDTH / 2, y: (top + bottom) / 2 - CANVAS_HEIGHT / 2 },
+      scale,
+    }],
+  };
+}
+
+function stampLayoutPass(
   run: RunRecord,
   config: StampConfig,
   progressFraction: number,
@@ -1623,7 +1768,8 @@ export function StampLayerSvg({
           strokeWidth={r.stroke ? 1 : undefined}
         />
       ))}
-      <StampTextsSvg texts={texts} softShadow={softShadow} />
+      <StampTextsSvg texts={texts.filter(n => !n.softShadow)} softShadow={softShadow} />
+      <StampTextsSvg texts={texts.filter(n => n.softShadow)} softShadow />
     </>
   );
 }
@@ -1668,7 +1814,7 @@ function stampTextViewport(node: StampTextDescriptor): CanvasRect {
 
 function sameStampText(a: StampTextDescriptor, b: StampTextDescriptor) {
   return a.key === b.key && a.x === b.x && a.y === b.y && a.size === b.size && a.family === b.family
-    && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted
+    && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted && a.softShadow === b.softShadow
     && a.parts?.length === b.parts?.length
     && (a.parts?.every((part, i) => part.text === b.parts?.[i].text && part.size === b.parts?.[i].size) ?? true);
 }
@@ -1704,22 +1850,25 @@ const StampPreviewShapes = memo(function StampPreviewShapes({ rects, fitScale, o
   </Svg>;
 });
 
-function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], ...fit }:
-  { run: RunRecord; config: StampConfig; progressFraction: number; paceTimeline?: number[] } & StampPreviewFit) {
-  const finalLayout = useMemo(() => stampLayoutDescriptors(run, config, 1), [run, config]);
+function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], options = {}, ...fit }:
+  { run: RunRecord; config: StampConfig; progressFraction: number; paceTimeline?: number[]; options?: StampDescriptorOptions }
+  & StampPreviewFit) {
+  const optionsKey = JSON.stringify(options);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const finalLayout = useMemo(() => stampLayoutDescriptors(run, config, 1, undefined, options), [run, config, optionsKey]);
   const viewports = useMemo(() => new Map(finalLayout.texts.map(node => {
     const viewport = stampTextViewport(node);
     // 구간 페이스가 평균보다 자릿수가 길어져도 그림자/글자가 잘리지 않게 한다.
     return [node.key, { ...viewport, x: viewport.x - node.size, width: viewport.width + node.size * 2 }];
   })), [finalLayout]);
   const { texts, rects } = stampLayoutDescriptors(run, config, progressFraction,
-    paceAtProgress(paceTimeline, progressFraction, run.averagePaceSecPerKm));
+    paceAtProgress(paceTimeline, progressFraction, run.averagePaceSecPerKm), options);
   if (!texts.length && !rects.length) return null;
   const softShadow = !['row', 'hero'].includes(config.layout ?? 'row');
   return <>
     <StampPreviewShapes rects={finalLayout.rects} {...fit} />
     {texts.map(node => <StampPreviewText key={node.key} node={node} viewport={viewports.get(node.key)!}
-      softShadow={softShadow} fitScale={fit.fitScale} offsetX={fit.offsetX} offsetY={fit.offsetY} />)}
+      softShadow={node.softShadow ?? softShadow} fitScale={fit.fitScale} offsetX={fit.offsetX} offsetY={fit.offsetY} />)}
   </>;
 }
 
@@ -1834,8 +1983,9 @@ export function computeStampBounds(run: RunRecord, config: StampConfig, forThumb
 
 // 항목 간 거리가 가까워도 합치지 않는다. 연쇄 병합은 코너의 거리와 오른쪽
 // 통계, 스탯바의 구분선 사이 빈 공간까지 큰 선택 사각형으로 만들었다.
-export function computeStampHitRects(run: RunRecord, config: StampConfig): CanvasRect[] {
-  const { texts, rects } = stampLayoutDescriptors(run, config, 1);
+export function computeStampHitRects(run: RunRecord, config: StampConfig, zeroOffsets = false): CanvasRect[] {
+  // 문구는 따로 잡는다(computeCaptionHitRect).
+  const { texts, rects } = stampLayoutDescriptors(run, config, 1, undefined, { part: 'items', zeroOffsets });
   const groups = new Map<string, CanvasRect[]>();
   texts.forEach((text) => {
     // 같은 항목의 이름과 값만 묶고 강조값·날짜·문구는 독립적으로 둔다.
@@ -1862,6 +2012,23 @@ export function computeStampHitRects(run: RunRecord, config: StampConfig): Canva
     width: region.width + padding * 2,
     height: region.height + padding * 2,
   }));
+}
+
+/** 문구마다 감싸는 탭 영역. 나중에 넣은(위에 그려진) 문구가 뒤에 온다. 옛 저장분은 id가 'legacy'다. */
+export function computeCaptionHitRects(run: RunRecord, config: StampConfig, options: StampDescriptorOptions = {}): { id: string; rect: CanvasRect }[] {
+  const { texts } = stampLayoutDescriptors(run, config, 1, undefined, { ...options, part: 'caption' });
+  const groups = new Map<string, StampTextDescriptor[]>();
+  for (const node of texts) {
+    // caption-<id>-<줄>. 옛 저장분은 caption-<줄>이라 하나로 묶는다.
+    const match = node.key.match(/^caption-(.+)-\d+$/);
+    const id = isFreeCaption(config) && match ? match[1] : 'legacy';
+    groups.set(id, [...(groups.get(id) ?? []), node]);
+  }
+  const padding = 16;
+  return Array.from(groups, ([id, nodes]) => {
+    const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(nodes, [], false));
+    return { id, rect: { x: left - padding, y: top - padding, width: right - left + padding * 2, height: bottom - top + padding * 2 } };
+  });
 }
 
 // route-thumbnail.tsx가 예전 이름으로 import 하던 것과의 호환.

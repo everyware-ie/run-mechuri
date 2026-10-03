@@ -68,6 +68,13 @@ export type RenderClipOptions = {
   caption: string;
   /** 미리보기와 공유하는 자동/직접 줄바꿈 결과. 원문 저장과는 별개다. */
   captionLines?: string[];
+  /** 스토리형 편집(2026-10-04): 참이면 문구는 화면에 바로 쓰는 글자들(freeCaptions)이다. 거짓이면
+   * 옛 저장분이라 문구(caption) 하나가 러닝 데이터 프리셋 안에 있다. */
+  captionFree?: boolean;
+  /** 자리는 화면 가운데로부터의 오프셋(캔버스 px), scale은 문구 기본 크기에 곱한다. */
+  freeCaptions?: { lines: string[]; x: number; y: number; scale: number }[];
+  /** 러닝 데이터를 숨겼는지. 문구는 남는다. */
+  stampHidden?: boolean;
   /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */
   placeName: string;
   /** '날짜' 각인 값 계산용 — 러닝한 날 (ISO). */

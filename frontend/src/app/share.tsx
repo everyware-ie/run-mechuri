@@ -11,7 +11,8 @@ import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
-import { captionLines } from '@/lib/caption-layout';
+import { captionLines, freeCaptionLines } from '@/lib/caption-layout';
+import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -141,6 +142,11 @@ export default function ShareScreen() {
       stampScale: draft.stampConfig.scale ?? 1,
       caption: draft.stampConfig.caption ?? '',
       captionLines: captionLines(draft.stampConfig.caption ?? '', draft.stampConfig),
+      captionFree: isFreeCaption(draft.stampConfig),
+      freeCaptions: captionItems(draft.stampConfig).map((item) => ({
+        lines: freeCaptionLines(item.text, item.scale), x: item.offset.x, y: item.offset.y, scale: item.scale,
+      })),
+      stampHidden: draft.stampConfig.hidden ?? false,
       placeName: draft.stampConfig.placeName ?? '',
       runDate: selectedRun.date,
       distanceMeters: selectedRun.distanceMeters,

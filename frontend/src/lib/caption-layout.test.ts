@@ -109,3 +109,10 @@ describe('limitCaptionInput (§ "붙여넣기는 삽입 구간만 줄이고 기�
     expect(captionLines(result.text, c).length).toBeLessThanOrEqual(CAPTION_MAX_LINES);
   });
 });
+
+describe('captionMetrics one-line size', () => {
+  // route-preview.tsx와 RouteRendererModule.swift의 원라인 문구 크기(22)와 같아야 줄바꿈·줄 간격이 맞는다.
+  it('matches the 22pt one-line caption the preview and renderer draw', () => {
+    expect(captionMetrics(config({ layout: 'line' })).size).toBeCloseTo(22 * 3.6);
+  });
+});
