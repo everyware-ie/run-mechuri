@@ -60,6 +60,7 @@
 | `src/lib/stamp-caption.ts` | 자유 문구인지, 자리·크기 |
 | `src/components/route-preview.tsx` | `stampLayoutDescriptors`가 프리셋 배치와 자유 문구(`freeCaptionNodes`)를 따로 만든다. 옛 저장분 바꾸기 `migrateLegacyCaption`. 탭 영역 `computeStampHitRects`(문구 제외), `computeCaptionHitRect` |
 | `modules/route-renderer/ios/RouteRendererModule.swift` | `drawStamps`가 자유 문구면 프리셋 배치(`drawStampPass`)와 `drawFreeCaption`을 따로, 옛 저장분이면 한 번에 그린다 |
+| `src/lib/edit-gesture.ts` | 손가락을 댄 곳에 따라 무엇을 움직이고 탭하면 무엇을 하는지. 화면 좌표 계산은 edit.tsx가 한다 |
 | `src/lib/edit-history.ts` | 되돌리기 기록 |
 | `src/components/vertical-slider.tsx` | 왼쪽 세로 크기 슬라이더 |
 | `src/app/background-selection.tsx` | `pick` 파라미터로 갤러리·카메라를 바로 연다 |
@@ -87,5 +88,6 @@
 ## 어긋남 기록
 
 - **원라인 문구 크기 (2026-10-04 코드 검토).** 9/16에 원라인 문구를 26→22로 줄일 때 미리보기·결과 영상은 바꿨는데 줄바꿈 계산(`caption-layout.ts`)만 26으로 남아 있었다. 두 줄 이상이면 미리보기의 줄 간격이 결과 영상보다 넓고 줄도 일찍 바뀌었다. 22로 맞추고 테스트를 더했다. FRD와는 상관없는 구현끼리의 어긋남이다
+- **선택과 끌기 (2026-10-04).** "러닝 데이터를 선택했는데 경로가 움직인다". 탭으로 선택되게 바꾼 뒤에도 끌기는 손가락이 닿은 곳만 봐서, 글자 사이를 짚으면 경로가 움직였다. 규칙 두 개(손댄 것을 만진다, 탭하면 선택한다)를 따로 바꾸면서 둘의 관계를 놓쳤다. 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직이게 하고, **조작 규칙을 `lib/edit-gesture.ts`의 순수 함수로 떼어 조합별 테스트(10개)를 붙였다.** 조작 규칙을 바꾸면 이 테스트부터 고친다
 - **경로 그림 탭 (2026-10-04).** 탭하면 아무 일이 없었는데 "경로는 선택이 안 된다"는 지적을 받았다. 경로 그림 영역(점선 상자, `computeRouteLocalBounds`)을 지금 위치·회전·크기로 되돌려 판정하고, 안이면 경로 시트를 연다. 끌기는 그대로 글자가 아닌 곳 어디서나 경로 그림을 움직인다
 - **러닝 데이터 탭 (2026-10-04).** 결정문 7번대로 탭하면 다음 프리셋으로 넘어가게 만들었는데, 실기기에서 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을 받았다. 탭하면 러닝 데이터 시트를 열어 선택하도록 바꾸고, FRD §4-1·§7과 결정문에 개정을 덧붙였다.

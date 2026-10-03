@@ -48,6 +48,7 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
 import { CAPTION_MAX_LINES, captionLines, limitCaptionInput } from '@/lib/caption-layout';
 import { saveDraft } from '@/lib/draft-store';
+import { dragTargetFor, selectedTarget, tapActionFor, type EditTarget, type TextHit } from '@/lib/edit-gesture';
 import { isCaptionOnlyChange, pushHistory, type EditSnapshot } from '@/lib/edit-history';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
@@ -86,7 +87,7 @@ const TOOLS: { id: Tool; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'caption', label: '문구', symbol: 'textformat' },
 ];
 
-type DragTarget = 'route' | 'stamp' | 'caption';
+type DragTarget = EditTarget;
 // 크기 슬라이더 범위(%). 1/3배~3배로 대칭이라 기본 크기(100%)가 슬라이더 가운데에 온다.
 // 러닝 데이터·문구는 핀치도 같은 범위다. 경로 그림은 FRD가 상한을 두지 않아(§4-4) 핀치로는
 // 더 키울 수 있다.
@@ -386,16 +387,18 @@ export default function EditScreen() {
   const dragTargetRef = useRef<DragTarget>('route');
   const gestureMovedRef = useRef(false);
 
-  // §4-1: 겹친 곳은 문구 > 러닝 데이터 > 경로 그림 순으로 잡는다. 글자가 아닌 곳은 전부 경로 그림이다.
-  const hitTarget = (canvasX: number, canvasY: number): DragTarget => {
+  // §4-1: 손가락이 닿은 글자. 겹친 곳은 문구가 러닝 데이터보다 위다. 무엇을 움직이고 탭하면 무엇을
+  // 할지는 lib/edit-gesture.ts가 정한다.
+  const textHitAt = (canvasX: number, canvasY: number): TextHit => {
     const run = selectedRunRef.current;
     const config = stampConfigRef.current;
-    if (!run) return 'route';
+    if (!run) return null;
     const caption = computeCaptionHitRect(run, config);
     if (caption && contains(caption, canvasX, canvasY)) return 'caption';
     if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return 'stamp';
-    return 'route';
+    return null;
   };
+  const textHitRef = useRef<TextHit>(null);
 
   // 경로 그림을 탭했는지. 끌기는 글자가 아닌 곳 어디서나 경로 그림을 움직이지만, 탭은 경로 그림의
   // 영역(점선 상자) 안일 때만 경로 시트를 연다. 그 밖의 빈 곳을 탭하면 열린 시트를 닫는다.
@@ -448,11 +451,10 @@ export default function EditScreen() {
   // §4-1: 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를 탭하면
   // 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을, 경로 그림을 탭해도
   // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
-  const handleTap = (target: DragTarget) => {
-    if (target === 'caption') openTool('caption');
-    else if (target === 'stamp') openTool('stamp');
-    else if (isOnRoute(tapPointRef.current)) openTool('route');
-    else if (toolRef.current) closeTool();
+  const handleTap = () => {
+    const action = tapActionFor(textHitRef.current, isOnRoute(tapPointRef.current), toolRef.current !== null);
+    if (action.kind === 'open') openTool(action.target);
+    else if (action.kind === 'close') closeTool();
   };
 
   const panResponder = useRef(
@@ -466,7 +468,9 @@ export default function EditScreen() {
         gestureFitScaleRef.current = fitScale;
         const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
         tapPointRef.current = { x: (touch.locationX - offsetX) / fitScale, y: (touch.locationY - offsetY) / fitScale };
-        const target = hitTarget(tapPointRef.current.x, tapPointRef.current.y);
+        textHitRef.current = textHitAt(tapPointRef.current.x, tapPointRef.current.y);
+        // 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다(선택된 러닝 데이터를 끌다 경로가 움직이지 않게).
+        const target = dragTargetFor(textHitRef.current, selectedTarget(toolRef.current));
         dragTargetRef.current = target;
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
@@ -549,7 +553,7 @@ export default function EditScreen() {
         endGesture();
         const target = dragTargetRef.current;
         if (!gestureMovedRef.current && !wasPinching) {
-          handleTap(target);
+          handleTap();
           return;
         }
         commitGesture(target, over);
