@@ -277,6 +277,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ### 제출 상태
 
 - [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/4cadc4ed-dbef-4915-a892-c374655406b0): 2026-10-03 Apple 업로드 완료.
+- 2026-10-03 Apple 조회에서 빌드 `26`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. **등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.** 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
 - **내부 테스터에게만 배포한다.** 공개 링크는 빌드 25 그대로다.
 
 ### 공개 링크는 아직 25다
