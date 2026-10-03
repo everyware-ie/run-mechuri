@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
@@ -135,7 +136,6 @@ export default function EditScreen() {
   const toolRef = useRef<Tool | null>(null);
   const [stampTab, setStampTab] = useState<'layout' | 'items'>('layout');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [sheetHeight, setSheetHeight] = useState(0);
   const [applyingBackground, setApplyingBackground] = useState<string | null>(null);
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -389,10 +389,20 @@ export default function EditScreen() {
     const offset = { x: captionPositionX.value, y: captionPositionY.value };
     updateCaptions((items) => items.map((c) => c.id === id ? { ...c, offset } : c));
   };
+  // §7-2: 숨기거나 지운 직후 잠깐 되돌리기 안내를 띄운다. 실수해도 바로 되돌릴 수 있게 한다.
+  const [undoToast, setUndoToast] = useState<string | null>(null);
+  const undoToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showUndoToast = (message: string) => {
+    if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
+    setUndoToast(message);
+    undoToastTimerRef.current = setTimeout(() => setUndoToast(null), 3500);
+  };
+  useEffect(() => () => { if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current); }, []);
   // §7-2: 문구는 아래 휴지통에 놓으면 지운다.
   const deleteCaption = (id: string) => {
     flushPendingStampConfig();
     updateCaptions((items) => items.filter((c) => c.id !== id));
+    showUndoToast('문구를 지웠어요');
   };
   // §7-2: 숨기기 자리에 놓으면 숨긴다. 숨기기 전 자리는 그대로 둔다. 다시 열면 그 자리로 돌아온다.
   const hideStamp = () => {
@@ -401,6 +411,7 @@ export default function EditScreen() {
     stampPositionX.set(position.x);
     stampPositionY.set(position.y);
     commitStamp({ ...stampConfigRef.current, position, hidden: true });
+    showUndoToast('러닝 데이터를 숨겼어요');
   };
 
   // panResponder는 첫 렌더에서 한 번 만들어져 클로저가 고정되므로 바뀌는 값은 ref로 읽는다.
@@ -447,15 +458,18 @@ export default function EditScreen() {
     return Math.abs(localX - bounds.cx) <= bounds.width / 2 && Math.abs(localY - bounds.cy) <= bounds.height / 2;
   };
 
-  // 숨기기 자리의 화면 좌표. 시트가 열려 있으면 시트 위에 놓는다.
-  const hideZoneBottom = tool ? sheetHeight + keyboardHeight + 12 : insets.bottom + BOTTOM_BAR_HEIGHT + 8;
-  const hideZoneCenterRef = useRef({ x: 0, y: 0 });
+  // §7-2 숨기기·지우기 자리는 결과물 밖, 맨 아래 띠(평소 완료 버튼 자리) 가운데에 둔다. 실기기 확인
+  // (2026-10-04)에서 "위치를 움직이다가 사라지게 만드는 경우가 꽤 있을 것"이라는 지적을 받았다. 예전에는
+  // 결과물 안(시트가 열려 있으면 시트 바로 위)에 나와, 아래쪽 프리셋을 옮기다 지나가기 쉬웠다. 이제
+  // 손가락이 결과물 아래 띠까지 내려가야만 숨겨진다.
+  const hideZoneBottom = insets.bottom + (BOTTOM_BAR_HEIGHT - HIDE_ZONE) / 2;
+  const hideZoneRef = useRef({ centerX: 0, barTop: 0 });
   useEffect(() => {
-    hideZoneCenterRef.current = { x: window.width / 2, y: window.height - hideZoneBottom - HIDE_ZONE / 2 };
-  }, [window.width, window.height, hideZoneBottom]);
+    hideZoneRef.current = { centerX: window.width / 2, barTop: window.height - insets.bottom - BOTTOM_BAR_HEIGHT };
+  }, [window.width, window.height, insets.bottom]);
   const isOverHideZone = (touch: { pageX: number; pageY: number }) => {
-    const center = hideZoneCenterRef.current;
-    return Math.hypot(touch.pageX - center.x, touch.pageY - center.y) < HIDE_ZONE;
+    const { centerX, barTop } = hideZoneRef.current;
+    return touch.pageY >= barTop && Math.abs(touch.pageX - centerX) < HIDE_ZONE * 1.2;
   };
 
   // §1: 시트는 아래로 끌어서도 닫는다. 손가락을 따라 내려가다가 충분히 내리거나 빠르게 밀면 닫히고,
@@ -479,6 +493,16 @@ export default function EditScreen() {
     },
     onPanResponderTerminate: () => Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
   })).current;
+
+  // §7-2: 끄는 동안은 시트를 아래로 치워 결과물 전체를 보이게 한다. 손을 떼면 다시 올라온다.
+  const sheetAway = dragging !== null && tool !== null;
+  useEffect(() => {
+    Animated.timing(sheetDragY, {
+      toValue: sheetAway ? sheetHeightRef.current + 24 : 0,
+      duration: sheetAway ? 140 : 180,
+      useNativeDriver: true,
+    }).start();
+  }, [sheetAway, sheetDragY]);
 
   const openTool = (next: Tool) => {
     Keyboard.dismiss();
@@ -582,6 +606,8 @@ export default function EditScreen() {
             if (over !== overHideZoneRef.current) {
               overHideZoneRef.current = over;
               setOverHideZone(over);
+              // 들어가는 순간 한 번 진동해 "지금 놓으면 숨겨진다"를 손으로 알린다.
+              if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             }
           }
           return;
@@ -870,9 +896,10 @@ export default function EditScreen() {
           )}
         </View>
         <View style={styles.bottomBar}>
-          <Pressable onPress={handleDone} style={styles.doneButton} accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로">
+          {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
+          {dragging === null && <Pressable onPress={handleDone} style={styles.doneButton} accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로">
             <Text style={styles.doneText}>완료</Text>
-          </Pressable>
+          </Pressable>}
         </View>
       </SafeAreaView>
 
@@ -885,10 +912,7 @@ export default function EditScreen() {
       {tool && <Animated.View {...sheetPanResponder.panHandlers}
         style={[styles.sheet, { bottom: keyboardHeight, paddingBottom: keyboardHeight > 0 ? Spacing.sm : insets.bottom + Spacing.sm,
           transform: [{ translateY: sheetDragY }] }]}
-        onLayout={(e) => {
-          sheetHeightRef.current = e.nativeEvent.layout.height;
-          setSheetHeight(e.nativeEvent.layout.height);
-        }}>
+        onLayout={(e) => { sheetHeightRef.current = e.nativeEvent.layout.height; }}>
         <View style={styles.sheetGrabber} accessible={false} />
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{TOOLS.find((t) => t.id === tool)?.label}</Text>
@@ -995,6 +1019,14 @@ export default function EditScreen() {
         </>}
       </Animated.View>}
 
+      {undoToast && dragging === null && !tool && <View style={[styles.toast, { bottom: insets.bottom + BOTTOM_BAR_HEIGHT + 8 }]}
+        accessibilityLiveRegion="polite">
+        <Text style={styles.toastText}>{undoToast}</Text>
+        <Pressable onPress={() => { setUndoToast(null); handleUndo(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="되돌리기">
+          <Text style={styles.toastAction}>되돌리기</Text>
+        </Pressable>
+      </View>}
+
       {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
         fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
         limited={editingCaption.limited} onChangeText={handleEditingText} onScaleChange={handleEditingScale}
@@ -1033,6 +1065,13 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG, borderWidth: 1, borderColor: Colors.borderStrong,
   },
   hideZoneOn: { backgroundColor: Colors.accent, borderColor: Colors.accent, transform: [{ scale: 1.15 }] },
+  toast: {
+    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 22, backgroundColor: 'rgba(20,24,29,0.95)',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  toastText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
+  toastAction: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.accent },
   sheet: {
     position: 'absolute', left: 0, right: 0, paddingHorizontal: 20, paddingTop: 12, gap: 10,
     backgroundColor: Colors.bgCard, borderTopLeftRadius: Radius.pill, borderTopRightRadius: Radius.pill,
