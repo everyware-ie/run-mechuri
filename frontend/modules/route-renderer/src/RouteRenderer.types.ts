@@ -68,7 +68,9 @@ export type RenderClipOptions = {
   caption: string;
   /** 미리보기와 공유하는 자동/직접 줄바꿈 결과. 원문 저장과는 별개다. */
   captionLines?: string[];
-  /** 스토리형 편집(2026-10-04): 문구 자리·크기. 러닝 데이터와 같으면 붙어 있는 것으로 보고 한 번에 그린다. */
+  /** 스토리형 편집(2026-10-04): 참이면 자유 문구다. 화면 가운데에서 captionX·captionY만큼 옮긴 자리에
+   * captionScale 크기로 그린다. 거짓이면 옛 저장분이라 문구가 러닝 데이터 프리셋 안에 있다. */
+  captionFree?: boolean;
   captionX?: number;
   captionY?: number;
   captionScale?: number;

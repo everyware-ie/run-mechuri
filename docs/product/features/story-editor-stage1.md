@@ -40,31 +40,26 @@
 
 ## 설계
 
-### 문구를 러닝 데이터에서 떼는 방법
+### 자유 문구
 
-**문구는 러닝 데이터 프리셋 여섯 개의 배치 계산 안에 들어 있다.** 프리셋마다 문구 자리가 다르고, 글래스는 카드 안에, 코너는 위쪽 머리글에 둔다. 미리보기(`stampLayoutDescriptors`)와 결과 영상(Swift `drawStamps`)이 같은 계산을 따로 갖고 있다.
+**문구는 러닝 데이터 프리셋과 상관없는 자유 문구다.** 화면 가운데에서 시작하고 가운데 정렬이다. 자리는 가운데로부터의 오프셋(`captionOffset`, 캔버스 px), 크기는 기본 크기(64px)에 곱하는 배율(`captionScale`)로 저장한다. 줄바꿈 폭은 좌우 여백(캔버스 8%) 안이다.
 
-그래서 배치 계산은 고치지 않고 **두 번 돌린다.**
+**러닝 데이터 프리셋 배치는 문구 없이 돌린다.** 프리셋 여섯 개의 배치 계산 안에는 문구 자리가 섞여 있다(글래스는 카드 안, 코너는 왼쪽 위). 그 계산에 빈 문구를 넣어 돌리면 문구 자리를 비우지 않고 배치된다. 미리보기(`stampLayoutDescriptors`)와 결과 영상(Swift `drawStamps`)이 같은 규칙이다.
 
-| 계산 | 위치·크기 | 쓰는 것 |
-|---|---|---|
-| 러닝 데이터 | `position`, `scale` | 문구를 뺀 나머지 |
-| 문구 | `captionOffset`, `captionScale` | 문구만 |
+**옛 저장분은 `captionOffset`이 없다.** 문구가 프리셋 안에 있던 모습 그대로 그린다. 보관함 썸네일이 바뀌지 않게 하려는 것이다. 편집 화면에 들어오면 `migrateLegacyCaption`이 프리셋이 놓았던 문구의 자리와 크기를 계산해 그 근처의 자유 문구로 바꾼다. 글꼴만 문구 글꼴(굵은 한글)로 바뀐다.
 
-**문구가 러닝 데이터와 붙어 있을 때**(두 위치와 크기가 같을 때)는 지금처럼 한 번에 계산한다. 글래스 카드 안의 문구처럼 지금 모습 그대로다. 둘 중 하나를 옮기거나 키우면 떨어진 것으로 보고, 러닝 데이터는 문구 자리를 비우지 않고 다시 배치한다. 글래스 카드가 문구 줄만큼 줄어드는 식이다.
+> 처음에는 옮기기·크기만 따로 하고 처음 자리·크기·글꼴은 프리셋을 따르게 했다("붙어 있으면 한 번에 배치"). 실기기에서 "문구를 러닝데이터 프리셋에 종속된 것이 아니라 디자인 시안대로 별도 문구를 자유롭게 넣는 형식으로"라는 요청을 받고 같은 날 지금 방식으로 바꿨다. 그 사이 개발용 앱으로 만든 초안의 문구는 자리가 다르게 보일 수 있다(개발 기기에서만).
 
-**옛 저장분은 문구 위치·크기가 없다.** 읽을 때 러닝 데이터의 위치·크기를 그대로 쓴다. 그래서 지금까지 만든 결과물을 다시 편집해도 문구가 제자리에 있다.
-
-**숨김은 러닝 데이터만 숨긴다.** 문구는 남는다. 붙어 있을 때 숨기면 문구는 원래 자리에 그대로 있다.
+**숨김은 러닝 데이터만 숨긴다.** 문구는 남는다.
 
 ## 코드 위치
 
 | | |
 |---|---|
 | `src/app/edit.tsx` | 화면 전체. 도구·시트·제스처·되돌리기·크기 슬라이더 |
-| `src/lib/stamp-caption.ts` | 문구 자리·크기, 붙어 있는지 판정, 옛 저장분 채우기 |
-| `src/components/route-preview.tsx` | `stampLayoutDescriptors`가 러닝 데이터와 문구를 따로 배치한다. 탭 영역 `computeStampHitRects`(문구 제외), `computeCaptionHitRect` |
-| `modules/route-renderer/ios/RouteRendererModule.swift` | `drawStamps`가 붙어 있는지 보고 `drawStampPass`를 한 번이나 두 번 부른다 |
+| `src/lib/stamp-caption.ts` | 자유 문구인지, 자리·크기 |
+| `src/components/route-preview.tsx` | `stampLayoutDescriptors`가 프리셋 배치와 자유 문구(`freeCaptionNodes`)를 따로 만든다. 옛 저장분 바꾸기 `migrateLegacyCaption`. 탭 영역 `computeStampHitRects`(문구 제외), `computeCaptionHitRect` |
+| `modules/route-renderer/ios/RouteRendererModule.swift` | `drawStamps`가 자유 문구면 프리셋 배치(`drawStampPass`)와 `drawFreeCaption`을 따로, 옛 저장분이면 한 번에 그린다 |
 | `src/lib/edit-history.ts` | 되돌리기 기록 |
 | `src/components/vertical-slider.tsx` | 왼쪽 세로 크기 슬라이더 |
 | `src/app/background-selection.tsx` | `pick` 파라미터로 갤러리·카메라를 바로 연다 |
@@ -85,7 +80,7 @@
 
 ## 확인할 위험
 
-- 문구를 떼면 러닝 데이터가 다시 배치되면서 손을 뗀 순간 한 번 움직인다(글래스, 코너, 스탯바). 실기기에서 거슬리는지 본다
+- 자유 문구가 화면 가운데에서 시작해 경로 그림과 겹친다. 인스타와 같은 동작이지만 실기기에서 어색한지 본다
 - 네이티브가 바뀌므로 개발용 앱을 다시 설치해야 한다
 - 반복 재생 중 조작이 느려지는지(FRD §2 미리보기)
 

@@ -80,8 +80,10 @@ struct RenderClipOptionsInput: Record {
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
   @Field var captionLines: [String]? = nil
-  /// 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터와 따로 움직인다.
-  /// route-preview.tsx StampConfig.captionOffset·captionScale과 같은 값. JS가 옛 저장분도 채워 보낸다.
+  /// 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다.
+  /// 참이면 문구를 화면 가운데에서 (captionX, captionY)만큼 옮긴 자리에 captionScale 크기로 그린다.
+  /// 거짓이면 옛 저장분이라 문구가 프리셋 배치 안에 있다. route-preview.tsx StampConfig와 같은 값이다.
+  @Field var captionFree: Bool = false
   @Field var captionX: Double = 0
   @Field var captionY: Double = 0
   @Field var captionScale: Double = 1
@@ -883,32 +885,56 @@ public class RouteRendererModule: Module {
     return (scale, offsets)
   }
 
-  // 스토리형 편집(2026-10-04): 프리셋마다 문구 자리가 배치 안에 섞여 있어서, 배치 계산은
-  // 그대로 두고 러닝 데이터와 문구를 각자의 자리·크기로 한 번씩 돌린다. 둘이 붙어 있으면
-  // 지금처럼 한 번에 그린다. route-preview.tsx stampLayoutDescriptors와 lib/stamp-caption.ts의
-  // 판정(0.5px, 0.001)과 같다.
+  // 스토리형 편집(2026-10-04): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다. 프리셋 배치는
+  // 문구 없이 그리고 문구는 drawFreeCaption이 따로 그린다. 옛 저장분은 문구가 프리셋 안에 있던
+  // 모습 그대로 그린다. route-preview.tsx stampLayoutDescriptors와 같은 규칙이다.
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
-    let attached = abs(stamp.captionX - stamp.stampX) < 0.5
-      && abs(stamp.captionY - stamp.stampY) < 0.5
-      && abs(stamp.captionScale - stamp.stampScale) < 0.001
-    if attached {
-      drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
-        ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
-        caption: stamp.caption, itemPass: !stamp.stampHidden, captionPass: true)
+    if stamp.captionFree {
+      if !stamp.stampHidden {
+        drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
+          ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+          caption: "", itemPass: true, captionPass: false)
+      }
+      drawFreeCaption(stamp, progressFraction: progressFraction, canvasSize: canvasSize)
       return
     }
-    if !stamp.stampHidden {
-      drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
-        ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
-        caption: "", itemPass: true, captionPass: false)
-    }
     drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
-      ox: CGFloat(stamp.captionX), oy: CGFloat(stamp.captionY), s: CGFloat(stamp.captionScale),
-      caption: stamp.caption, itemPass: false, captionPass: true)
+      ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+      caption: stamp.caption, itemPass: !stamp.stampHidden, captionPass: true)
   }
 
-  /// 배치 한 번. itemPass가 거짓이면 러닝 데이터를, captionPass가 거짓이면 문구를 그리지 않는다.
-  /// 그리지 않아도 자리 계산에는 들어간다. 그래야 문구가 프리셋이 정한 자리에 놓인다.
+  /// 자유 문구의 기본 글자 크기(캔버스 px). caption-layout.ts FREE_CAPTION_SIZE와 같다.
+  private static let freeCaptionSize: CGFloat = 64
+
+  /// 자유 문구. 가운데 정렬이고 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다
+  /// 글자 크기의 0.35배 위로 본다. route-preview.tsx freeCaptionNodes와 같은 식이다.
+  private func drawFreeCaption(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    if stamp.stampMode == "hidden" { return }
+    if stamp.stampMode == "after" && progressFraction < 1 { return }
+    if stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    // JS의 caption-layout.ts에서 계산한 줄을 받아 미리보기와 줄 구성을 맞춘다.
+    let lines = stamp.captionLines ?? stamp.caption.components(separatedBy: "\n")
+    let size = Self.freeCaptionSize * CGFloat(stamp.captionScale)
+    let font = UIFont(name: "NotoSansKR-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
+    let lineHeight = size * 1.3
+    let centerX = canvasSize.width / 2 + CGFloat(stamp.captionX)
+    let top = canvasSize.height / 2 + CGFloat(stamp.captionY) - CGFloat(lines.count) * lineHeight / 2
+    let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+    ctx.saveGState()
+    // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
+    ctx.setShadow(offset: .zero, blur: 6, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+    for (i, line) in lines.enumerated() {
+      let baseline = top + (CGFloat(i) + 0.5) * lineHeight + size * 0.35
+      let width = (line as NSString).size(withAttributes: attrs).width
+      (line as NSString).draw(at: CGPoint(x: centerX - width / 2, y: baseline - font.ascender), withAttributes: attrs)
+    }
+    ctx.restoreGState()
+  }
+
+  /// 프리셋 배치 한 번. itemPass가 거짓이면 러닝 데이터를, captionPass가 거짓이면 프리셋 안의 문구를
+  /// 그리지 않는다. 그리지 않아도 자리 계산에는 들어간다. 옛 저장분은 숨긴 러닝 데이터 자리에
+  /// 문구가 그대로 남아야 해서 이렇게 나눴다.
   private func drawStampPass(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize,
     ox: CGFloat, oy: CGFloat, s: CGFloat, caption rawCaption: String, itemPass: Bool, captionPass: Bool) {
     let isComplete = progressFraction >= 1

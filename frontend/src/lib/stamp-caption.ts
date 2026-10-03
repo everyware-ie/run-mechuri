@@ -1,30 +1,22 @@
 import type { StampConfig } from '@/components/route-preview';
 
-// 스토리형 편집(2026-10-04): 문구는 러닝 데이터와 따로 움직인다(result-editing §7).
-// 둘이 같은 자리·크기면 "붙어 있다"고 보고 지금까지처럼 한 번에 배치한다. 글래스 카드
-// 안의 문구처럼 프리셋이 정한 모습이 그대로 유지된다. 하나라도 옮기거나 키우면 떨어진
-// 것으로 보고, 러닝 데이터는 문구 자리를 비우지 않고 다시 배치한다.
+// 스토리형 편집(2026-10-04): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다(result-editing §7,
+// route-rendering §7-6). 화면 가운데에서 시작하고, 자리는 가운데로부터의 오프셋(캔버스 px)으로
+// 저장한다. 인스타 스토리에서 글자를 넣을 때의 기본 자리와 같다.
+//
+// 그 전에 만든 결과물은 문구가 프리셋 배치 안에 들어 있다(오프셋이 없다). 보관함 썸네일은 그 모습
+// 그대로 그리고, 다시 편집할 때 원래 자리 근처로 옮겨 자유 문구로 바꾼다(route-preview.tsx
+// migrateLegacyCaption).
 
-const SAME_POSITION_PX = 0.5;
-const SAME_SCALE = 0.001;
+/** 자유 문구인지. 옛 저장분은 문구 오프셋이 없다. */
+export function isFreeCaption(config: StampConfig) {
+  return config.captionOffset !== undefined;
+}
 
-/** 문구의 자리 오프셋과 크기. 옛 저장분은 러닝 데이터 값을 그대로 쓴다. */
+/** 자유 문구의 가운데로부터의 오프셋과 크기. */
 export function captionPlacement(config: StampConfig) {
   return {
-    offset: config.captionOffset ?? config.position,
-    scale: config.captionScale ?? config.scale ?? 1,
+    offset: config.captionOffset ?? { x: 0, y: 0 },
+    scale: config.captionScale ?? 1,
   };
-}
-
-export function isCaptionAttached(config: StampConfig) {
-  const { offset, scale } = captionPlacement(config);
-  return Math.abs(offset.x - config.position.x) < SAME_POSITION_PX
-    && Math.abs(offset.y - config.position.y) < SAME_POSITION_PX
-    && Math.abs(scale - (config.scale ?? 1)) < SAME_SCALE;
-}
-
-/** 옛 저장분에 문구 자리·크기를 채운다. 러닝 데이터를 옮겨도 문구가 따라가지 않게 된다. */
-export function withCaptionPlacement(config: StampConfig): StampConfig {
-  const { offset, scale } = captionPlacement(config);
-  return { ...config, captionOffset: offset, captionScale: scale };
 }

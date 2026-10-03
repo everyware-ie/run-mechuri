@@ -29,6 +29,7 @@ import {
   computeRouteLocalBounds,
   computeStampHitRects,
   IDENTITY_TRANSFORM,
+  migrateLegacyCaption,
   RoutePreview,
   STAMP_LAYOUTS,
   type CanvasRect,
@@ -51,7 +52,7 @@ import { isCaptionOnlyChange, pushHistory, type EditSnapshot } from '@/lib/edit-
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
-import { captionPlacement, withCaptionPlacement } from '@/lib/stamp-caption';
+import { captionPlacement, isFreeCaption } from '@/lib/stamp-caption';
 import {
   formatDistanceKm,
   formatDuration,
@@ -191,9 +192,9 @@ export default function EditScreen() {
   // §2-1: 슬라이더를 잡고 있는 동안은 미리보기를 멈춘다. 다듬기는 선 모양 차이라 멈춰야 보인다.
   const handleSlidingStart = () => setIsInteracting(true);
 
-  // §7: 러닝 데이터 묶음과 문구. 문구는 따로 움직인다(lib/stamp-caption.ts). 옛 저장분은
-  // 들어올 때 문구 자리를 지금 자리로 고정해, 러닝 데이터를 옮겨도 문구가 따라가지 않게 한다.
-  const [stampConfig, setStampConfigState] = useState<StampConfig>(() => withCaptionPlacement(draft.stampConfig));
+  // §7: 러닝 데이터 묶음과 자유 문구(lib/stamp-caption.ts). 옛 저장분은 들어올 때 프리셋 안에 있던
+  // 문구를 원래 자리·크기 근처의 자유 문구로 바꾼다(migrateLegacyCaption).
+  const [stampConfig, setStampConfigState] = useState<StampConfig>(() => migrateLegacyCaption(draft.selectedRun, draft.stampConfig));
   const stampConfigRef = useRef(stampConfig);
   const updateStampConfig = (c: StampConfig) => {
     stampConfigRef.current = c;
@@ -258,10 +259,10 @@ export default function EditScreen() {
     setHistory((h) => pushHistory(h, previous));
   }, [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
 
-  // 옛 저장분은 들어올 때 문구 자리·크기를 채워 넣는다(위 withCaptionPlacement). 초안에도 바로
-  // 반영해 두되 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 아무것도 안 바꾼다.
+  // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
+  // 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 문구를 프리셋 안으로 되돌린다.
   useEffect(() => {
-    if (draft.stampConfig.captionOffset && draft.stampConfig.captionScale !== undefined) return;
+    if (isFreeCaption(draft.stampConfig)) return;
     skipHistoryRef.current = true;
     commitStampConfig(stampConfigRef.current);
     // 들어올 때 한 번만.
@@ -666,7 +667,7 @@ export default function EditScreen() {
     const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
     updateTransform(restored.transform);
     updateSmoothOptions(restored.smoothOptions);
-    updateStampConfig(withCaptionPlacement(restored.stampConfig));
+    updateStampConfig(migrateLegacyCaption(draft.selectedRun, restored.stampConfig));
     loadDraft(restored);
   };
 

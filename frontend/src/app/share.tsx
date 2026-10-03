@@ -12,7 +12,7 @@ import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
 import { captionLines } from '@/lib/caption-layout';
-import { captionPlacement } from '@/lib/stamp-caption';
+import { captionPlacement, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
@@ -142,6 +142,7 @@ export default function ShareScreen() {
       stampScale: draft.stampConfig.scale ?? 1,
       caption: draft.stampConfig.caption ?? '',
       captionLines: captionLines(draft.stampConfig.caption ?? '', draft.stampConfig),
+      captionFree: isFreeCaption(draft.stampConfig),
       captionX: captionPlacement(draft.stampConfig).offset.x,
       captionY: captionPlacement(draft.stampConfig).offset.y,
       captionScale: captionPlacement(draft.stampConfig).scale,

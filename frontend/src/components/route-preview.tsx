@@ -1,6 +1,6 @@
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, normalizeCaption } from '@/lib/caption-layout';
-import { captionPlacement, isCaptionAttached } from '@/lib/stamp-caption';
+import { captionPlacement, isFreeCaption } from '@/lib/stamp-caption';
 import { estimateOneLineTextWidth, estimateStampTextWidth, fitStampColumns } from '@/lib/stamp-columns';
 import { useIsFocused } from 'expo-router';
 import { Canvas, Circle, DashPathEffect, Group, Path, RoundedRect, Shadow, Skia } from '@shopify/react-native-skia';
@@ -79,11 +79,11 @@ export type StampConfig = {
    * 내부 간격만 이 값을 곱해 키우거나 줄인다 — 기존 저장분엔 없는 필드라 읽을 때
    * `?? 1`로 방어. */
   scale?: number;
-  /** 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터와 따로 옮긴다.
-   * 문구의 기본 자리 오프셋(캔버스 px). 옛 저장분엔 없어 position을 대신 쓴다
-   * (lib/stamp-caption.ts captionPlacement). */
+  /** 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터 프리셋과 상관없는 자유
+   * 문구다. 화면 가운데로부터의 오프셋(캔버스 px). 없으면 옛 저장분이라 문구가 프리셋 안에
+   * 있다(lib/stamp-caption.ts). */
   captionOffset?: { x: number; y: number };
-  /** 문구 크기 배율. 없으면 scale을 대신 쓴다. */
+  /** 자유 문구의 크기 배율. 1이면 FREE_CAPTION_SIZE(caption-layout.ts). */
   captionScale?: number;
   /** 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 숨기지 않는다. */
   hidden?: boolean;
@@ -1068,6 +1068,8 @@ type StampTextDescriptor = {
   /** 실물 사진 참고(2026-09-02): "TIME"·"08.21" 같은 라벨/날짜는 값보다 흐리게 — 카드·분할·
    * 격자 프리셋에서 라벨과 값을 구분하는 데 쓴다. row/hero/stack엔 없음(전부 밝은 톤). */
   muted?: boolean;
+  /** 프리셋과 상관없이 옅은 그림자로 그린다. 자유 문구가 쓴다. */
+  softShadow?: boolean;
 };
 
 /** 카드·격자 프리셋의 통계 칸 위 라벨. */
@@ -1115,11 +1117,10 @@ function splitHeroValue(text: string, size: number): StampTextPart[] {
 // 계산을 나눠 갖고 있으면 둘이 조용히 어긋나기 쉬워서, 실제 위치·크기 계산은 여기
 // 한 곳에만 두고 둘 다 이 함수를 부른다(2026-09-02, 각인 탭-선택 기능 추가하며 분리).
 //
-// 스토리형 편집(2026-10-04)부터 문구는 러닝 데이터와 따로 움직인다. 프리셋마다 문구
-// 자리가 배치 안에 섞여 있어서, 배치 계산(stampLayoutPass)은 그대로 두고 러닝 데이터와
-// 문구를 각자의 자리·크기로 한 번씩 돌린다. 붙어 있으면(lib/stamp-caption.ts) 지금처럼
-// 한 번만 돌려 프리셋이 정한 모습을 유지한다. RouteRendererModule.swift drawStamps도
-// 같은 규칙이다.
+// 스토리형 편집(2026-10-04)부터 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다. 프리셋 배치
+// (stampLayoutPass)는 문구 없이 돌리고, 문구는 화면 가운데를 기준으로 따로 놓는다
+// (freeCaptionNodes). 옛 저장분은 문구가 프리셋 안에 있던 모습 그대로 그린다. 보관함 썸네일이
+// 바뀌지 않게 하려는 것이다. RouteRendererModule.swift drawStamps도 같은 규칙이다.
 type StampPart = 'all' | 'items' | 'caption';
 type StampDescriptorOptions = {
   part?: StampPart;
@@ -1127,6 +1128,7 @@ type StampDescriptorOptions = {
   zeroOffsets?: boolean;
 };
 const ZERO_OFFSET = { x: 0, y: 0 };
+const EMPTY_STAMP = { texts: [] as StampTextDescriptor[], rects: [] as StampRectDescriptor[] };
 const isCaptionNode = (node: StampTextDescriptor) => node.key.startsWith('caption-');
 
 function stampLayoutDescriptors(
@@ -1138,9 +1140,8 @@ function stampLayoutDescriptors(
 ): { texts: StampTextDescriptor[]; rects: StampRectDescriptor[] } {
   const wantItems = part !== 'caption' && !config.hidden;
   const wantCaption = part !== 'items';
-  const caption = captionPlacement(config);
   const itemPosition = zeroOffsets ? ZERO_OFFSET : config.position;
-  if (isCaptionAttached(config)) {
+  if (!isFreeCaption(config)) {
     const all = stampLayoutPass(run, { ...config, position: itemPosition }, progressFraction, paceSeconds);
     return {
       texts: all.texts.filter(node => isCaptionNode(node) ? wantCaption : wantItems),
@@ -1149,12 +1150,51 @@ function stampLayoutDescriptors(
   }
   const items = wantItems
     ? stampLayoutPass(run, { ...config, caption: '', position: itemPosition }, progressFraction, paceSeconds)
-    : { texts: [], rects: [] };
-  const captionTexts = wantCaption
-    ? stampLayoutPass(run, { ...config, position: zeroOffsets ? ZERO_OFFSET : caption.offset, scale: caption.scale },
-      progressFraction, paceSeconds).texts.filter(isCaptionNode)
-    : [];
+    : EMPTY_STAMP;
+  const captionTexts = wantCaption ? freeCaptionNodes(config, progressFraction, zeroOffsets) : [];
   return { texts: [...items.texts, ...captionTexts], rects: items.rects };
+}
+
+// 자유 문구는 가운데 정렬이고, 여러 줄이면 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는
+// 기준선보다 글자 크기의 0.35배 위로 본다. Swift drawFreeCaption과 같은 식이다.
+function freeCaptionNodes(config: StampConfig, progressFraction: number, zeroOffsets: boolean): StampTextDescriptor[] {
+  if (config.mode === 'hidden' || (config.mode === 'after' && progressFraction < 1)) return [];
+  const text = normalizeCaption(config.caption ?? '');
+  if (!text.trim()) return [];
+  const { size, lineHeight } = captionMetrics(config);
+  const lines = captionLines(text, config);
+  const offset = zeroOffsets ? ZERO_OFFSET : captionPlacement(config).offset;
+  const centerX = CANVAS_WIDTH / 2 + offset.x;
+  const top = CANVAS_HEIGHT / 2 + offset.y - (lines.length * lineHeight) / 2;
+  return lines.map((line, i) => ({
+    key: `caption-${i}`,
+    x: centerX,
+    y: top + (i + 0.5) * lineHeight + size * 0.35,
+    size,
+    family: 'NotoSansKR_700Bold',
+    text: line,
+    anchor: 'middle',
+    softShadow: true,
+  }));
+}
+
+/**
+ * 옛 저장분의 문구를 자유 문구로 바꾼다. 프리셋이 놓았던 자리와 크기 근처에 둔다. 글꼴만 자유
+ * 문구 글꼴로 바뀐다(2026-10-04 사용자 결정). 편집 화면에 들어올 때 한 번 부른다.
+ */
+export function migrateLegacyCaption(run: RunRecord | null, config: StampConfig): StampConfig {
+  if (isFreeCaption(config)) return config;
+  const fresh: StampConfig = { ...config, captionOffset: { x: 0, y: 0 }, captionScale: 1 };
+  if (!run || !normalizeCaption(config.caption ?? '').trim()) return fresh;
+  const old = stampLayoutPass(run, config, 1).texts.filter(isCaptionNode);
+  if (old.length === 0) return fresh;
+  const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(old, [], false));
+  const captionScale = Math.min(3, Math.max(1 / 3, old[0].size / captionMetrics(fresh).size));
+  return {
+    ...config,
+    captionOffset: { x: (left + right) / 2 - CANVAS_WIDTH / 2, y: (top + bottom) / 2 - CANVAS_HEIGHT / 2 },
+    captionScale,
+  };
 }
 
 function stampLayoutPass(
@@ -1699,7 +1739,8 @@ export function StampLayerSvg({
           strokeWidth={r.stroke ? 1 : undefined}
         />
       ))}
-      <StampTextsSvg texts={texts} softShadow={softShadow} />
+      <StampTextsSvg texts={texts.filter(n => !n.softShadow)} softShadow={softShadow} />
+      <StampTextsSvg texts={texts.filter(n => n.softShadow)} softShadow />
     </>
   );
 }
@@ -1744,7 +1785,7 @@ function stampTextViewport(node: StampTextDescriptor): CanvasRect {
 
 function sameStampText(a: StampTextDescriptor, b: StampTextDescriptor) {
   return a.key === b.key && a.x === b.x && a.y === b.y && a.size === b.size && a.family === b.family
-    && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted
+    && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted && a.softShadow === b.softShadow
     && a.parts?.length === b.parts?.length
     && (a.parts?.every((part, i) => part.text === b.parts?.[i].text && part.size === b.parts?.[i].size) ?? true);
 }
@@ -1797,7 +1838,7 @@ function StampPreviewLayer({ run, config, progressFraction, paceTimeline = [], p
   return <>
     <StampPreviewShapes rects={finalLayout.rects} {...fit} />
     {texts.map(node => <StampPreviewText key={node.key} node={node} viewport={viewports.get(node.key)!}
-      softShadow={softShadow} fitScale={fit.fitScale} offsetX={fit.offsetX} offsetY={fit.offsetY} />)}
+      softShadow={node.softShadow ?? softShadow} fitScale={fit.fitScale} offsetX={fit.offsetX} offsetY={fit.offsetY} />)}
   </>;
 }
 
