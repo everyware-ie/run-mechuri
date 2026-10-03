@@ -257,3 +257,29 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 **지민이 빌드 `1.0.0(25)`로 공개 링크를 열었다.** 9/22에 연 것은 아직 메추리 아이콘이던 빌드 23이었으므로, **공개 링크에서 받는 앱이 이제 R 마크를 단다.**
 
 `[확인 필요]` **베타 심사를 거쳤는지는 확인되지 않았다.** 빌드 23은 같은 `1.0.0`이라 심사가 생략됐는데, 25는 아이콘과 스플래시가 바뀌어서 다를 수 있다. App Store Connect에서 빌드 25의 외부 상태를 보면 알 수 있다. (2026-09-23 phs00)
+
+
+## 2026-10-03: 영상 배경 배포 1.0.0(26)
+
+### 소스와 변경
+
+- [PR #73](https://github.com/everyware-ie/run-mechuri/pull/73): 갤러리에서 고른 영상을 배경으로 쓴다. 사진처럼 확대·이동하고, 미리보기에서 소리 없이 재생하며, 결과 영상에서도 배경이 움직인다. 새 네이티브 모듈 expo-video가 들어갔다.
+- 배포 소스: `90d3ab6` (main). 머지한 main을 별도 사본으로 받아 `npm ci` 후 빌드했다.
+
+구현과 실기기 확인은 [영상 배경 노트](../product/features/video-backgrounds.md)에 있다.
+
+### 클라우드 빌드로 돌아왔다
+
+10/1에 EAS 무료 한도가 초기화돼서 **이번에는 클라우드 빌드가 됐다.** 대기 약 30초, 빌드 약 6분이 걸렸다. 지난번 로컬 빌드(약 20분)보다 빠르고 맥 상태와 상관없다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/98ac53cb-0ff4-4e95-9aae-8a1d6a5a749e): `FINISHED`, 빌드 번호 `26`, 커밋 `90d3ab6`
+
+### 제출 상태
+
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/4cadc4ed-dbef-4915-a892-c374655406b0): 2026-10-03 Apple 업로드 완료.
+- 2026-10-03 Apple 조회에서 빌드 `26`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. **등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.** 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- **내부 테스터에게만 배포한다.** 공개 링크는 빌드 25 그대로다.
+
+### 공개 링크는 아직 25다
+
+**영상 배경은 개인정보 처리방침과 FAQ가 다루는 범위를 넓힌다.** 그래서 두 문서를 먼저 고쳤다([공개 문서 기록](public-docs-log.md)). 공개 링크를 26 이후 빌드로 바꾸는 일은 지민이 한다(2026-10-03 사용자).
