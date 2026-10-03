@@ -78,6 +78,14 @@ export type StampConfig = {
    * 내부 간격만 이 값을 곱해 키우거나 줄인다 — 기존 저장분엔 없는 필드라 읽을 때
    * `?? 1`로 방어. */
   scale?: number;
+  /** 스토리형 편집(2026-10-04, result-editing §7): 문구는 러닝 데이터와 따로 옮긴다.
+   * 문구의 기본 자리 오프셋(캔버스 px). 옛 저장분엔 없어 position을 대신 쓴다
+   * (lib/stamp-caption.ts captionPlacement). */
+  captionOffset?: { x: number; y: number };
+  /** 문구 크기 배율. 없으면 scale을 대신 쓴다. */
+  captionScale?: number;
+  /** 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 숨기지 않는다. */
+  hidden?: boolean;
 };
 
 export const IDENTITY_STAMP: StampConfig = {
@@ -88,6 +96,9 @@ export const IDENTITY_STAMP: StampConfig = {
   placeName: '',
   position: { x: 0, y: 0 },
   scale: 1,
+  captionOffset: { x: 0, y: 0 },
+  captionScale: 1,
+  hidden: false,
 };
 
 // route-rendering FRD §7-5: 인스타 스토리에서 안 가려지는 영역. 원래 상단 14%·하단 20%

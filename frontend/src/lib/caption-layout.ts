@@ -1,5 +1,6 @@
 import type { StampConfig } from '@/components/route-preview';
 import { CANVAS_WIDTH, MARGIN_RATIO } from './route-projection';
+import { captionPlacement } from './stamp-caption';
 import { estimateStampTextWidth } from './stamp-columns';
 
 export const CAPTION_MAX_LINES = 3;
@@ -8,8 +9,10 @@ const M = 3.6;
 /** 캔버스 문구의 실제 글자 크기·여백. 입력 제한과 렌더링이 공유한다. */
 export function captionMetrics(config: StampConfig) {
   const layout = config.layout ?? 'row';
-  const u = M * (config.scale ?? 1);
-  const size = layout === 'row' ? 34 * (config.scale ?? 1)
+  // 문구는 러닝 데이터와 따로 키운다(stamp-caption.ts). 줄바꿈도 문구 크기를 따른다.
+  const { scale } = captionPlacement(config);
+  const u = M * scale;
+  const size = layout === 'row' ? 34 * scale
     : (layout === 'line' ? 26 : layout === 'bar' ? 15 : 13) * u;
   const margin = CANVAS_WIDTH * MARGIN_RATIO;
   const panelWidth = CANVAS_WIDTH - 32 * M;
