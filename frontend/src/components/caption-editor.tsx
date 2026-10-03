@@ -4,9 +4,10 @@ import { VerticalSlider } from '@/components/vertical-slider';
 import { Colors, Fonts } from '@/constants/theme';
 import { FREE_CAPTION_SIZE, freeCaptionMetrics } from '@/lib/caption-layout';
 
-// result-editing FRD §7: 문구는 인스타처럼 화면에서 바로 쓴다. 시트를 띄우지 않고, 화면을 어둡게 한
-// 뒤 결과물과 같은 글꼴·크기로 가운데에서 쓴다. 왼쪽 세로 슬라이더로 크기를 바꾼다. 완료나 빈 곳을
-// 누르면 끝난다. 실제 자리에 놓는 것은 편집 화면 몫이다.
+// result-editing FRD §7: 문구는 인스타처럼 화면에서 바로 쓴다. 시트를 띄우지 않고 결과물과 같은
+// 글꼴·크기로 가운데에서 쓴다. 왼쪽 세로 슬라이더로 크기를 바꾼다. 완료나 빈 곳을 누르면 끝난다.
+// 실제 자리에 놓는 것은 편집 화면 몫이다. 화면을 어둡게 하지 않는다(2026-10-04 실기기 확인). 결과물
+// 위에서 쓰는 느낌을 지키고, 글자는 그림자로 읽히게 한다.
 
 type Props = {
   text: string;
@@ -59,7 +60,8 @@ export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset,
 }
 
 const styles = StyleSheet.create({
-  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(11,13,16,0.6)' },
+  // 빈 곳을 누르면 마치도록 화면 전체를 덮되 어둡게 하지 않는다.
+  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   topBar: { position: 'absolute', right: 20, flexDirection: 'row' },
   done: { fontFamily: Fonts.sansBold, fontSize: 15, color: Colors.text, padding: 8 },
   inputArea: { position: 'absolute', left: 0, right: 0, alignItems: 'center', justifyContent: 'center', gap: 10 },

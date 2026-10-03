@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
   Alert,
+  Animated,
   Image,
   Keyboard,
   PanResponder,
@@ -457,6 +458,28 @@ export default function EditScreen() {
     return Math.hypot(touch.pageX - center.x, touch.pageY - center.y) < HIDE_ZONE;
   };
 
+  // §1: 시트는 아래로 끌어서도 닫는다. 손가락을 따라 내려가다가 충분히 내리거나 빠르게 밀면 닫히고,
+  // 조금만 내리면 제자리로 돌아간다. 슬라이더는 잡는 순간 응답을 가져가고 놓지 않아서 시트가
+  // 끌리지 않는다. 칩처럼 누르기만 하는 것 위에서 시작한 세로 끌기는 시트가 가져온다.
+  const sheetDragY = useRef(new Animated.Value(0)).current;
+  const sheetHeightRef = useRef(0);
+  const sheetPanResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_evt, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
+    onPanResponderMove: (_evt, gesture) => sheetDragY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderRelease: (_evt, gesture) => {
+      if (gesture.dy > Math.min(120, sheetHeightRef.current * 0.35) || gesture.vy > 0.9) {
+        Animated.timing(sheetDragY, { toValue: sheetHeightRef.current || 400, duration: 160, useNativeDriver: true })
+          .start(() => {
+            closeTool();
+            sheetDragY.setValue(0);
+          });
+      } else {
+        Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      }
+    },
+    onPanResponderTerminate: () => Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+  })).current;
+
   const openTool = (next: Tool) => {
     Keyboard.dismiss();
     flushPendingSmooth();
@@ -859,8 +882,14 @@ export default function EditScreen() {
         <SymbolView name={dropZone === 'delete' ? 'trash' : 'eye.slash'} size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
       </View>}
 
-      {tool && <View style={[styles.sheet, { bottom: keyboardHeight, paddingBottom: keyboardHeight > 0 ? Spacing.sm : insets.bottom + Spacing.sm }]}
-        onLayout={(e) => setSheetHeight(e.nativeEvent.layout.height)}>
+      {tool && <Animated.View {...sheetPanResponder.panHandlers}
+        style={[styles.sheet, { bottom: keyboardHeight, paddingBottom: keyboardHeight > 0 ? Spacing.sm : insets.bottom + Spacing.sm,
+          transform: [{ translateY: sheetDragY }] }]}
+        onLayout={(e) => {
+          sheetHeightRef.current = e.nativeEvent.layout.height;
+          setSheetHeight(e.nativeEvent.layout.height);
+        }}>
+        <View style={styles.sheetGrabber} accessible={false} />
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{TOOLS.find((t) => t.id === tool)?.label}</Text>
           <View style={styles.sheetHeaderRight}>
@@ -964,8 +993,7 @@ export default function EditScreen() {
           )}
           <Text style={styles.hint}>화면에서 끌어서 옮기고, 아래 동그라미로 끌면 숨겨요.</Text>
         </>}
-
-      </View>}
+      </Animated.View>}
 
       {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
         fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
@@ -1010,6 +1038,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgCard, borderTopLeftRadius: Radius.pill, borderTopRightRadius: Radius.pill,
     borderTopWidth: 1, borderColor: Colors.border,
   },
+  sheetGrabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderStrong, marginTop: -4 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
   sheetHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   sheetTitle: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.text },
