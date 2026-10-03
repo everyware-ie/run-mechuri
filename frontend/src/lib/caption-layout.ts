@@ -13,7 +13,8 @@ export function captionMetrics(config: StampConfig) {
   const { scale } = captionPlacement(config);
   const u = M * scale;
   const size = layout === 'row' ? 34 * scale
-    : (layout === 'line' ? 26 : layout === 'bar' ? 15 : 13) * u;
+    // 원라인은 2026-09-16에 26→22로 줄였다. 미리보기·결과 영상과 같은 값이어야 줄바꿈과 줄 간격이 맞는다.
+    : (layout === 'line' ? 22 : layout === 'bar' ? 15 : 13) * u;
   const margin = CANVAS_WIDTH * MARGIN_RATIO;
   const panelWidth = CANVAS_WIDTH - 32 * M;
   const left = layout === 'glass' ? Math.max(margin, 16 * M + Math.min(20 * u, panelWidth * 0.15)) : margin;

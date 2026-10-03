@@ -10,6 +10,10 @@ import { Colors } from '@/constants/theme';
 // 기본 크기(100%)가 아래쪽에 있어서 가운데가 170% 안팎이었다. 그래서 누르기만 해서는 바꾸지
 // 않고 끈 거리만큼만 바꾸며, 눈금을 곱셈 비율로 둬서 범위의 기하 중앙(최소·최대가 대칭이면
 // 100%)이 슬라이더 가운데에 오게 한다.
+//
+// 같은 날 코드 검토: 손잡이를 부모의 값으로만 그리면 부모가 다시 그려질 때까지 늦게 따라온다
+// (다듬기 슬라이더와 같은 문제). 끄는 동안은 이 컴포넌트가 손잡이를 바로 그린다. 또 핀치로
+// 범위 밖까지 키운 뒤 잡아도 튀지 않게, 잡은 순간의 실제 값에서 곱셈으로 이어 간다.
 
 type Props = {
   value: number;
@@ -17,69 +21,84 @@ type Props = {
   maximumValue: number;
   accessibilityLabel: string;
   onChange: (value: number) => void;
+  /** 잡는 순간. §2-1: 잡고 있는 동안 미리보기를 멈추는 데 쓴다. */
+  onSlidingStart?: () => void;
   onSlidingComplete: (value: number) => void;
 };
 
 const THUMB = 22;
 
-export function VerticalSlider({ value, minimumValue, maximumValue, accessibilityLabel, onChange, onSlidingComplete }: Props) {
+export function VerticalSlider({ value, minimumValue, maximumValue, accessibilityLabel, onChange, onSlidingStart, onSlidingComplete }: Props) {
   const [trackHeight, setTrackHeight] = useState(0);
+  const [dragValue, setDragValue] = useState<number | null>(null);
   const trackHeightRef = useRef(0);
   const valueRef = useRef(value);
-  const configRef = useRef({ minimumValue, maximumValue, onChange, onSlidingComplete });
+  const configRef = useRef({ minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete });
   useEffect(() => { valueRef.current = value; }, [value]);
   useEffect(() => {
-    configRef.current = { minimumValue, maximumValue, onChange, onSlidingComplete };
-  }, [minimumValue, maximumValue, onChange, onSlidingComplete]);
+    configRef.current = { minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete };
+  }, [minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete]);
 
-  const clampFraction = (fraction: number) => Math.max(0, Math.min(1, fraction));
-  const valueAt = (fraction: number) => {
-    const { minimumValue: min, maximumValue: max } = configRef.current;
-    return min * Math.pow(max / min, clampFraction(fraction));
-  };
-  const fractionOf = (v: number) => {
-    const { minimumValue: min, maximumValue: max } = configRef.current;
-    return clampFraction(Math.log(Math.max(min, v) / min) / Math.log(max / min));
-  };
-  const update = (fraction: number) => {
-    const next = Math.round(valueAt(fraction));
+  const emit = (next: number) => {
+    if (next === valueRef.current) return;
     valueRef.current = next;
+    setDragValue(next);
     configRef.current.onChange(next);
   };
 
-  const dragStart = useRef(0);
+  // 잡은 순간의 값. 끈 거리(트랙 높이 전체 = 최대/최소 비율)만큼 곱해서 이어 간다.
+  const dragStart = useRef(value);
   const panResponder = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     // 미리보기의 끌기 제스처가 가로채지 않게 한다.
     onPanResponderTerminationRequest: () => false,
-    // 누르기만 해서는 값을 바꾸지 않는다. 어디를 잡든 끈 거리만큼만 움직인다.
+    // 누르기만 해서는 값을 바꾸지 않는다.
     onPanResponderGrant: () => {
-      dragStart.current = fractionOf(valueRef.current);
+      dragStart.current = valueRef.current;
+      setDragValue(valueRef.current);
+      configRef.current.onSlidingStart?.();
     },
     onPanResponderMove: (_evt, gesture) => {
       const height = trackHeightRef.current;
-      if (height > 0) update(dragStart.current - gesture.dy / height);
+      if (height <= 0) return;
+      const { minimumValue: min, maximumValue: max } = configRef.current;
+      const start = dragStart.current;
+      const next = start * Math.pow(max / min, -gesture.dy / height);
+      // 범위 밖에서 잡았으면 그 값까지는 허용한다. 그래야 잡는 순간 범위 끝으로 튀지 않는다.
+      emit(Math.round(Math.min(Math.max(max, start), Math.max(Math.min(min, start), next))));
     },
-    onPanResponderRelease: () => configRef.current.onSlidingComplete(valueRef.current),
-    onPanResponderTerminate: () => configRef.current.onSlidingComplete(valueRef.current),
+    onPanResponderRelease: () => {
+      setDragValue(null);
+      configRef.current.onSlidingComplete(valueRef.current);
+    },
+    onPanResponderTerminate: () => {
+      setDragValue(null);
+      configRef.current.onSlidingComplete(valueRef.current);
+    },
   })).current;
 
   const handleLayout = (e: LayoutChangeEvent) => {
     trackHeightRef.current = e.nativeEvent.layout.height;
     setTrackHeight(e.nativeEvent.layout.height);
   };
-  const fraction = clampFraction(Math.log(Math.max(minimumValue, value) / minimumValue) / Math.log(maximumValue / minimumValue));
+  const shown = dragValue ?? value;
+  const fraction = Math.max(0, Math.min(1,
+    Math.log(Math.max(minimumValue, shown) / minimumValue) / Math.log(maximumValue / minimumValue)));
   const thumbTop = (1 - fraction) * trackHeight - THUMB / 2;
 
   return (
     <View style={styles.hitArea} onLayout={handleLayout} {...panResponder.panHandlers}
       accessible accessibilityRole="adjustable" accessibilityLabel={accessibilityLabel}
-      accessibilityValue={{ min: minimumValue, max: maximumValue, now: value, text: `${value}%` }}
+      accessibilityValue={{ min: Math.round(minimumValue), max: maximumValue, now: shown, text: `${shown}%` }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={({ nativeEvent }) => {
         if (!['increment', 'decrement'].includes(nativeEvent.actionName)) return;
-        update(fractionOf(valueRef.current) + (nativeEvent.actionName === 'increment' ? 0.05 : -0.05));
+        const { minimumValue: min, maximumValue: max } = configRef.current;
+        // 한 번에 트랙의 5%만큼. 곱셈 눈금이라 크기와 상관없이 같은 비율로 움직인다.
+        const step = Math.pow(max / min, nativeEvent.actionName === 'increment' ? 0.05 : -0.05);
+        emit(Math.round(Math.min(max, Math.max(min, valueRef.current * step))));
+        setDragValue(null);
         configRef.current.onSlidingComplete(valueRef.current);
       }}>
       <View style={styles.track} />

@@ -131,6 +131,7 @@ export default function EditScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [applyingBackground, setApplyingBackground] = useState<string | null>(null);
+  const captionInputRef = useRef<TextInput>(null);
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -254,6 +255,16 @@ export default function EditScreen() {
     }
     setHistory((h) => pushHistory(h, previous));
   }, [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
+
+  // 옛 저장분은 들어올 때 문구 자리·크기를 채워 넣는다(위 withCaptionPlacement). 초안에도 바로
+  // 반영해 두되 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 아무것도 안 바꾼다.
+  useEffect(() => {
+    if (draft.stampConfig.captionOffset && draft.stampConfig.captionScale !== undefined) return;
+    skipHistoryRef.current = true;
+    commitStampConfig(stampConfigRef.current);
+    // 들어올 때 한 번만.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // '장소' 러닝 데이터 값 — 트랙 좌표(가운데 점)를 역지오코딩해 한 번 채운다. 실패하면 비워 둔다.
   useEffect(() => {
@@ -400,7 +411,9 @@ export default function EditScreen() {
     flushPendingStampConfig();
     // §7-2: 숨긴 러닝 데이터는 러닝 데이터 도구를 다시 열면 돌아온다.
     if (next === 'stamp' && stampConfigRef.current.hidden) commitStamp({ ...stampConfigRef.current, hidden: false });
-    captionSessionRef.current = next === 'caption' ? 'open' : 'closed';
+    // 문구 시트가 이미 열려 있고 키보드만 내렸다면 다시 올린다. 처음 열 때는 autoFocus가 올린다.
+    if (next === 'caption' && toolRef.current === 'caption') captionInputRef.current?.focus();
+    else captionSessionRef.current = next === 'caption' ? 'open' : 'closed';
     toolRef.current = next;
     setTool(next);
   };
@@ -478,6 +491,11 @@ export default function EditScreen() {
           (isStamp ? stampPositionX : captionPositionX).set(base.x + gestureState.dx / fitScale);
           (isStamp ? stampPositionY : captionPositionY).set(base.y + gestureState.dy / fitScale);
           if (touches.length === 2) {
+            // 두 손가락이면 크기를 바꾸려는 것이다. 숨기기 자리 위였더라도 숨기지 않는다.
+            if (overHideZoneRef.current) {
+              overHideZoneRef.current = false;
+              setOverHideZone(false);
+            }
             const config = stampConfigRef.current;
             scheduleStampConfigUpdate(isStamp
               ? { ...config, scale: clampScale(baseStampScale.current * scaleDelta) }
@@ -545,14 +563,12 @@ export default function EditScreen() {
 
   // §4-2: 시트를 열면 왼쪽에 크기 슬라이더가 나온다. 핀치와 같은 값을 쓴다.
   const sizeTarget: DragTarget | null = tool === 'route' || tool === 'stamp' || tool === 'caption' ? tool : null;
-  const [sizeDraft, setSizeDraft] = useState<number | null>(null);
   const committedSize = sizeTarget === 'route' ? Math.round(transform.scale * 100)
     : sizeTarget === 'stamp' ? Math.round((stampConfig.scale ?? 1) * 100)
       : Math.round(captionPlacement(stampConfig).scale * 100);
+  // 손잡이는 슬라이더가 바로 그린다. 여기서는 경로 그림이면 SharedValue만 바꿔 다시 그리지 않는다.
   const handleSizeChange = (percent: number) => {
     if (!sizeTarget) return;
-    if (sizeDraft === null) setIsInteracting(true);
-    setSizeDraft(percent);
     const scale = percent / 100;
     if (sizeTarget === 'route') transformScaleShared.value = scale;
     else scheduleStampConfigUpdate(sizeTarget === 'stamp'
@@ -560,7 +576,6 @@ export default function EditScreen() {
   };
   const handleSizeCommit = (percent: number) => {
     setIsInteracting(false);
-    setSizeDraft(null);
     const scale = percent / 100;
     if (sizeTarget === 'route') {
       const next = { ...transformRef.current, scale };
@@ -622,10 +637,13 @@ export default function EditScreen() {
     flushPendingStampConfig();
     skipHistoryRef.current = true;
     setHistory((h) => h.slice(0, -1));
-    updateTransform(previous.transform);
-    updateSmoothOptions(previous.smoothOptions);
-    updateStampConfig(withCaptionPlacement(previous.stampConfig));
-    loadDraft(previous);
+    // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
+    const placeName = stampConfigRef.current.placeName || previous.stampConfig.placeName;
+    const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
+    updateTransform(restored.transform);
+    updateSmoothOptions(restored.smoothOptions);
+    updateStampConfig(withCaptionPlacement(restored.stampConfig));
+    loadDraft(restored);
   };
 
   const handlePresetSelect = (preset: RoutePreset) => commitPreset(preset);
@@ -765,7 +783,7 @@ export default function EditScreen() {
               </View>}
 
               {sizeTarget && <View style={styles.sizeSlider}>
-                <VerticalSlider value={sizeDraft ?? committedSize}
+                <VerticalSlider value={committedSize} onSlidingStart={handleSlidingStart}
                   minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
                   accessibilityLabel={sizeLabel} onChange={handleSizeChange} onSlidingComplete={handleSizeCommit} />
               </View>}
@@ -892,7 +910,7 @@ export default function EditScreen() {
         </>}
 
         {tool === 'caption' && <>
-          <TextInput value={stampConfig.caption ?? ''} onChangeText={handleCaptionChange} autoFocus
+          <TextInput ref={captionInputRef} value={stampConfig.caption ?? ''} onChangeText={handleCaptionChange} autoFocus
             placeholder="예) 비 오는 날의 한강" placeholderTextColor={Colors.textMuted}
             accessibilityLabel="문구, 미리보기 기준 최대 3줄" style={styles.captionInput}
             multiline submitBehavior="newline" textAlignVertical="top" />
@@ -927,7 +945,8 @@ const styles = StyleSheet.create({
   },
   toolIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG },
   toolIconOn: { backgroundColor: Colors.accent },
-  sizeSlider: { position: 'absolute', left: 4, top: '26%', height: '40%' },
+  // 화면 왼쪽 끝에서 밀면 뒤로 가기라 그 자리를 피한다.
+  sizeSlider: { position: 'absolute', left: 12, top: '26%', height: '40%' },
   bottomBar: { height: BOTTOM_BAR_HEIGHT, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 20 },
   doneButton: { minHeight: 44, minWidth: 120, paddingHorizontal: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 22 },
   doneText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
