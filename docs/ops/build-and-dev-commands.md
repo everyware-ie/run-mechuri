@@ -26,6 +26,21 @@ npx expo start --dev-client --lan --port 8081
 
 개발용 앱의 서버 선택 화면에서 연결하거나 Metro에 나온 QR 코드로 연다. LAN 연결은 Mac과 아이폰이 같은 네트워크에 있어야 한다. 개발용 앱이 연결된 뒤에는 Metro 터미널의 `m`으로도 개발 메뉴를 열 수 있다. [Expo 디버깅 도구 안내](https://docs.expo.dev/debugging/tools/).
 
+**설치 완료가 떴는데도 서버에 붙지 않으면 폰에 깔린 앱부터 본다.** 2026-10-03에 `expo run:ios`가 설치 완료를 출력했는데, 폰에는 TestFlight 빌드 25가 그대로 있었다. 개발용 앱이 아니니 서버 목록도 흔들기 메뉴도 나오지 않았다. 빌드 번호로 구분한다. 개발용은 `1`, TestFlight는 배포 번호(예: `25`)다.
+
+```bash
+xcrun devicectl device info apps --device <UDID> --bundle-id com.mechuri.runmechuri
+```
+
+TestFlight 번호가 보이면 이미 만든 개발용 앱을 직접 설치하고, 개발 서버 주소로 바로 연다. `<맥 IP>`는 `ipconfig getifaddr en0`으로 확인한다.
+
+```bash
+xcrun devicectl device install app --device <UDID> ~/Library/Developer/Xcode/DerivedData/<프로젝트>/Build/Products/Debug-iphoneos/app.app
+xcrun devicectl device process launch --device <UDID> --terminate-existing --payload-url "exp+mechuri://expo-development-client/?url=http%3A%2F%2F<맥 IP>%3A8081" com.mechuri.runmechuri
+```
+
+`CI=1`을 붙여 띄운 개발 서버는 코드를 고쳐도 다시 불러오지 않는다. 바로 반영되게 하려면 위의 `npx expo start --dev-client --lan`으로 띄운다.
+
 ## 2. 네이티브 쪽을 바꿨을 때 (새 패키지·설정·bridge 모듈)
 
 **Swift 파일 "내용"만 바꾼 거면 이 단계 없이 바로 3번(Xcode Run)으로 가도 된다** — 이미 링크된 로컬 모듈은 Xcode가 원본 경로를 그대로 참조해서, 다시 빌드만 해도 반영된다.
