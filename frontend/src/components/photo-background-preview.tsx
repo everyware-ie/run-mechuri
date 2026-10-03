@@ -4,6 +4,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+import { BackgroundVideo } from '@/components/background-video';
 import { constrainPhotoCrop, type PhotoCrop } from '@/lib/photo-crop';
 
 type Props = {
@@ -14,10 +15,12 @@ type Props = {
   height: number;
   initialCrop: PhotoCrop;
   onChange: (crop: PhotoCrop) => void;
+  /** 배경 선택 FRD §5. 있으면 사진 대신 영상을 같은 구도 조작으로 보여 준다. */
+  video?: { durationSec?: number };
   children?: ReactNode;
 };
 
-export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, height, initialCrop, onChange, children }: Props) {
+export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, height, initialCrop, onChange, video, children }: Props) {
   const crop = useSharedValue(initialCrop);
   const start = useSharedValue(initialCrop);
   const focal = useSharedValue({ x: 0, y: 0 });
@@ -63,8 +66,13 @@ export function PhotoBackgroundPreview({ uri, imageWidth, imageHeight, width, he
     .onFinalize(() => { scheduleOnRN(onChange, crop.value); });
   return (
     <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
-      <Animated.View style={{ width, height, overflow: 'hidden' }} accessibilityLabel="배경 사진. 드래그로 이동하고 두 손가락으로 크기를 조절하세요.">
-        <Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" />
+      <Animated.View style={{ width, height, overflow: 'hidden' }}
+        accessibilityLabel={`배경 ${video ? '영상' : '사진'}. 드래그로 이동하고 두 손가락으로 크기를 조절하세요.`}>
+        {video
+          ? <Animated.View style={[styles.image, imageStyle]} pointerEvents="none">
+              <BackgroundVideo uri={uri} durationSec={video.durationSec} />
+            </Animated.View>
+          : <Animated.Image source={{ uri }} style={[styles.image, imageStyle]} resizeMode="cover" />}
         <View style={StyleSheet.absoluteFill} pointerEvents="none">{children}</View>
       </Animated.View>
     </GestureDetector>

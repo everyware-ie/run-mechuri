@@ -16,6 +16,8 @@ import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 
 import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
+import { isVideoBackground } from '@/lib/background-storage';
+import { videoCrop } from '@/lib/video-rules';
 import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
 
 // FRD: docs/specs/frd/export-and-share.md
@@ -110,9 +112,15 @@ export default function ShareScreen() {
     const myGeneration = activeShareGeneration;
     renderFileRef.current = `mechuri-${resultId}`;
 
+    // 배경 선택 FRD §5: 영상 배경이면 프레임마다 영상 장면을 깐다. backgroundImagePath는 첫 장면(대체용)이다.
+    const backgroundVideo = isVideoBackground(draft.backgroundPhoto) ? draft.backgroundPhoto : undefined;
     RouteRenderer.renderClip({
       points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
       backgroundImagePath,
+      ...(backgroundVideo ? {
+        backgroundVideoPath: backgroundVideo.sourceUri,
+        backgroundVideoCrop: videoCrop(backgroundVideo),
+      } : {}),
       outputFileName: `mechuri-${resultId}`,
       preset: draft.preset,
       transform: draft.transform,

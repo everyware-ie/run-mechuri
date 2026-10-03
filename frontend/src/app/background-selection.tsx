@@ -14,16 +14,19 @@ import { ScreenHeader } from '@/components/screen-header';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useBackgroundTask } from '@/hooks/use-background-task';
-import { BACKGROUNDS_DIR, persistBackground, type PhotoBackground } from '@/lib/background-storage';
+import { BACKGROUNDS_DIR, isVideoBackground, persistBackground, type PhotoBackground } from '@/lib/background-storage';
 import { INITIAL_PHOTO_CROP, type PhotoCrop } from '@/lib/photo-crop';
 import { preparePhoto, renderPhotoBackground } from '@/lib/photo-processing';
+import { VIDEO_KEEP_SECONDS } from '@/lib/video-rules';
 import { useCreationFlow } from '@/state/creation-flow';
+import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
 
 type PhotoSelection = { kind: 'photo'; photo: PhotoBackground; rawUri?: string; saved?: boolean };
 type Selection = { kind: 'default'; id: string } | { kind: 'existing'; uri: string } | PhotoSelection;
-const removeFiles = (paths: string[]) => Promise.all(paths.map(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})));
+const removeFiles = (paths: (string | undefined)[]) => Promise.all(paths.filter((uri): uri is string => !!uri)
+  .map(uri => FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {})));
 
-// FRD: 배경 선택 §3 사진 선택·촬영, §4 빈틈없는 9:16 조정, §6 취소 시 앞선 선택 유지.
+// FRD: 배경 선택 §3 사진·영상 선택과 사진 촬영, §4 빈틈없는 9:16 조정, §5 영상 처리, §6 취소 시 앞선 선택 유지.
 export default function BackgroundSelectionScreen() {
   const { draft, setBackground } = useCreationFlow();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
@@ -74,22 +77,36 @@ export default function BackgroundSelectionScreen() {
 
   function pickPhoto(origin: 'gallery' | 'camera') {
     if (disabled) return;
-    void task.run('사진을 불러오고 있어요', async isActive => {
+    void task.run(origin === 'camera' ? '사진을 불러오고 있어요' : '갤러리에서 불러오고 있어요', async isActive => {
       if (origin === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!isActive()) return null;
         if (!permission.granted) { permissionNotice(true); return null; }
       }
       const options: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ['images'], allowsEditing: false, allowsMultipleSelection: false, quality: 1,
+        // 배경 선택 FRD §3-1: 갤러리에서는 사진과 영상을 한 화면에서 고른다. 촬영은 아직 사진만이다.
+        mediaTypes: origin === 'camera' ? ['images'] : ['images', 'videos'],
+        allowsEditing: false, allowsMultipleSelection: false, quality: 1,
         exif: false, base64: false,
+        // §3-3: 영상을 원본 그대로(Passthrough) 받으면 iOS가 사진 보관함 권한을 묻는다(Expo 57 문서).
+        // H.264로 다시 만들어 받으면 권한 없이 고를 수 있고, HDR 영상도 일반 색으로 바뀐다.
+        videoExportPreset: ImagePicker.VideoExportPreset.H264_1920x1080,
       };
-      // allowsEditing:false + 사진만 선택 → iOS PHPicker, 갤러리 읽기 권한 불필요.
+      // allowsEditing:false → iOS PHPicker, 갤러리 읽기 권한 불필요.
       const result = origin === 'camera'
         ? await ImagePicker.launchCameraAsync(options)
         : await ImagePicker.launchImageLibraryAsync(options);
       if (result.canceled || !isActive()) return null;
       const asset = result.assets[0];
+      if (asset?.type === 'video') {
+        // §5-1: 앞부분만 쓰므로 앞 20초만 잘라 보관하고, 구도를 잡을 첫 장면 이미지를 만든다.
+        const video = await RouteRenderer.prepareVideoBackground(asset.uri, VIDEO_KEEP_SECONDS);
+        return { kind: 'photo', rawUri: asset.uri, photo: {
+          media: 'video', sourceUri: video.videoPath, posterUri: video.posterPath,
+          width: video.width, height: video.height, durationSec: video.durationSec,
+          origin: 'gallery', crop: INITIAL_PHOTO_CROP,
+        } } satisfies PhotoSelection;
+      }
       if (!asset || asset.width <= 0 || asset.height <= 0) throw new Error('Invalid photo');
       const prepared = await preparePhoto(asset.uri, asset.width, asset.height);
       return { kind: 'photo', rawUri: asset.uri, photo: {
@@ -97,7 +114,7 @@ export default function BackgroundSelectionScreen() {
         origin, crop: INITIAL_PHOTO_CROP,
       } } satisfies PhotoSelection;
     }, result => { if (result) { setCandidate(result); setShowSources(false); } }, async result => {
-      if (result) await removeFiles([result.photo.sourceUri]);
+      if (result) await removeFiles([result.photo.sourceUri, result.photo.posterUri]);
     });
   }
 
@@ -145,12 +162,19 @@ export default function BackgroundSelectionScreen() {
           return { path: active.uri, photo: undefined, created };
         }
         const id = `photo-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const isVideo = isVideoBackground(active.photo);
         let sourceUri = active.photo.sourceUri;
         if (!sourceUri.startsWith(BACKGROUNDS_DIR)) {
-          sourceUri = await persistBackground(sourceUri, `${id}-source.jpg`);
+          sourceUri = await persistBackground(sourceUri, `${id}-source.${isVideo ? 'mov' : 'jpg'}`);
           created.push(sourceUri);
         }
-        const savedPhoto = { ...active.photo, sourceUri };
+        // 영상은 첫 장면 이미지도 함께 보관한다. 구도를 다시 잡고 썸네일·공유 배경을 만드는 데 쓴다.
+        let posterUri = active.photo.posterUri;
+        if (posterUri && !posterUri.startsWith(BACKGROUNDS_DIR)) {
+          posterUri = await persistBackground(posterUri, `${id}-poster.jpg`);
+          created.push(posterUri);
+        }
+        const savedPhoto = { ...active.photo, sourceUri, ...(posterUri ? { posterUri } : {}) };
         const rendered = await renderPhotoBackground(savedPhoto);
         try {
           const path = await persistBackground(rendered.uri, `${id}-crop.jpg`);
@@ -198,7 +222,8 @@ export default function BackgroundSelectionScreen() {
           {photo ? (
             <PhotoBackgroundPreview key={`${photo.sourceUri}-${resetKey}`} uri={photo.sourceUri}
               imageWidth={photo.width} imageHeight={photo.height} width={cardWidth} height={cardHeight}
-              initialCrop={photo.crop} onChange={updateCrop}>{route}</PhotoBackgroundPreview>
+              initialCrop={photo.crop} onChange={updateCrop}
+              video={isVideoBackground(photo) ? { durationSec: photo.durationSec } : undefined}>{route}</PhotoBackgroundPreview>
           ) : <>
             <Image source={backgroundSource} style={styles.backgroundImage} resizeMode="cover" />
             {route}
@@ -210,12 +235,12 @@ export default function BackgroundSelectionScreen() {
           <Text style={styles.note}>드래그로 이동 · 두 손가락으로 확대</Text>
           <View style={styles.photoTools}>
             <Pressable disabled={disabled} onPress={() => { updateCrop(INITIAL_PHOTO_CROP); setResetKey(key => key + 1); }}
-              accessibilityRole="button" accessibilityLabel="사진 구도 초기화" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              accessibilityRole="button" accessibilityLabel={`${isVideoBackground(photo) ? '영상' : '사진'} 구도 초기화`} style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
               <SymbolView name="arrow.counterclockwise" size={14} tintColor={Colors.textMuted} />
               <Text style={styles.toolLabel}>초기화</Text>
             </Pressable>
             <Pressable disabled={disabled} onPress={cancelPhotoSelection}
-              accessibilityRole="button" accessibilityLabel="사진 선택 취소, 이전 배경으로 돌아가기" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              accessibilityRole="button" accessibilityLabel="선택 취소, 이전 배경으로 돌아가기" style={({ pressed }) => [styles.photoTool, pressed && styles.toolPressed, disabled && styles.disabled]}>
               <SymbolView name="xmark" size={13} tintColor={Colors.textMuted} />
               <Text style={styles.toolLabel}>선택 취소</Text>
             </Pressable>
@@ -253,7 +278,7 @@ export default function BackgroundSelectionScreen() {
             <Text style={styles.buttonText}>사진 촬영</Text>
           </Pressable>
         </View>
-        <Text style={styles.note}>기본 이미지를 고르거나 내 사진을 배경으로 사용해 보세요.</Text>
+        <Text style={styles.note}>기본 이미지를 고르거나 내 사진·영상을 배경으로 사용해 보세요.</Text>
         </>}
         <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button"
           accessibilityState={{ disabled }}
