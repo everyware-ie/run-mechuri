@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
   Alert,
@@ -26,6 +26,7 @@ import { CroppedBackgroundVideo } from '@/components/background-video';
 import {
   computeCaptionHitRect,
   computeFitTransform,
+  computeRouteLocalBounds,
   computeStampHitRects,
   IDENTITY_TRANSFORM,
   RoutePreview,
@@ -48,6 +49,7 @@ import { CAPTION_MAX_LINES, captionLines, limitCaptionInput } from '@/lib/captio
 import { saveDraft } from '@/lib/draft-store';
 import { isCaptionOnlyChange, pushHistory, type EditSnapshot } from '@/lib/edit-history';
 import { fitPortraitPreview } from '@/lib/preview-layout';
+import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 import { captionPlacement, withCaptionPlacement } from '@/lib/stamp-caption';
 import {
@@ -394,6 +396,25 @@ export default function EditScreen() {
     return 'route';
   };
 
+  // 경로 그림을 탭했는지. 끌기는 글자가 아닌 곳 어디서나 경로 그림을 움직이지만, 탭은 경로 그림의
+  // 영역(점선 상자) 안일 때만 경로 시트를 연다. 그 밖의 빈 곳을 탭하면 열린 시트를 닫는다.
+  const routeBounds = useMemo(() => computeRouteLocalBounds(draft.track?.coordinates ?? []), [draft.track]);
+  const routeBoundsRef = useRef(routeBounds);
+  useEffect(() => { routeBoundsRef.current = routeBounds; }, [routeBounds]);
+  const tapPointRef = useRef({ x: 0, y: 0 });
+  const isOnRoute = ({ x, y }: { x: number; y: number }) => {
+    const bounds = routeBoundsRef.current;
+    if (!bounds) return false;
+    // route-preview.tsx groupTransform의 역변환: 가운데 기준으로 이동 → 회전 → 크기를 되돌린다.
+    const t = transformRef.current;
+    const dx = x - CANVAS_WIDTH / 2 - t.x;
+    const dy = y - CANVAS_HEIGHT / 2 - t.y;
+    const angle = (-t.rotationDeg * Math.PI) / 180;
+    const localX = (dx * Math.cos(angle) - dy * Math.sin(angle)) / t.scale + CANVAS_WIDTH / 2;
+    const localY = (dx * Math.sin(angle) + dy * Math.cos(angle)) / t.scale + CANVAS_HEIGHT / 2;
+    return Math.abs(localX - bounds.cx) <= bounds.width / 2 && Math.abs(localY - bounds.cy) <= bounds.height / 2;
+  };
+
   // 숨기기 자리의 화면 좌표. 시트가 열려 있으면 시트 위에 놓는다.
   const hideZoneBottom = tool ? sheetHeight + keyboardHeight + 12 : insets.bottom + BOTTOM_BAR_HEIGHT + 8;
   const hideZoneCenterRef = useRef({ x: 0, y: 0 });
@@ -423,11 +444,13 @@ export default function EditScreen() {
     toolRef.current = null;
     setTool(null);
   };
-  // §4-1: 글자를 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를
-  // 탭하면 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을 받아 바꿨다.
+  // §4-1: 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를 탭하면
+  // 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을, 경로 그림을 탭해도
+  // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
   const handleTap = (target: DragTarget) => {
     if (target === 'caption') openTool('caption');
     else if (target === 'stamp') openTool('stamp');
+    else if (isOnRoute(tapPointRef.current)) openTool('route');
     else if (toolRef.current) closeTool();
   };
 
@@ -441,7 +464,8 @@ export default function EditScreen() {
           previewSizeRef.current.width, previewSizeRef.current.height, 'contain');
         gestureFitScaleRef.current = fitScale;
         const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
-        const target = hitTarget((touch.locationX - offsetX) / fitScale, (touch.locationY - offsetY) / fitScale);
+        tapPointRef.current = { x: (touch.locationX - offsetX) / fitScale, y: (touch.locationY - offsetY) / fitScale };
+        const target = hitTarget(tapPointRef.current.x, tapPointRef.current.y);
         dragTargetRef.current = target;
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
