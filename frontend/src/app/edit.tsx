@@ -181,9 +181,12 @@ export default function EditScreen() {
     }
   };
   const handleSmoothCommit = () => {
+    setIsInteracting(false);
     flushPendingSmooth();
     commitSmoothOptions(smoothOptionsRef.current);
   };
+  // §2-1: 슬라이더를 잡고 있는 동안은 미리보기를 멈춘다. 다듬기는 선 모양 차이라 멈춰야 보인다.
+  const handleSlidingStart = () => setIsInteracting(true);
 
   // §7: 러닝 데이터 묶음과 문구. 문구는 따로 움직인다(lib/stamp-caption.ts). 옛 저장분은
   // 들어올 때 문구 자리를 지금 자리로 고정해, 러닝 데이터를 옮겨도 문구가 따라가지 않게 한다.
@@ -836,14 +839,14 @@ export default function EditScreen() {
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>직선</Text>
             <View style={styles.sliderTrack}>
-              <Slider value={smoothOptions.smooth} accessibilityLabel="직선 다듬기" onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingComplete={handleSmoothCommit} />
+              <Slider value={smoothOptions.smooth} accessibilityLabel="직선 다듬기" onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingStart={handleSlidingStart} onSlidingComplete={handleSmoothCommit} />
             </View>
             <Text style={styles.sliderValue}>{smoothOptions.smooth === 0 ? '없음' : `${smoothOptions.smooth} %`}</Text>
           </View>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>코너</Text>
             <View style={styles.sliderTrack}>
-              <Slider value={smoothOptions.corner} accessibilityLabel="코너 다듬기" onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingComplete={handleSmoothCommit} />
+              <Slider value={smoothOptions.corner} accessibilityLabel="코너 다듬기" onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingStart={handleSlidingStart} onSlidingComplete={handleSmoothCommit} />
             </View>
             <Text style={styles.sliderValue}>{smoothOptions.corner === 0 ? '각지게' : `${smoothOptions.corner} %`}</Text>
           </View>
