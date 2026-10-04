@@ -12,6 +12,7 @@ import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
+import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
 
 import InstagramStoryShare from '../../../modules/instagram-story-share/src/InstagramStoryShareModule';
 
@@ -26,7 +27,7 @@ export default function ResultDetailScreen() {
   const { loadDraft, setSelectedRun } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const { saving, saveStatus, saveToPhotos: handleSaveToPhotos } = useSaveToPhotos(result?.outputPath);
 
   useEffect(() => {
     if (!id) return;
@@ -110,27 +111,6 @@ export default function ResultDetailScreen() {
     }
   };
 
-  const handleSaveToPhotos = async () => {
-    if (!result) return;
-    // share.tsx의 handleSaveToPhotos와 같은 이유로 legacy 서브패스에서 불러온다
-    // (expo-media-library 57에서 기본 진입점의 saveToLibraryAsync가 항상 실패하는 껍데기로
-    // 바뀜). 여기선 이미 완성된 결과물이라 outputPath만 그대로 넘긴다.
-    const MediaLibrary = await import('expo-media-library');
-    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
-    const { status } = await MediaLibrary.requestPermissionsAsync(true);
-    if (status !== 'granted') {
-      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
-      return;
-    }
-    try {
-      await saveToLibraryAsync(result.outputPath);
-      setSaveStatus('기기에 저장했어요');
-    } catch (error) {
-      console.warn('saveToLibraryAsync failed', error);
-      setSaveStatus('저장에 실패했어요');
-    }
-  };
-
   const handleMakeAnother = async () => {
     if (!result) return;
     // §2-2: "같은 기록으로 새로 만들기"는 렌더러 초기값에서 시작한다(result-editing §8).
@@ -190,7 +170,15 @@ export default function ResultDetailScreen() {
               아이콘 버튼 한 줄. */}
           <View style={styles.primaryRow}>
             <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
-            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+            <Pressable
+              onPress={handleSaveToPhotos}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel={saving ? '기기에 저장 중' : '기기에 저장'}
+              accessibilityState={{ disabled: saving, busy: saving }}
+              style={[styles.iconButton, saving && { opacity: 0.5 }]}
+              hitSlop={8}
+            >
               <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
             </Pressable>
           </View>
@@ -207,7 +195,7 @@ export default function ResultDetailScreen() {
         primaryLabel="기기에 저장"
         onPrimary={() => {
           setShowMissingSheet(false);
-          handleSaveToPhotos();
+          void handleSaveToPhotos();
         }}
         onClose={() => setShowMissingSheet(false)}
       />
