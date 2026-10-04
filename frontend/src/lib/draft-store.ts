@@ -36,21 +36,34 @@ export type Draft = {
 
 const STORAGE_KEY = 'mechuri.draft.v1';
 
+// 홈으로 돌아가 읽거나 완성 후 지울 때도 앞서 요청한 저장을 기다린다.
+// 저장소의 완료 순서에 의존하지 않으며, 한 작업의 실패는 이후 작업을 막지 않는다.
+let storageTail: Promise<void> = Promise.resolve();
+function inStorageOrder<T>(operation: () => Promise<T>): Promise<T> {
+  const result = storageTail.then(operation);
+  storageTail = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 export async function getDraft(): Promise<Draft | null> {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  const parsed = JSON.parse(raw);
-  return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed,
-    backgroundImagePath: resolveBackgroundPath(parsed.backgroundImagePath),
-    backgroundPhoto: resolvePhotoBackground(parsed.backgroundPhoto),
-  };
+  return inStorageOrder(async () => {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed,
+      backgroundImagePath: resolveBackgroundPath(parsed.backgroundImagePath),
+      backgroundPhoto: resolvePhotoBackground(parsed.backgroundPhoto),
+    };
+  });
 }
 
 export async function saveDraft(draft: Omit<Draft, 'lastEditedAt'>): Promise<void> {
   const full: Draft = { ...draft, lastEditedAt: new Date().toISOString() };
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(full));
+  // 대기하는 동안 호출자가 객체를 바꿔도 이 저장 요청은 요청 당시의 값이다.
+  const serialized = JSON.stringify(full);
+  await inStorageOrder(() => AsyncStorage.setItem(STORAGE_KEY, serialized));
 }
 
 export async function clearDraft(): Promise<void> {
-  await AsyncStorage.removeItem(STORAGE_KEY);
+  await inStorageOrder(() => AsyncStorage.removeItem(STORAGE_KEY));
 }
