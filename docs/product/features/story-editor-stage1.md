@@ -22,7 +22,7 @@
 - [x] 되돌리기 기록, 왼쪽 세로 크기 슬라이더, 늘 반복 재생
 - [x] PR, 머지
 
-**2026-10-04 후속 검증:** [문구 검증 노트](story-editor-caption-qa.md)에 표시 모드 결합과 옛 문구 이관 오류 수정, 자동 검사 결과와 남은 실기기 확인을 기록했다. 사용자가 **배포는 보류하고 남은 검증·수정만 진행**하도록 확인했다. 아래 TestFlight 항목은 보류 중이다.
+**2026-10-04 후속 검증:** [문구 검증 노트](story-editor-caption-qa.md)에 표시 모드 결합과 옛 문구 이관 오류 수정, 자동 검사 결과와 남은 실기기 확인을 기록했다. 사용자가 **배포는 보류하고 남은 검증·수정만 진행**하도록 확인했다. 아래 TestFlight 항목은 보류 중이다. 이어서 [되돌리기 안정성 검증](editor-undo-stability.md)에서 같은 값의 조작이 단계를 만들던 문제와 자동 장소 채우기가 사용자 편집 기록을 누락시킬 수 있던 구조를 고쳤다.
 
 **다음 할 일**
 
@@ -73,7 +73,7 @@
 | `src/components/route-preview.tsx` | `stampLayoutDescriptors`가 프리셋 배치와 문구들(`freeCaptionNodes`)을 따로 만든다. 옛 저장분 바꾸기 `migrateLegacyCaption`. 탭 영역 `computeStampHitRects`(문구 제외), `computeCaptionHitRects`(문구마다) |
 | `modules/route-renderer/ios/RouteRendererModule.swift` | `drawStamps`가 새 형식이면 프리셋 배치(`drawStampPass`)와 `drawFreeCaptions`(문구 목록)를 따로, 옛 저장분이면 한 번에 그린다 |
 | `src/lib/edit-gesture.ts` | 손가락을 댄 곳에 따라 무엇을 움직이고 탭하면 무엇을 하는지. 화면 좌표 계산은 edit.tsx가 한다 |
-| `src/lib/edit-history.ts` | 되돌리기 기록 |
+| `src/lib/edit-history.ts`, `src/hooks/use-edit-history.ts` | 실제 편집값 변경 판정과 되돌리기 기록 |
 | `src/components/vertical-slider.tsx` | 왼쪽 세로 크기 슬라이더 |
 | `src/app/background-selection.tsx` | `pick` 파라미터로 갤러리·카메라를 바로 연다 |
 
