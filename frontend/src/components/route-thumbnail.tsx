@@ -1,6 +1,8 @@
+import { HandDrawingLayer } from './hand-drawing-layer';
+import { EMPTY_HAND_DRAWING, handDrawingBounds, type HandStroke } from '@/lib/hand-drawing';
 import { SegmentGlowMarker } from './segment-glow-marker';
 import { lightingDistanceMeters, lightingSegments, segmentMarkerSize } from '@/lib/segment-lighting';
-import { resolveRouteStyle, type RouteStyle } from '@/lib/editor-style';
+import { runnerLightColors, resolveRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import { Blur, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { memo, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -25,6 +27,7 @@ type Props = {
   preset?: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
   size: number; // 정사각형 한 변
   smoothOptions?: SmoothOptions;
   run?: RunRecord;
@@ -39,6 +42,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   preset = 'default-drawing',
   transform,
   routeStyle,
+  handDrawing = EMPTY_HAND_DRAWING,
   size,
   smoothOptions = IDENTITY_SMOOTH,
   run,
@@ -47,6 +51,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   backgroundImagePath,
 }: Props) {
   const lineStyle = resolveRouteStyle(routeStyle);
+  const light = runnerLightColors(lineStyle.color);
   const markerSize = segmentMarkerSize(lineStyle.widthScale);
   // 영상의 마지막 3초와 같다. 완주 끝점은 마무리의 빛을 살짝 더 남긴다.
   const finishMarkerSize = { radius: markerSize.radius * 1.12, coreRadius: markerSize.coreRadius * 1.12,
@@ -65,9 +70,9 @@ export const RouteThumbnail = memo(function RouteThumbnail({
     [projected]
   );
   const frame = useMemo(() => framing === 'content'
-    ? computeThumbnailFrame(projected, transform, run ? computeStampBounds(run, stampConfig, true) : null)
+    ? computeThumbnailFrame(projected, transform, run ? computeStampBounds(run, stampConfig, true) : null, handDrawingBounds(handDrawing))
     : { x: 0, y: (CANVAS_HEIGHT - CANVAS_WIDTH) / 2, width: CANVAS_WIDTH, height: CANVAS_WIDTH },
-  [framing, projected, transform, run, stampConfig]);
+  [framing, projected, transform, run, stampConfig, handDrawing]);
 
   const fitScale = size / frame.width;
   const offsetX = -frame.x * fitScale;
@@ -100,12 +105,17 @@ export const RouteThumbnail = memo(function RouteThumbnail({
             strokeCap="round"
             strokeJoin="round"
             color={lineStyle.color}>
-            <Shadow dx={0} dy={0} blur={60} color={lineStyle.color === '#FFF3EC' ? GLOW : lineStyle.color} />
+            <Shadow dx={0} dy={0} blur={60} color={preset === 'light-runner' ? light.glow : lineStyle.color === '#FFF3EC' ? GLOW : lineStyle.color} />
           </Path>
+          {preset === 'light-runner' && light.colored && <Path path={path} style="stroke"
+            strokeWidth={3.1 * lineStyle.widthScale} strokeCap="round" strokeJoin="round" color={light.core} />}
           {markers.map((point, index) => point && <SegmentGlowMarker key={index} point={point}
             color={lineStyle.color} {...(index === markers.length - 1 ? finishMarkerSize : markerSize)} />)}
         </Group>
       </Canvas>
+
+      <HandDrawingLayer strokes={handDrawing} width={size} height={size}
+        offsetX={offsetX} offsetY={offsetY} scale={fitScale} />
 
       {/* §2-1 "완성된 순간" — 각인도 완주 시점(progressFraction=1)으로 함께. */}
       {run && (

@@ -1,3 +1,4 @@
+import { normalizeHandDrawing, type HandStroke } from '@/lib/hand-drawing';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -28,6 +29,7 @@ export type Draft = {
   preset: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
   /** result-editing FRD §5. v1 저장분엔 없을 수 있어 getDraft에서 기본값을 채운다. */
   smoothOptions: SmoothOptions;
   /** result-editing FRD §7. 마찬가지로 없을 수 있어 기본값을 채운다. */
@@ -54,6 +56,7 @@ export async function getDraft(): Promise<Draft | null> {
     const parsed = JSON.parse(raw);
     return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed,
       routeStyle: normalizeRouteStyle(parsed.routeStyle),
+      handDrawing: normalizeHandDrawing(parsed.handDrawing),
       backgroundImagePath: resolveBackgroundPath(parsed.backgroundImagePath),
       backgroundPhoto: resolvePhotoBackground(parsed.backgroundPhoto),
     };

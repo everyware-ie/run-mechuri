@@ -61,6 +61,7 @@ export default function ResultDetailScreen() {
               track: result.track,
               preset: result.preset,
               routeStyle: result.routeStyle,
+              handDrawing: result.handDrawing,
               transform: result.transform,
               smoothOptions: result.smoothOptions,
               stampConfig: result.stampConfig,
@@ -79,6 +80,7 @@ export default function ResultDetailScreen() {
       backgroundPhoto: result.backgroundPhoto,
       preset: result.preset,
       routeStyle: result.routeStyle,
+      handDrawing: result.handDrawing,
       transform: result.transform,
       smoothOptions: result.smoothOptions,
       stampConfig: result.stampConfig,
@@ -129,7 +131,7 @@ export default function ResultDetailScreen() {
           <RouteThumbnail
             points={result.track.coordinates}
             preset={result.preset}
-            routeStyle={result.routeStyle}
+            routeStyle={result.routeStyle} handDrawing={result.handDrawing}
             transform={result.transform}
             smoothOptions={result.smoothOptions}
             run={result.run}

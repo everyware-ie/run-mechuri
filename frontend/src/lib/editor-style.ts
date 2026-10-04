@@ -34,6 +34,19 @@ export function resolveRouteStyle(style?: RouteStyle) {
   return { color, widthScale: normalized.widthScale ?? 1 };
 }
 
+/** 불빛 러너: 파스텔 선과 채도 높은 주변 빛, 밝은 중심을 분리한다. Swift도 같은 RGB 계산. */
+export function runnerLightColors(color: string) {
+  if (color === '#FFF3EC') return { glow: '#FF5A2B', core: color, colored: false };
+  const channels = [1, 3, 5].map(offset => parseInt(color.slice(offset, offset + 2), 16));
+  const highest = Math.max(...channels), lowest = Math.min(...channels);
+  const hex = (values: number[]) => '#' + values.map(v => Math.round(v).toString(16).padStart(2, '0')).join('').toUpperCase();
+  return {
+    glow: hex(channels.map(v => highest === lowest ? v : 255 * (1 - .78 * (highest - v) / (highest - lowest)))),
+    core: hex(channels.map(v => v * .22 + 255 * .78)),
+    colored: true,
+  };
+}
+
 export function resolveStampFont(font: StampFont | undefined, fallback: string): string {
   const weight = fallback.endsWith('_500Medium') ? '500Medium' : '700Bold';
   return font === 'pretendard' ? `Pretendard_${weight}` : font === 'noto' ? `NotoSansKR_${weight}` : fallback;

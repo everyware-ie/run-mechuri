@@ -1,3 +1,4 @@
+import type { HandStroke } from '../../../src/lib/hand-drawing';
 // FRD: docs/specs/frd/route-rendering.md, docs/specs/frd/result-editing.md
 
 export type RoutePoint = {
@@ -34,6 +35,8 @@ export type PreparedVideo = {
 
 export type RenderClipOptions = {
   points: RoutePoint[];
+  /** 편집 3단계: 화면 좌표의 손그림. 영상 처음부터 경로 위·글자 아래에 표시. */
+  handDrawing?: HandStroke[];
   /** 기기 로컬 파일 경로 (file://). 배경 사진. 영상 배경이면 첫 장면 이미지이고 대체용으로 쓴다. */
   backgroundImagePath: string;
   /** 배경 영상(선택). 있으면 프레임마다 영상 장면을 깐다. */

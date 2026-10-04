@@ -1,3 +1,7 @@
+import { HandDrawingEditor } from '@/components/hand-drawing-editor';
+import { MyStyleSheet } from '@/components/my-style-sheet';
+import { EMPTY_HAND_DRAWING } from '@/lib/hand-drawing';
+import { applyMyStyle, type MyStyle } from '@/lib/my-style-store';
 import { RouteStyleControls, TextStyleControls } from '@/components/editor-style-controls';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import * as Haptics from 'expo-haptics';
@@ -86,14 +90,15 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'segment-lighting', label: '구간 점등' },
 ];
 
-type Tool = 'background' | 'route' | 'stamp';
-// 1단계는 넷만 둔다. 그리기·내 스타일은 3단계에서 만들 때 버튼도 같이 넣는다. 문구는 시트 없이
-// 화면에서 바로 쓴다(§7).
-const TOOLS: { id: Tool | 'caption'; label: string; symbol: SymbolViewProps['name'] }[] = [
+type Tool = 'background' | 'route' | 'stamp' | 'style';
+// 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
+const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
   { id: 'route', label: '경로', symbol: 'scribble' },
   { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
   { id: 'caption', label: '문구', symbol: 'textformat' },
+  { id: 'draw', label: '그리기', symbol: 'pencil.tip' },
+  { id: 'style', label: '내 스타일', symbol: 'square.stack' },
 ];
 
 type DragTarget = EditTarget;
@@ -129,6 +134,7 @@ export default function EditScreen() {
     setPreset: commitPreset,
     setTransform: commitTransform,
     setRouteStyle: commitRouteStyle,
+    setHandDrawing: commitHandDrawing,
     setSmoothOptions: commitSmoothOptions,
     setStampConfig: commitStampConfig,
     setBackground,
@@ -141,6 +147,9 @@ export default function EditScreen() {
 
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const [applyingStyle, setApplyingStyle] = useState(false);
+  const styleOperation = useRef(0);
   const [stampTab, setStampTab] = useState<'layout' | 'items' | 'style'>('layout');
   const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
   const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
@@ -163,7 +172,7 @@ export default function EditScreen() {
     onError: () => Alert.alert('배경을 바꾸지 못했어요', '다시 시도해 주세요.'),
   });
   // 스택에 편집 화면이 남아 있어도 갤러리·홈 등으로 떠난 뒤 늦은 작업은 반영하지 않는다.
-  useFocusEffect(useCallback(() => () => cancelBackgroundApply(), [cancelBackgroundApply]));
+  useFocusEffect(useCallback(() => () => { cancelBackgroundApply(); styleOperation.current++; setApplyingStyle(false); }, [cancelBackgroundApply]));
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -275,10 +284,13 @@ export default function EditScreen() {
     preset: draft.preset,
     transform: draft.transform,
     routeStyle: draft.routeStyle,
+    handDrawing: draft.handDrawing,
     smoothOptions: draft.smoothOptions,
     stampConfig: draft.stampConfig,
-  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.routeStyle, draft.smoothOptions, draft.stampConfig]);
-  const { history, skipNextChange, popHistory } = useEditHistory(editSnapshot);
+  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.routeStyle, draft.handDrawing, draft.smoothOptions, draft.stampConfig]);
+  const { history, skipNextChange, popHistory } = useEditHistory(editSnapshot, !drawing);
+  const snapshotRef = useRef(editSnapshot);
+  useEffect(() => { snapshotRef.current = editSnapshot; }, [editSnapshot]);
 
   // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
   // 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 문구를 프리셋 안으로 되돌린다.
@@ -501,6 +513,7 @@ export default function EditScreen() {
   }, [sheetAway, sheetDragY]);
 
   const openTool = (next: Tool) => {
+    if (next !== 'style') { styleOperation.current++; setApplyingStyle(false); }
     Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
@@ -510,6 +523,8 @@ export default function EditScreen() {
     setTool(next);
   };
   const closeTool = () => {
+    styleOperation.current++;
+    setApplyingStyle(false);
     Keyboard.dismiss();
     toolRef.current = null;
     setTool(null);
@@ -697,6 +712,7 @@ export default function EditScreen() {
       preset: draft.preset,
       transform: draft.transform,
       routeStyle: draft.routeStyle,
+      handDrawing: draft.handDrawing,
       smoothOptions: draft.smoothOptions,
       stampConfig: captionEditing.stampForSave,
     };
@@ -708,6 +724,7 @@ export default function EditScreen() {
     draft.preset,
     draft.transform,
     draft.routeStyle,
+    draft.handDrawing,
     draft.smoothOptions,
     captionEditing.stampForSave,
   ]);
@@ -731,17 +748,19 @@ export default function EditScreen() {
     });
   };
   const handleDone = () => {
-    if (isBackgroundPending()) return;
+    if (isBackgroundPending() || applyingStyle) return;
     commitAll();
     router.push('/share');
   };
   const handleClose = () => {
+    styleOperation.current++; setApplyingStyle(false);
     cancelBackgroundApply();
     commitAll();
     if (router.canDismiss()) router.dismissAll();
     else router.replace('/');
   };
   const handleUndo = () => {
+    styleOperation.current++; setApplyingStyle(false);
     cancelBackgroundApply();
     const previous = history[history.length - 1];
     if (!previous) return;
@@ -761,6 +780,27 @@ export default function EditScreen() {
   };
 
   const handlePresetSelect = (preset: RoutePreset) => commitPreset(preset);
+  const startDrawing = () => { if (isBackgroundPending() || applyingStyle) return; commitAll(); closeTool(); setDrawing(true); };
+  const handleStyleApply = async (style: MyStyle): Promise<boolean> => {
+    cancelBackgroundApply();
+    const operation = ++styleOperation.current;
+    setApplyingStyle(true);
+    try {
+      const bg = DEFAULT_BACKGROUNDS.find(b => b.id === style.backgroundId);
+      const path = bg ? await persistDefaultBackground(bg) : undefined;
+      if (operation !== styleOperation.current) return false;
+      const current = { ...snapshotRef.current, transform: transformRef.current, routeStyle: routeStyleRef.current,
+        smoothOptions: smoothOptionsRef.current, stampConfig: stampConfigRef.current };
+      const next = applyMyStyle(current, style, path);
+      updateRouteStyle(normalizeRouteStyle(next.routeStyle));
+      updateSmoothOptions(next.smoothOptions);
+      updateStampConfig(next.stampConfig);
+      loadDraft(next);
+      return true;
+    } catch (error) { if (operation === styleOperation.current) throw error; return false; }
+    finally { if (operation === styleOperation.current) setApplyingStyle(false); }
+  };
+
 
   // §1: 갤러리·카메라는 배경 선택 화면에서 구도를 잡고 돌아온다.
   const openBackgroundPicker = (pick: 'gallery' | 'camera') => {
@@ -839,6 +879,7 @@ export default function EditScreen() {
                     preset={draft.preset}
                     transform={transform}
                     routeStyle={routeStyle}
+                    handDrawing={draft.handDrawing}
                     transformShared={{
                       x: transformXShared,
                       y: transformYShared,
@@ -856,7 +897,7 @@ export default function EditScreen() {
                     stampSelected={selectionFor('stamp') && !stampConfig.hidden}
                     activeCaptionId={activeCaptionId}
                     hiddenCaptionId={editingCaption && !editingCaption.isNew ? editingCaption.id : null}
-                    playing={LOOP_PREVIEW}
+                    playing={LOOP_PREVIEW && !drawing}
                     stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
                     captionPositionShared={{ x: captionPositionX, y: captionPositionY }}
                   />
@@ -878,7 +919,7 @@ export default function EditScreen() {
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
-                    <Pressable key={t.id} onPress={() => t.id === 'caption' ? startNewCaption() : on ? closeTool() : openTool(t.id)}
+                    <Pressable key={t.id} onPress={() => t.id === 'caption' ? startNewCaption() : t.id === 'draw' ? startDrawing() : on ? closeTool() : openTool(t.id)}
                       style={styles.toolButton}
                       accessibilityRole="button" accessibilityLabel={t.label} accessibilityState={{ selected: on }}>
                       <Text style={styles.toolLabel}>{t.label}</Text>
@@ -900,11 +941,11 @@ export default function EditScreen() {
         </View>
         <View style={styles.bottomBar}>
           {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
-          {dragging === null && <Pressable onPress={handleDone} disabled={!!applyingBackground}
-            style={[styles.doneButton, applyingBackground && styles.doneButtonDisabled]}
+          {dragging === null && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
+            style={[styles.doneButton, (applyingBackground || applyingStyle) && styles.doneButtonDisabled]}
             accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로"
-            accessibilityState={{ disabled: !!applyingBackground, busy: !!applyingBackground }}>
-            <Text style={styles.doneText}>{applyingBackground ? '배경 적용 중' : '완료'}</Text>
+            accessibilityState={{ disabled: !!applyingBackground || applyingStyle, busy: !!applyingBackground || applyingStyle }}>
+            <Text style={styles.doneText}>{applyingStyle ? '스타일 적용 중' : applyingBackground ? '배경 적용 중' : '완료'}</Text>
           </Pressable>}
         </View>
       </SafeAreaView>
@@ -933,12 +974,13 @@ export default function EditScreen() {
 
         <ScrollView style={{ flexGrow: 0, maxHeight: Math.max(100, window.height - insets.top - insets.bottom - keyboardHeight - 140) }}
           contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {tool === 'style' && <MyStyleSheet snapshot={editSnapshot} onApply={handleStyleApply} />}
         {tool === 'background' && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundRow}>
             {DEFAULT_BACKGROUNDS.map((bg) => {
               const on = !draft.backgroundPhoto && !!draft.backgroundImagePath?.endsWith(`/${bg.id}.jpg`);
               return (
-                <Pressable key={bg.id} onPress={() => { void applyDefaultBackground(bg); }} disabled={!!applyingBackground}
+                <Pressable key={bg.id} onPress={() => { void applyDefaultBackground(bg); }} disabled={!!applyingBackground || applyingStyle}
                   style={[styles.backgroundSwatch, on && styles.backgroundSwatchOn]}
                   accessibilityRole="button" accessibilityLabel={`기본 배경 ${bg.label}`} accessibilityState={{ selected: on, disabled: !!applyingBackground }}>
                   <Image source={bg.source} style={styles.backgroundImage} />
@@ -1053,6 +1095,10 @@ export default function EditScreen() {
         limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
         onInteractionChange={setIsInteracting}
         onDone={finishEditingCaption} />}
+      {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} backgroundImagePath={draft.backgroundImagePath}
+        preview={{ points: draft.track.coordinates, preset: draft.preset, transform, routeStyle, smoothOptions,
+          run: draft.selectedRun, stampConfig, isInteracting: false, playing: false, fit: 'contain' }}
+        onChange={commitHandDrawing} onDone={() => setDrawing(false)} />}
     </View>
   );
 }

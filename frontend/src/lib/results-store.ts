@@ -1,3 +1,4 @@
+import { normalizeHandDrawing, type HandStroke } from '@/lib/hand-drawing';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -29,6 +30,7 @@ export type SavedResult = {
   preset: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
   /** result-editing FRD §5. v2 저장분엔 없을 수 있어 listResults에서 기본값을 채운다. */
   smoothOptions: SmoothOptions;
   /** result-editing FRD §7. 마찬가지로 없을 수 있어 기본값을 채운다. */
@@ -58,6 +60,7 @@ async function readResults(): Promise<SavedResult[]> {
   const withDefaults = results.map((r) => ({
     ...r,
     routeStyle: normalizeRouteStyle(r.routeStyle),
+    handDrawing: normalizeHandDrawing(r.handDrawing),
     backgroundImagePath: resolveBackgroundPath(r.backgroundImagePath),
     backgroundPhoto: resolvePhotoBackground(r.backgroundPhoto),
     smoothOptions: r.smoothOptions ?? IDENTITY_SMOOTH,
