@@ -2,7 +2,7 @@ import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
@@ -16,8 +16,8 @@ import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
+import { useInstagramShare } from '@/hooks/use-instagram-share';
 
-import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
 import { isVideoBackground } from '@/lib/background-storage';
 import { videoCrop } from '@/lib/video-rules';
 import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
@@ -61,6 +61,12 @@ export default function ShareScreen() {
   const [outputPath, setOutputPath] = useState<string | null>(null);
   const { saving, saveStatus, saveToPhotos: handleSaveToPhotos } = useSaveToPhotos(outputPath);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
+  const { sharing, share: handleShareToInstagram } = useInstagramShare({
+    outputPath,
+    backgroundImagePath: draft.backgroundImagePath ?? undefined,
+    onUnavailable: () => setShowMissingSheet(true),
+    onShared: () => { reset(); router.replace('/'); },
+  });
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
   const renderFileRef = useRef<string | null>(null);
@@ -216,31 +222,6 @@ export default function ShareScreen() {
     RouteRenderer.cancelRender();
   };
 
-  const handleShareToInstagram = async () => {
-    if (!outputPath) return;
-    // §3-2: 인스타그램이 없으면 저장으로 안내한다. canOpenURL이 스킴을 인식하려면
-    // app.json의 LSApplicationQueriesSchemes에 미리 선언돼 있어야 한다.
-    const canOpen = await Linking.canOpenURL('instagram-stories://share');
-    if (!canOpen) {
-      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다.
-      setShowMissingSheet(true);
-      return;
-    }
-    try {
-      await InstagramStoryShare.shareToStory(outputPath, draft.backgroundImagePath ?? undefined);
-      // §3-3: 공유 API는 실제로 게시했는지 콜백을 주지 않는다 — URL을 연 시점을
-      // 공유로 간주하고 바로 홈(보관함)으로 보낸다. 편집 화면으로 돌리지 않는다.
-      reset();
-      router.replace('/');
-    } catch (error) {
-      // App ID 미등록(Meta 앱 등록 진행 중, docs/product/features/export-and-share.md
-      // 참고)을 포함한 모든 실패를 같은 안내로 묶는다 — §3-2 미설치 안내와 같은
-      // 경로(저장으로 유도)라 실패 사유별 UI를 따로 만들지 않는다.
-      console.warn('InstagramStoryShare.shareToStory failed', error);
-      Alert.alert('인스타그램으로 보내지 못했어요', '대신 기기에 저장해서 나중에 올려주세요.');
-    }
-  };
-
   const handleDone = () => {
     reset();
     router.replace('/');
@@ -349,7 +330,14 @@ export default function ShareScreen() {
               한 줄 구성(2026-09-08, 이미지 UI 반영). 홈으로는 시안에 없지만 앱에는
               필요한 동작이라 그대로 아래 별도 버튼으로 둔다. */}
           <View style={styles.primaryRow}>
-            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
+            <ThemedButton
+              title="인스타그램 스토리로 공유"
+              onPress={handleShareToInstagram}
+              disabled={sharing}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: sharing, busy: sharing }}
+              style={styles.shareButton}
+            />
             <Pressable
               onPress={handleSaveToPhotos}
               disabled={saving}
