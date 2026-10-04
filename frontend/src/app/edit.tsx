@@ -1,6 +1,7 @@
+import { HandStrokeBrushes, HandStrokeControls } from '@/components/hand-stroke-controls';
 import { HandDrawingEditor } from '@/components/hand-drawing-editor';
 import { MyStyleSheet } from '@/components/my-style-sheet';
-import { EMPTY_HAND_DRAWING } from '@/lib/hand-drawing';
+import { constrainHandStroke, hitHandStroke, EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
 import { applyMyStyle, type MyStyle } from '@/lib/my-style-store';
 import { RouteStyleControls, TextStyleControls } from '@/components/editor-style-controls';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
@@ -90,7 +91,7 @@ const PRESETS: { id: RoutePreset; label: string }[] = [
   { id: 'segment-lighting', label: '구간 점등' },
 ];
 
-type Tool = 'background' | 'route' | 'stamp' | 'style';
+type Tool = 'background' | 'route' | 'stamp' | 'style' | 'ink';
 // 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
 const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
@@ -148,6 +149,21 @@ export default function EditScreen() {
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [selectedInkId, setSelectedInkId] = useState<string | null>(null);
+  const selectedInkRef = useRef<string | null>(null);
+  const inkRef = useRef(draft.handDrawing ?? EMPTY_HAND_DRAWING);
+  useEffect(() => { inkRef.current = draft.handDrawing ?? EMPTY_HAND_DRAWING; }, [draft.handDrawing]);
+  const inkX = useSharedValue(0), inkY = useSharedValue(0), inkScaleShared = useSharedValue(1);
+  const baseInk = useRef<HandStroke | null>(null);
+  const inkPinchRatio = useRef(1);
+  const [inkWidthPreview, setInkWidthPreview] = useState<number | null>(null);
+  const commitInk = (next: HandStroke[]) => { inkRef.current = next; commitHandDrawing(next); };
+  const clearInkSelection = () => { selectedInkRef.current = null; setSelectedInkId(null); setInkWidthPreview(null); };
+  const patchInk = (patch: Partial<Pick<HandStroke, 'brush' | 'color' | 'width'>>) => {
+    const id = selectedInkRef.current;
+    if (!id) return;
+    commitInk(inkRef.current.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
   const [applyingStyle, setApplyingStyle] = useState(false);
   const styleOperation = useRef(0);
   const [stampTab, setStampTab] = useState<'layout' | 'items' | 'style'>('layout');
@@ -443,7 +459,8 @@ export default function EditScreen() {
       if (contains(captions[i].rect, canvasX, canvasY)) return { kind: 'caption', id: captions[i].id };
     }
     if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return { kind: 'stamp' };
-    return null;
+    const inkId = hitHandStroke(inkRef.current, { x: canvasX, y: canvasY }, 12 / Math.max(.1, gestureFitScaleRef.current));
+    return inkId ? { kind: 'ink', id: inkId } : null;
   };
   const textHitRef = useRef<TextHit>(null);
 
@@ -513,6 +530,7 @@ export default function EditScreen() {
   }, [sheetAway, sheetDragY]);
 
   const openTool = (next: Tool) => {
+    if (next !== 'ink') clearInkSelection();
     if (next !== 'style') { styleOperation.current++; setApplyingStyle(false); }
     Keyboard.dismiss();
     flushPendingSmooth();
@@ -523,6 +541,7 @@ export default function EditScreen() {
     setTool(next);
   };
   const closeTool = () => {
+    clearInkSelection();
     styleOperation.current++;
     setApplyingStyle(false);
     Keyboard.dismiss();
@@ -532,9 +551,21 @@ export default function EditScreen() {
   // §4-1: 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를 탭하면
   // 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을, 경로 그림을 탭해도
   // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
+  const selectInk = (id: string) => {
+    const stroke = inkRef.current.find(s => s.id === id);
+    if (!stroke) return;
+    inkX.set(stroke.offset?.x ?? 0); inkY.set(stroke.offset?.y ?? 0); inkScaleShared.set(stroke.scale ?? 1);
+    selectedInkRef.current = id; setSelectedInkId(id); setInkWidthPreview(null);
+    openTool('ink');
+  };
+  const deleteInk = (id: string) => {
+    commitInk(inkRef.current.filter(s => s.id !== id));
+    closeTool(); showUndoToast('손그림을 지웠어요');
+  };
   const handleTap = () => {
     const action = tapActionFor(textHitRef.current, isOnRoute(tapPointRef.current), toolRef.current !== null);
     if (action.kind === 'open') openTool(action.tool);
+    else if (action.kind === 'editInk') selectInk(action.id);
     else if (action.kind === 'editCaption') startEditCaption(action.id);
     else if (action.kind === 'close') closeTool();
   };
@@ -555,13 +586,20 @@ export default function EditScreen() {
         textHitRef.current = textHitAt(tapPointRef.current.x, tapPointRef.current.y);
         // 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다(선택된 러닝 데이터를 끌다 경로가 움직이지 않게).
         // 선택된 것이 없으면 경로 그림 영역 안일 때만 경로 그림을 움직인다.
-        const target = dragTargetFor(textHitRef.current, selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
+        const target = dragTargetFor(textHitRef.current, toolRef.current === 'ink' && selectedInkRef.current ? { kind: 'ink', id: selectedInkRef.current } : selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
         dragTargetRef.current = target;
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
         const config = stampConfigRef.current;
         if (!target) {
           // 빈 곳. 끌어도 아무것도 움직이지 않고, 탭만 받는다.
+        } else if (target.kind === 'ink') {
+          const stroke = inkRef.current.find(s => s.id === target.id);
+          baseInk.current = stroke ?? null;
+          inkPinchRatio.current = 1;
+          if (stroke?.id === selectedInkRef.current || evt.nativeEvent.touches.length > 1) {
+            inkX.set(stroke?.offset?.x ?? 0); inkY.set(stroke?.offset?.y ?? 0); inkScaleShared.set(stroke?.scale ?? 1);
+          }
         } else if (target.kind === 'stamp') {
           baseStampPosition.current = config.position;
           baseStampScale.current = config.scale ?? 1;
@@ -601,6 +639,18 @@ export default function EditScreen() {
         const scaleDelta = touches.length === 2 && gestureStart.current
           ? touchDistance(touches[0], touches[1]) / (gestureStart.current.distance || 1) : 1;
 
+        if (target.kind === 'ink') {
+          const base = baseInk.current;
+          if (!base) return;
+          if (touches.length === 2) inkPinchRatio.current = scaleDelta;
+          const next = constrainHandStroke(base, { x: (base.offset?.x ?? 0) + gestureState.dx / fitScale,
+            y: (base.offset?.y ?? 0) + gestureState.dy / fitScale }, (base.scale ?? 1) * inkPinchRatio.current);
+          inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+          const wasOver = dropGestureRef.current.overZone;
+          const over = dropGestureRef.current.move(touches.length, !!touches[0] && isOverHideZone(touches[0]));
+          if (wasOver !== over) { setOverHideZone(over); if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); }
+          return;
+        }
         if (target.kind === 'stamp' || target.kind === 'caption') {
           const isStamp = target.kind === 'stamp';
           const base = isStamp ? baseStampPosition.current : baseCaptionPosition.current;
@@ -658,7 +708,15 @@ export default function EditScreen() {
     setOverHideZone(false);
   }
   function commitGesture(target: DragTarget, overDropZone: boolean) {
-    if (target.kind === 'stamp') {
+    if (target.kind === 'ink') {
+      const stroke = baseInk.current;
+      if (overDropZone) deleteInk(target.id);
+      else if (stroke) {
+        const next = constrainHandStroke(stroke, { x: inkX.value, y: inkY.value }, inkScaleShared.value);
+        commitInk(inkRef.current.map(s => s.id === target.id ? next : s));
+        if (toolRef.current === 'ink') selectInk(target.id);
+      }
+    } else if (target.kind === 'stamp') {
       if (overDropZone) hideStamp();
       else finishStampGesture();
     } else if (target.kind === 'caption') {
@@ -679,9 +737,12 @@ export default function EditScreen() {
   // §4-2: 시트를 열면 왼쪽에 크기 슬라이더가 나온다. 핀치와 같은 값을 쓴다.
   // 문구 크기는 문구를 쓰는 화면의 슬라이더에서 바꾼다(caption-editor.tsx).
   const sizeTarget: SheetTarget | null = selectedTarget(tool);
-  const committedSize = sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
+  const selectedInk = (draft.handDrawing ?? EMPTY_HAND_DRAWING).find(s => s.id === selectedInkId);
+  const inkToolOpen = tool === 'ink' && !!selectedInk;
+  const committedSize = inkToolOpen ? Math.round((selectedInk.scale ?? 1) * 100) : sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
   // 손잡이는 슬라이더가 바로 그린다. 여기서는 경로 그림이면 SharedValue만 바꿔 다시 그리지 않는다.
   const handleSizeChange = (percent: number) => {
+    if (inkToolOpen) { inkScaleShared.set(clampScale(percent / 100)); return; }
     if (!sizeTarget) return;
     const scale = percent / 100;
     if (sizeTarget === 'route') transformScaleShared.value = scale;
@@ -690,7 +751,11 @@ export default function EditScreen() {
   const handleSizeCommit = (percent: number) => {
     setIsInteracting(false);
     const scale = percent / 100;
-    if (sizeTarget === 'route') {
+    if (inkToolOpen && selectedInk) {
+      const next = constrainHandStroke(selectedInk, { x: inkX.value, y: inkY.value }, scale);
+      inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+      commitInk(inkRef.current.map(s => s.id === next.id ? next : s));
+    } else if (sizeTarget === 'route') {
       const next = { ...transformRef.current, scale };
       updateTransform(next);
       commitTransform(next);
@@ -767,6 +832,8 @@ export default function EditScreen() {
     Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
+    clearInkSelection();
+    if (toolRef.current === 'ink') closeTool();
     skipNextChange();
     popHistory();
     // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
@@ -848,7 +915,7 @@ export default function EditScreen() {
   };
   const showChrome = dragging === null && !editingCaption;
   const selectionFor = (target: SheetTarget) => dragging ? dragging.kind === target : tool === target;
-  const sizeLabel = sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
+  const sizeLabel = inkToolOpen ? '손그림 크기' : sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
   const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
   const dropZone = dragging ? dropZoneFor(dragging) : null;
   const resetChip = (label: string, onPress: () => void) => (
@@ -879,7 +946,9 @@ export default function EditScreen() {
                     preset={draft.preset}
                     transform={transform}
                     routeStyle={routeStyle}
-                    handDrawing={draft.handDrawing}
+                    handDrawing={inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
+                    selectedHandStrokeId={dragging?.kind === 'ink' ? dragging.id : selectedInkId}
+                    handStrokeEditing={(dragging?.kind === 'ink' || inkToolOpen) ? { id: dragging?.kind === 'ink' ? dragging.id : selectedInkId!, x: inkX, y: inkY, scale: inkScaleShared } : undefined}
                     transformShared={{
                       x: transformXShared,
                       y: transformYShared,
@@ -904,7 +973,17 @@ export default function EditScreen() {
                 </View>
               </View>
 
-              {showChrome && <View style={styles.topLeft} pointerEvents="box-none">
+              {showChrome && inkToolOpen && selectedInk && <View style={styles.inkHeader}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="손그림 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <HandStrokeBrushes brush={selectedInk.brush} onChange={brush => patchInk({ brush })} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="손그림 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && !inkToolOpen && <View style={styles.topLeft} pointerEvents="box-none">
                 <Pressable onPress={handleClose} style={styles.roundButton} accessibilityRole="button" accessibilityLabel="편집 나가기">
                   <SymbolView name="xmark" size={15} tintColor={Colors.text} />
                 </Pressable>
@@ -915,7 +994,7 @@ export default function EditScreen() {
                 </Pressable>
               </View>}
 
-              {showChrome && <View style={styles.toolRail} pointerEvents="box-none">
+              {showChrome && !inkToolOpen && <View style={styles.toolRail} pointerEvents="box-none">
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
@@ -931,7 +1010,7 @@ export default function EditScreen() {
                 })}
               </View>}
 
-              {sizeTarget && <View style={styles.sizeSlider}>
+              {(sizeTarget || inkToolOpen) && <View style={styles.sizeSlider}>
                 <VerticalSlider value={committedSize} onSlidingStart={handleSlidingStart}
                   minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
                   accessibilityLabel={sizeLabel} onChange={handleSizeChange} onSlidingComplete={handleSizeCommit} />
@@ -952,7 +1031,7 @@ export default function EditScreen() {
 
       {dropZone && <View pointerEvents="none"
         style={[styles.hideZone, overHideZone && styles.hideZoneOn, { bottom: hideZoneBottom, left: window.width / 2 - HIDE_ZONE / 2 }]}
-        accessibilityLabel={dropZone === 'delete' ? '여기에 놓으면 문구를 지워요' : '여기에 놓으면 러닝 데이터를 숨겨요'}>
+        accessibilityLabel={dropZone === 'delete' ? `여기에 놓으면 ${dragging?.kind === 'ink' ? '손그림' : '문구'}를 지워요` : '여기에 놓으면 러닝 데이터를 숨겨요'}>
         <SymbolView name={dropZone === 'delete' ? 'trash' : 'eye.slash'} size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
       </View>}
 
@@ -962,18 +1041,24 @@ export default function EditScreen() {
         onLayout={(e) => { sheetHeightRef.current = e.nativeEvent.layout.height; }}>
         <View style={styles.sheetGrabber} accessible={false} />
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{TOOLS.find((t) => t.id === tool)?.label}</Text>
+          <Text style={styles.sheetTitle}>{tool === 'ink' ? '손그림' : TOOLS.find((t) => t.id === tool)?.label}</Text>
           <View style={styles.sheetHeaderRight}>
             {tool === 'route' && resetChip('경로 초기화', handleRouteReset)}
             {tool === 'stamp' && resetChip('러닝 데이터 초기화', handleStampReset)}
+            {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
+              accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
             <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
               <Text style={styles.sheetDone}>완료</Text>
-            </Pressable>
+            </Pressable>}
           </View>
         </View>
 
         <ScrollView style={{ flexGrow: 0, maxHeight: Math.max(100, window.height - insets.top - insets.bottom - keyboardHeight - 140) }}
           contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {inkToolOpen && selectedInk && <HandStrokeControls stroke={inkWidthPreview !== null ? { ...selectedInk, width: inkWidthPreview } : selectedInk}
+          onChange={patchInk} onWidthStart={handleSlidingStart}
+          onWidthChange={setInkWidthPreview}
+          onWidthCommit={width => { patchInk({ width }); setInkWidthPreview(null); setIsInteracting(false); }} />}
         {tool === 'style' && <MyStyleSheet snapshot={editSnapshot} onApply={handleStyleApply} />}
         {tool === 'background' && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundRow}>
@@ -1108,6 +1193,9 @@ const CHIP_ON_BG = 'rgba(255,90,43,0.12)';
 const OVERLAY_BG = 'rgba(11,13,16,0.55)';
 
 const styles = StyleSheet.create({
+  inkHeader: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  inkDone: { height: 40, paddingHorizontal: 13, borderRadius: 20, backgroundColor: Colors.text, justifyContent: 'center' },
+  inkDoneText: { color: Colors.bg, fontFamily: Fonts.sansBold, fontSize: 12 },
   root: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   stage: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },

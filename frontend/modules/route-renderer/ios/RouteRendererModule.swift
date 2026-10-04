@@ -64,6 +64,8 @@ struct HandStrokeInput: Record {
   @Field var color: String = "#FFFFFF"
   @Field var width: Double = 12
   @Field var points: [InkPointInput] = []
+  @Field var offset: InkPointInput? = nil
+  @Field var scale: Double = 1
 }
 
 struct RenderClipOptionsInput: Record {
@@ -801,15 +803,24 @@ public class RouteRendererModule: Module {
         let palette = ["#FFFFFF", "#111111", "#FFF3EC", "#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"]
         let rgb = palette.contains(stroke.color) ? UInt32(stroke.color.dropFirst(), radix: 16) ?? 0xFFFFFF : 0xFFFFFF
         let color = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        let scale = CGFloat(stroke.scale.isFinite ? min(3, max(1.0 / 3, stroke.scale)) : 1)
+        let center = CGPoint(x: ((points.map(\.x).min() ?? 0) + (points.map(\.x).max() ?? 0)) / 2,
+                             y: ((points.map(\.y).min() ?? 0) + (points.map(\.y).max() ?? 0)) / 2)
+        let ox = stroke.offset?.x ?? 0, oy = stroke.offset?.y ?? 0
+        let offset = CGPoint(x: ox.isFinite ? min(3240, max(-3240, ox)) : 0,
+                             y: oy.isFinite ? min(5760, max(-5760, oy)) : 0)
         let width = CGFloat(stroke.width.isFinite ? min(48, max(4, stroke.width)) : 12)
         let neon = stroke.brush == "neon"
         context.cgContext.saveGState()
+        context.cgContext.translateBy(x: center.x + offset.x, y: center.y + offset.y)
+        context.cgContext.scaleBy(x: scale, y: scale)
+        context.cgContext.translateBy(x: -center.x, y: -center.y)
         if stroke.brush == "highlight" { context.cgContext.setAlpha(0.4) }
         if points.count == 1 {
-          self.fillDot(at: points[0], radius: width / 2, color: color, glowRadius: neon ? 16 : 0, glowColor: color)
+          self.fillDot(at: points[0], radius: width / 2, color: color, glowRadius: neon ? 16 * scale : 0, glowColor: color)
           if neon { self.fillDot(at: points[0], radius: width * 0.19, color: .white) }
         } else {
-          self.strokePath(points, color: color, width: width, glowRadius: neon ? 16 : 0, glowColor: color)
+          self.strokePath(points, color: color, width: width, glowRadius: neon ? 16 * scale : 0, glowColor: color)
           if neon { self.strokePath(points, color: .white, width: width * 0.38) }
         }
         context.cgContext.restoreGState()

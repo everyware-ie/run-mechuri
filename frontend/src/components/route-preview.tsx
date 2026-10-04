@@ -1,4 +1,4 @@
-import { HandDrawingLayer, type ActiveHandStroke } from './hand-drawing-layer';
+import { HandDrawingLayer, type ActiveHandStroke, type HandStrokeEditing } from './hand-drawing-layer';
 import { EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
 import { SegmentGlowMarker } from './segment-glow-marker';
 import { lightingDistanceMeters, lightingSegments, segmentMarkerSize } from '@/lib/segment-lighting';
@@ -204,6 +204,8 @@ type Props = {
   routeStyle?: RouteStyle;
   handDrawing?: HandStroke[];
   activeHandDrawing?: ActiveHandStroke;
+  selectedHandStrokeId?: string | null;
+  handStrokeEditing?: HandStrokeEditing;
   /** 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끌기·핀치 중엔
    * transform(React state, 매 프레임 리렌더)을 직접 안 바꾸고, edit.tsx가 이
    * SharedValue들에 바로 쓴다(터치를 처리하는 JS 스레드에서 쓰긴 하지만, 그
@@ -287,6 +289,8 @@ export function RoutePreview({
   routeStyle,
   handDrawing = EMPTY_HAND_DRAWING,
   activeHandDrawing,
+  selectedHandStrokeId,
+  handStrokeEditing,
   smoothOptions,
   run,
   stampConfig,
@@ -485,7 +489,7 @@ export function RoutePreview({
         playToken={playToken} onProgressSample={setUiStampProgress} selectionBounds={routeLocalBounds}
       />
 
-      <HandDrawingLayer strokes={handDrawing} active={activeHandDrawing} width={viewWidth} height={viewHeight}
+      <HandDrawingLayer strokes={handDrawing} active={activeHandDrawing} selectedId={selectedHandStrokeId} editing={handStrokeEditing} width={viewWidth} height={viewHeight}
         offsetX={offsetX} offsetY={offsetY} scale={fitScale} />
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg

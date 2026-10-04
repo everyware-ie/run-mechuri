@@ -128,7 +128,7 @@ it('결과물과 다시 편집할 값에 선·글자 스타일을 함께 보관�
 it('완성한 손그림은 다시 편집할 때 같은 붓·좌표로 남고 기존 결과물은 빈 손그림이다', async () => {
   await addResult(result('old'));
   expect((await getResult('old'))?.handDrawing).toEqual([]);
-  const handDrawing = [{ id: 'ink', brush: 'neon' as const, color: '#8EF0CE', width: 24, points: [{ x: 900, y: 1800 }] }];
+  const handDrawing = [{ id: 'ink', brush: 'neon' as const, color: '#8EF0CE', width: 24, points: [{ x: 900, y: 1800 }], offset: { x: -350, y: -600 }, scale: .5 }];
   await addResult({ ...result('new'), handDrawing });
   expect((await getResult('new'))?.handDrawing).toEqual(handDrawing);
 });
