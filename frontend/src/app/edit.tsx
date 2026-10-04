@@ -85,17 +85,17 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 시안 S6 "넣을 것" 순서. 칩에는 실제 값도 함께 보여준다(stampChipLabel).
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
-const PRESETS: { id: RoutePreset; label: string }[] = [
-  { id: 'default-drawing', label: '기본 경로 그림' },
-  { id: 'light-runner', label: '불빛 러너' },
-  { id: 'segment-lighting', label: '구간 점등' },
+const PRESETS: { id: RoutePreset; label: string; shortLabel: string; symbol: SymbolViewProps['name'] }[] = [
+  { id: 'default-drawing', label: '기본 경로 그림', shortLabel: '기본', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'light-runner', label: '불빛 러너', shortLabel: '불빛', symbol: 'sparkles' },
+  { id: 'segment-lighting', label: '구간 점등', shortLabel: '구간', symbol: 'point.3.connected.trianglepath.dotted' },
 ];
 
 type Tool = 'background' | 'route' | 'stamp' | 'style' | 'ink';
 // 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
 const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
-  { id: 'route', label: '경로', symbol: 'scribble' },
+  { id: 'route', label: '경로', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
   { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
   { id: 'caption', label: '문구', symbol: 'textformat' },
   { id: 'draw', label: '그리기', symbol: 'pencil.tip' },
@@ -983,7 +983,27 @@ export default function EditScreen() {
                   <Text style={styles.inkDoneText}>완료</Text>
                 </Pressable>
               </View>}
-              {showChrome && !inkToolOpen && <View style={styles.topLeft} pointerEvents="box-none">
+              {showChrome && tool === 'route' && <View style={styles.inkHeader} testID="route-preset-toolbar">
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="경로 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <View style={styles.routePresetRow}>
+                  {PRESETS.map(p => {
+                    const selected = draft.preset === p.id;
+                    return <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
+                      accessibilityRole="button" accessibilityLabel={`경로 프리셋 ${p.label}`} accessibilityState={{ selected }}
+                      style={[styles.routePreset, selected && styles.presetChipOn]}>
+                      <SymbolView name={p.symbol} size={17} tintColor={selected ? Colors.accentText : Colors.text} />
+                      <Text style={[styles.routePresetLabel, selected && styles.presetChipTextOn]}>{p.shortLabel}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="경로 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && !inkToolOpen && tool !== 'route' && <View style={styles.topLeft} pointerEvents="box-none">
                 <Pressable onPress={handleClose} style={styles.roundButton} accessibilityRole="button" accessibilityLabel="편집 나가기">
                   <SymbolView name="xmark" size={15} tintColor={Colors.text} />
                 </Pressable>
@@ -994,7 +1014,7 @@ export default function EditScreen() {
                 </Pressable>
               </View>}
 
-              {showChrome && !inkToolOpen && <View style={styles.toolRail} pointerEvents="box-none">
+              {showChrome && !inkToolOpen && tool !== 'route' && <View style={styles.toolRail} pointerEvents="box-none">
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
@@ -1047,7 +1067,7 @@ export default function EditScreen() {
             {tool === 'stamp' && resetChip('러닝 데이터 초기화', handleStampReset)}
             {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
               accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
-            <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
+            tool !== 'route' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
               <Text style={styles.sheetDone}>완료</Text>
             </Pressable>}
           </View>
@@ -1089,7 +1109,7 @@ export default function EditScreen() {
 
         {tool === 'route' && <>
           <View style={styles.tabs}>
-            {([{ id: 'drawing', label: '경로 그림' }, { id: 'style', label: '스타일' }] as const).map(tab =>
+            {([{ id: 'drawing', label: '다듬기' }, { id: 'style', label: '선 스타일' }] as const).map(tab =>
               <Pressable key={tab.id} onPress={() => setRouteTab(tab.id)} style={styles.tab}
                 accessibilityRole="tab" accessibilityState={{ selected: routeTab === tab.id }}>
                 <Text style={routeTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
@@ -1098,15 +1118,6 @@ export default function EditScreen() {
           {routeTab === 'style' ? <RouteStyleControls value={routeStyle} onChange={updateRouteStyle}
             onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit} /> : <>
           <Text style={styles.hint}>경로를 끌어서 옮기고, 두 손가락으로 키우거나 돌려요.</Text>
-          <View style={styles.presetRow}>
-            {PRESETS.map((p) => (
-              <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
-                accessibilityRole="button" accessibilityState={{ selected: draft.preset === p.id }}
-                style={[styles.presetChip, draft.preset === p.id && styles.presetChipOn]}>
-                <Text style={draft.preset === p.id ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
-              </Pressable>
-            ))}
-          </View>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>직선</Text>
             <View style={styles.sliderTrack}>
@@ -1245,8 +1256,9 @@ const styles = StyleSheet.create({
   resetChip: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: Colors.borderStrong },
   resetChipPressed: { backgroundColor: Colors.border },
   resetText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
-  presetRow: { flexDirection: 'row', gap: 8 },
-  presetChip: { flex: 1, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
+  routePresetRow: { flexDirection: 'row', gap: 8 },
+  routePreset: { width: 44, minHeight: 44, paddingVertical: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: OVERLAY_BG },
+  routePresetLabel: { fontFamily: Fonts.sans, fontSize: 9, color: Colors.text },
   presetChipOn: { backgroundColor: Colors.accent },
   presetChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   presetChipTextOn: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accentText },
