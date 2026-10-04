@@ -51,6 +51,7 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
 import { limitFreeCaptionInput } from '@/lib/caption-layout';
 import { saveDraft } from '@/lib/draft-store';
+import { EditDropGesture } from '@/lib/edit-drop-gesture';
 import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
 import type { EditSnapshot } from '@/lib/edit-history';
 import { useEditHistory } from '@/hooks/use-edit-history';
@@ -308,7 +309,7 @@ export default function EditScreen() {
   // 끄는 중인 대상. 손가락이 실제로 움직였을 때만 정한다. 탭할 때 점선이 깜빡이지 않게 한다.
   const [dragging, setDragging] = useState<DragTarget | null>(null);
   const [overHideZone, setOverHideZone] = useState(false);
-  const overHideZoneRef = useRef(false);
+  const dropGestureRef = useRef(new EditDropGesture());
 
   // 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끄는 동안은 React state가 아니라
   // SharedValue에 바로 쓰고(RoutePreview가 UI 스레드에서 읽는다) 손을 뗄 때만 커밋한다.
@@ -520,6 +521,8 @@ export default function EditScreen() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         setIsInteracting(true);
+        dropGestureRef.current.start(evt.nativeEvent.touches.length);
+        setOverHideZone(false);
         const { fitScale, offsetX, offsetY } = computeFitTransform(
           previewSizeRef.current.width, previewSizeRef.current.height, 'contain');
         gestureFitScaleRef.current = fitScale;
@@ -579,25 +582,20 @@ export default function EditScreen() {
           const base = isStamp ? baseStampPosition.current : baseCaptionPosition.current;
           (isStamp ? stampPositionX : captionPositionX).set(base.x + gestureState.dx / fitScale);
           (isStamp ? stampPositionY : captionPositionY).set(base.y + gestureState.dy / fitScale);
+          // 한 번 두 손가락을 썼으면 이번 조작이 끝날 때까지 숨기기·지우기를 막는다.
+          // 한 손가락을 먼저 떼도 아래 영역의 강조와 진동이 다시 켜지지 않는다.
+          const wasOver = dropGestureRef.current.overZone;
+          const over = dropGestureRef.current.move(touches.length, !!touches[0] && isOverHideZone(touches[0]));
+          if (over !== wasOver) {
+            setOverHideZone(over);
+            if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          }
           if (touches.length === 2) {
-            // 두 손가락이면 크기를 바꾸려는 것이다. 숨기기 자리 위였더라도 숨기지 않는다.
-            if (overHideZoneRef.current) {
-              overHideZoneRef.current = false;
-              setOverHideZone(false);
-            }
             const config = stampConfigRef.current;
             const scale = clampScale((isStamp ? baseStampScale.current : baseCaptionScale.current) * scaleDelta);
             scheduleStampConfigUpdate(target.kind === 'caption'
               ? { ...config, captions: captionItems(config).map((c) => c.id === target.id ? { ...c, scale } : c) }
               : { ...config, scale });
-          } else if (touches[0]) {
-            const over = isOverHideZone(touches[0]);
-            if (over !== overHideZoneRef.current) {
-              overHideZoneRef.current = over;
-              setOverHideZone(over);
-              // 들어가는 순간 한 번 진동해 "지금 놓으면 숨겨진다"를 손으로 알린다.
-              if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-            }
           }
           return;
         }
@@ -612,7 +610,7 @@ export default function EditScreen() {
       },
       onPanResponderRelease: () => {
         const wasPinching = gestureStart.current !== null;
-        const over = overHideZoneRef.current;
+        const over = dropGestureRef.current.finish();
         endGesture();
         const target = dragTargetRef.current;
         if (!gestureMovedRef.current && !wasPinching) {
@@ -622,6 +620,7 @@ export default function EditScreen() {
         if (target) commitGesture(target, over);
       },
       onPanResponderTerminate: () => {
+        dropGestureRef.current.finish(true);
         endGesture();
         if (gestureMovedRef.current && dragTargetRef.current) commitGesture(dragTargetRef.current, false);
       },
@@ -632,7 +631,6 @@ export default function EditScreen() {
     setIsInteracting(false);
     setDragging(null);
     gestureStart.current = null;
-    overHideZoneRef.current = false;
     setOverHideZone(false);
   }
   function commitGesture(target: DragTarget, overDropZone: boolean) {
