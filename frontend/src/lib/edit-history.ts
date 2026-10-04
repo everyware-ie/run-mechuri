@@ -1,3 +1,4 @@
+import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import type { RoutePreset, RouteTransform, StampConfig } from '@/components/route-preview';
 import type { PhotoBackground } from './background-storage';
 import type { SmoothOptions } from './route-smoothing';
@@ -11,6 +12,7 @@ export type EditSnapshot = {
   backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
   smoothOptions: SmoothOptions;
   stampConfig: StampConfig;
 };
@@ -40,7 +42,8 @@ function sameValue(a: unknown, b: unknown): boolean {
 // 옛 저장분에서 빠져 있을 수 있는 기본값도 같은 편집값으로 본다.
 const editableValues = (snapshot: EditSnapshot) => ({
   ...snapshot,
-  stampConfig: { ...snapshot.stampConfig, placeName: undefined,
+  routeStyle: normalizeRouteStyle(snapshot.routeStyle),
+  stampConfig: { ...snapshot.stampConfig, placeName: undefined, font: snapshot.stampConfig.font === 'preset' ? undefined : snapshot.stampConfig.font,
     scale: snapshot.stampConfig.scale ?? 1, hidden: snapshot.stampConfig.hidden ?? false,
     layout: snapshot.stampConfig.layout ?? 'row' },
 });

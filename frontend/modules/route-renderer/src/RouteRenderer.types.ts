@@ -43,6 +43,11 @@ export type RenderClipOptions = {
   outputFileName: string;
   preset: RoutePreset;
   transform: RouteTransform;
+  /** 2단계 스타일. 생략 시 기존 프리셋 기본값. */
+  routeColor?: string;
+  routeWidthScale?: number;
+  stampFont?: 'preset' | 'pretendard' | 'noto';
+  stampTextColor?: 'white' | 'black';
   /** result-editing FRD §5 다듬기 세기. 0~100, 기본 0(무보정). */
   smooth: number;
   /** result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정). */

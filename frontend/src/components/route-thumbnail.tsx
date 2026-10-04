@@ -1,3 +1,4 @@
+import { resolveRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import { Blur, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { memo, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -17,12 +18,12 @@ import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type R
 // 따뜻한 흰색으로 밝아지는 게 공통이라 이 하나로 충분하다. route-preview.tsx와 같은
 // Skia 렌더 + 시안 neon 팔레트.
 
-const LINE_WARM = '#FFF3EC';
 const GLOW = '#FF5A2B';
 
 type Props = {
   points: Point[];
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
   size: number; // 정사각형 한 변
   smoothOptions?: SmoothOptions;
   run?: RunRecord;
@@ -35,6 +36,7 @@ type Props = {
 export const RouteThumbnail = memo(function RouteThumbnail({
   points,
   transform,
+  routeStyle,
   size,
   smoothOptions = IDENTITY_SMOOTH,
   run,
@@ -42,6 +44,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   framing = 'center',
   backgroundImagePath,
 }: Props) {
+  const lineStyle = resolveRouteStyle(routeStyle);
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
   const path = useMemo(
@@ -80,11 +83,11 @@ export const RouteThumbnail = memo(function RouteThumbnail({
           <Path
             path={path}
             style="stroke"
-            strokeWidth={10}
+            strokeWidth={10 * lineStyle.widthScale}
             strokeCap="round"
             strokeJoin="round"
-            color={LINE_WARM}>
-            <Shadow dx={0} dy={0} blur={60} color={GLOW} />
+            color={lineStyle.color}>
+            <Shadow dx={0} dy={0} blur={60} color={lineStyle.color === '#FFF3EC' ? GLOW : lineStyle.color} />
           </Path>
         </Group>
       </Canvas>

@@ -1,3 +1,4 @@
+import { type RouteStyle } from '@/lib/editor-style';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -24,6 +25,7 @@ type CreationDraft = {
   backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
   /** result-editing FRD §5 다듬기 세기 */
   smoothOptions: SmoothOptions;
   /** result-editing FRD §7 각인 */
@@ -35,6 +37,7 @@ type CreationFlowContextValue = {
   setSelectedRun: (run: RunRecord, track: Track) => Promise<void>;
   setBackground: (path: string, photo?: PhotoBackground) => void;
   setPreset: (preset: RoutePreset) => void;
+  setRouteStyle: (style: RouteStyle) => void;
   setTransform: (transform: RouteTransform) => void;
   setSmoothOptions: (smoothOptions: SmoothOptions) => void;
   setStampConfig: (stampConfig: StampConfig) => void;
@@ -69,11 +72,12 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
       },
       setBackground: (path, photo) => setDraft((prev) => ({ ...prev, backgroundImagePath: path, backgroundPhoto: photo })),
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
+      setRouteStyle: (routeStyle) => setDraft((prev) => ({ ...prev, routeStyle })),
       setTransform: (transform) => setDraft((prev) => ({ ...prev, transform })),
       setSmoothOptions: (smoothOptions) => setDraft((prev) => ({ ...prev, smoothOptions })),
       setStampConfig: (stampConfig) => setDraft((prev) => ({ ...prev, stampConfig })),
       resetTransform: () => setDraft((prev) => ({ ...prev, transform: IDENTITY_TRANSFORM })),
-      loadDraft: (partial) => setDraft((prev) => ({ ...prev, ...partial })),
+      loadDraft: (partial) => setDraft((prev) => ({ ...prev, routeStyle: undefined, ...partial })),
       reset: () => setDraft(emptyDraft),
     }),
     [draft]

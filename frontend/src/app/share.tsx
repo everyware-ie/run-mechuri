@@ -1,3 +1,4 @@
+import { resolveRouteStyle } from '@/lib/editor-style';
 import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
@@ -131,6 +132,10 @@ export default function ShareScreen() {
       } : {}),
       outputFileName: `mechuri-${resultId}`,
       preset: draft.preset,
+      routeColor: resolveRouteStyle(draft.routeStyle).color,
+      routeWidthScale: resolveRouteStyle(draft.routeStyle).widthScale,
+      stampFont: draft.stampConfig.font ?? 'preset',
+      ...(draft.stampConfig.textColor ? { stampTextColor: draft.stampConfig.textColor } : {}),
       transform: draft.transform,
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
@@ -180,6 +185,7 @@ export default function ShareScreen() {
             distanceMeters: selectedRun.distanceMeters,
             track,
             preset: draft.preset,
+            routeStyle: draft.routeStyle,
             transform: draft.transform,
             smoothOptions: draft.smoothOptions,
             stampConfig: draft.stampConfig,
@@ -260,6 +266,7 @@ export default function ShareScreen() {
             {encTrack && draft.selectedRun && draft.backgroundImagePath && (
               <RouteThumbnail
                 points={encTrack.coordinates}
+                routeStyle={draft.routeStyle}
                 transform={draft.transform}
                 smoothOptions={draft.smoothOptions}
                 run={draft.selectedRun}
@@ -305,6 +312,7 @@ export default function ShareScreen() {
         <View style={styles.card}>
           <RouteThumbnail
             points={track.coordinates}
+            routeStyle={draft.routeStyle}
             transform={draft.transform}
             smoothOptions={draft.smoothOptions}
             run={selectedRun}

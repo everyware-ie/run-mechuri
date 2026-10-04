@@ -113,3 +113,13 @@ it('기존 저장 키·날짜 정렬·옛 편집값과 사진 경로 보완을 �
   expect(values[2].stampConfig.position).toEqual({ x: 0, y: 0 });
   expect(AsyncStorage.getItem).toHaveBeenCalledWith('mechuri.results.v2');
 });
+
+
+it('결과물과 다시 편집할 값에 선·글자 스타일을 함께 보관한다', async () => {
+  const value = { ...result('styled'), routeStyle: { color: 'violet' as const, widthScale: .7 },
+    stampConfig: { ...result('styled').stampConfig, font: 'noto' as const, textColor: 'white' as const } };
+  await addResult(value);
+  const loaded = await getResult(value.id);
+  expect(loaded?.routeStyle).toEqual(value.routeStyle);
+  expect(loaded?.stampConfig).toEqual(value.stampConfig);
+});

@@ -82,3 +82,15 @@ describe('실제로 바뀐 편집만 기록', () => {
     } })).toBe(true);
   });
 });
+
+
+it('스타일 편집은 되돌리기에 포함하고 옛 기본값의 명시적 선택은 제외한다', () => {
+  const original = snapshot();
+  expect(hasEditChanges(original, { ...original, routeStyle: { color: 'warm', widthScale: 1 },
+    stampConfig: { ...original.stampConfig, font: 'preset' } })).toBe(false);
+  for (const updated of [
+    { ...original, routeStyle: { color: 'mint' as const, widthScale: 1.5 } },
+    { ...original, stampConfig: { ...original.stampConfig, font: 'pretendard' as const } },
+    { ...original, stampConfig: { ...original.stampConfig, textColor: 'black' as const } },
+  ]) expect(hasEditChanges(original, updated)).toBe(true);
+});

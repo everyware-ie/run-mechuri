@@ -84,6 +84,7 @@ export default function HomeScreen() {
               selectedRun: draft.run,
               track: draft.track,
               preset: draft.preset,
+              routeStyle: draft.routeStyle,
               transform: draft.transform,
               smoothOptions: draft.smoothOptions,
               stampConfig: draft.stampConfig,
@@ -100,6 +101,7 @@ export default function HomeScreen() {
       backgroundImagePath: draft.backgroundImagePath,
       backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
+      routeStyle: draft.routeStyle,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
       stampConfig: draft.stampConfig,
@@ -148,6 +150,7 @@ export default function HomeScreen() {
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
                 <RouteThumbnail
                   points={hero.track.coordinates}
+                  routeStyle={hero.routeStyle}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
                   size={heroSize}
@@ -190,6 +193,7 @@ export default function HomeScreen() {
             <View style={styles.gridThumb}>
               <RouteThumbnail
                 points={item.track.coordinates}
+                routeStyle={item.routeStyle}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
                 size={gridSize}

@@ -1,3 +1,4 @@
+import { resolveStampFont, resolveStampColor, textContrastColor, type TextStyleChoice } from '@/lib/editor-style';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -17,7 +18,7 @@ import { FREE_CAPTION_SIZE, freeCaptionLines, freeCaptionMetrics } from '@/lib/c
 // 고정하고 줄이기만 해서 흐려지지 않게 한다. 칸 너비는 거꾸로 맞춰 줄바꿈이 결과물과 같은 자리에서
 // 일어나게 한다.
 
-type Props = {
+type Props = TextStyleChoice & {
   text: string;
   scale: number;
   /** 캔버스 px → 화면 pt. 미리보기와 같은 크기로 보여 준다. */
@@ -36,7 +37,7 @@ const SIZE_MAX = 300;
 /** 입력 칸의 글자는 이 배율로 그리고 화면에서는 줄인다. */
 const BASE_SCALE = SIZE_MAX / 100;
 
-export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset, limited, onChangeText, onScaleChange, onInteractionChange, onDone }: Props) {
+export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset, limited, onChangeText, onScaleChange, onInteractionChange, onDone, font, textColor }: Props) {
   const [area, setArea] = useState({ width: 0, height: 0 });
   // 입력 칸이 잰 높이는 그 너비에서만 믿는다.
   const [content, setContent] = useState({ height: 0, width: 0 });
@@ -69,7 +70,7 @@ export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset,
           scrollEnabled={false}
           submitBehavior="newline"
           placeholder="문구 입력"
-          placeholderTextColor="rgba(255,243,236,0.45)"
+          placeholderTextColor={textColor === 'black' ? 'rgba(17,17,17,0.45)' : 'rgba(255,243,236,0.45)'}
           accessibilityLabel="문구, 최대 3줄"
           onContentSizeChange={(e) => setContent({ height: Math.ceil(e.nativeEvent.contentSize.height), width: layoutWidth })}
           style={[styles.input, {
@@ -77,6 +78,9 @@ export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset,
             height: layoutHeight,
             left: (area.width - layoutWidth) / 2,
             top: (area.height - layoutHeight) / 2,
+            fontFamily: resolveStampFont(font, 'NotoSansKR_700Bold'),
+            color: resolveStampColor(textColor),
+            textShadowColor: textContrastColor(textColor),
             fontSize,
             lineHeight,
             textShadowRadius: 6 * BASE_SCALE,

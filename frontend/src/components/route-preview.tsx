@@ -1,3 +1,4 @@
+import { resolveRouteStyle, resolveStampFont, resolveStampColor, textContrastColor, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, freeCaptionLines, freeCaptionMetrics, normalizeCaption } from '@/lib/caption-layout';
 import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
@@ -67,7 +68,7 @@ export const STAMP_LAYOUTS: { id: StampLayout; label: string }[] = [
  * FREE_CAPTION_SIZE(caption-layout.ts)에 곱하는 배율이다. */
 export type CaptionItem = { id: string; text: string; offset: { x: number; y: number }; scale: number };
 
-export type StampConfig = {
+export type StampConfig = TextStyleChoice & {
   /** §7-3 표시 타이밍. 시안 S6엔 UI가 없어(2026-09-01) 항상 'always' — 확인 노트 참고. */
   mode: StampMode;
   /** 배치 프리셋. 기존 저장분엔 없어 렌더 시 'row'로 방어. */
@@ -179,7 +180,6 @@ const LINE_WARM = '#FFF3EC';
 const GLOW = '#FF5A2B';
 const GHOST = 'rgba(237,241,245,0.13)';
 const BASE = 'rgba(237,241,245,0.20)';
-const TRAVELED = 'rgba(255,243,236,0.60)';
 
 export type RouteTransform = { x: number; y: number; scale: number; rotationDeg: number };
 export const IDENTITY_TRANSFORM: RouteTransform = { x: 0, y: 0, scale: 1, rotationDeg: 0 };
@@ -198,6 +198,7 @@ type Props = {
   points: Point[];
   preset: RoutePreset;
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
   /** 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끌기·핀치 중엔
    * transform(React state, 매 프레임 리렌더)을 직접 안 바꾸고, edit.tsx가 이
    * SharedValue들에 바로 쓴다(터치를 처리하는 JS 스레드에서 쓰긴 하지만, 그
@@ -278,6 +279,7 @@ export function RoutePreview({
   preset,
   transform,
   transformShared,
+  routeStyle,
   smoothOptions,
   run,
   stampConfig,
@@ -295,6 +297,7 @@ export function RoutePreview({
   activeCaptionId = null,
   hiddenCaptionId = null,
 }: Props) {
+  const lineStyle = useMemo(() => resolveRouteStyle(routeStyle), [routeStyle]);
   const isFocused = useIsFocused();
   const [appState, setAppState] = useState(AppState.currentState);
   useEffect(() => {
@@ -468,7 +471,7 @@ export function RoutePreview({
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
       <RouteDrawingCanvas
-        preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance}
+        lineStyle={lineStyle} preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance}
         fullPath={fullPath} rawFullPath={rawFullPath} groupTransform={groupTransform}
         pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
         playToken={playToken} onProgressSample={setUiStampProgress} selectionBounds={routeLocalBounds}
@@ -517,9 +520,10 @@ export function RoutePreview({
 // 프리셋 내부 memo 외에 Canvas 자체도 경계 안에 둬 경로 트리 갱신을 건너뛴다.
 const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
   preset, projected, cumulative, totalDistance, fullPath, rawFullPath, groupTransform,
-  pauseAnimation, playing, blurScale, playToken, onProgressSample, selectionBounds,
+  pauseAnimation, playing, blurScale, playToken, onProgressSample, selectionBounds, lineStyle,
 }: {
   preset: RoutePreset;
+  lineStyle: ReturnType<typeof resolveRouteStyle>;
   projected: CanvasPoint[];
   cumulative: number[];
   totalDistance: number;
@@ -546,6 +550,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
             playing={playing}
             blurScale={blurScale}
             onProgressSample={onProgressSample}
+            lineStyle={lineStyle}
           />
         )}
         {preset === 'light-runner' && (
@@ -562,6 +567,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
             playing={playing}
             blurScale={blurScale}
             onProgressSample={onProgressSample}
+            lineStyle={lineStyle}
           />
         )}
         {preset === 'default-drawing' && (
@@ -570,6 +576,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
             isInteracting={pauseAnimation}
             playing={playing}
             onProgressSample={onProgressSample}
+            lineStyle={lineStyle}
           />
         )}
         {selectionBounds && (
@@ -603,11 +610,13 @@ const DefaultDrawingLayer = memo(function DefaultDrawingLayer({
   isInteracting,
   playing,
   onProgressSample,
+  lineStyle,
 }: {
   fullPath: ReturnType<typeof skPath>;
   isInteracting: boolean;
   playing: boolean;
   onProgressSample: (progress: number) => void;
+  lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
   const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
   return (
@@ -616,10 +625,10 @@ const DefaultDrawingLayer = memo(function DefaultDrawingLayer({
       start={0}
       end={progress}
       style="stroke"
-      strokeWidth={9}
+      strokeWidth={9 * lineStyle.widthScale}
       strokeCap="round"
       strokeJoin="round"
-      color={LINE_WARM}
+      color={lineStyle.color}
     />
   );
 });
@@ -720,6 +729,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   playing,
   blurScale,
   onProgressSample,
+  lineStyle,
 }: {
   projected: CanvasPoint[];
   cumulative: number[];
@@ -730,6 +740,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   playing: boolean;
   blurScale: number;
   onProgressSample: (progress: number) => void;
+  lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
   const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
   const targetDistance = useDerivedValue(() => totalDistance * progress.value);
@@ -752,43 +763,43 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
 
   return (
     <Group>
-      <Path path={rawFullPath} style="stroke" strokeWidth={4.5} color={GHOST} />
-      <Path path={fullPath} style="stroke" strokeWidth={7} strokeCap="round" strokeJoin="round" color={BASE} />
+      <Path path={rawFullPath} style="stroke" strokeWidth={4.5 * lineStyle.widthScale} color={GHOST} />
+      <Path path={fullPath} style="stroke" strokeWidth={7 * lineStyle.widthScale} strokeCap="round" strokeJoin="round" color={BASE} />
       <Path
         path={fullPath}
         start={0}
         end={progress}
         style="stroke"
-        strokeWidth={9}
+        strokeWidth={9 * lineStyle.widthScale}
         strokeCap="round"
         strokeJoin="round"
-        color={TRAVELED}>
-        <Shadow dx={0} dy={0} blur={30 * blurScale} color={GLOW} />
+        color={lineStyle.color + '99'}>
+        <Shadow dx={0} dy={0} blur={30 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
       </Path>
       <Path
         path={fullPath}
         start={hotStartFraction}
         end={progress}
         style="stroke"
-        strokeWidth={12}
+        strokeWidth={12 * lineStyle.widthScale}
         strokeCap="round"
         strokeJoin="round"
-        color={LINE_WARM}
+        color={lineStyle.color}
         opacity={runningOpacity}>
-        <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
       </Path>
       <Path
         path={fullPath}
         style="stroke"
-        strokeWidth={13}
+        strokeWidth={13 * lineStyle.widthScale}
         strokeCap="round"
         strokeJoin="round"
-        color={LINE_WARM}
+        color={lineStyle.color}
         opacity={completeOpacity}>
-        <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
       </Path>
-      <Circle cx={headX} cy={headY} r={16} color="#FFFFFF" opacity={runningOpacity}>
-        <Shadow dx={0} dy={0} blur={80 * blurScale} color={GLOW} />
+      <Circle cx={headX} cy={headY} r={16 * lineStyle.widthScale} color={lineStyle.color === LINE_WARM ? '#FFFFFF' : lineStyle.color} opacity={runningOpacity}>
+        <Shadow dx={0} dy={0} blur={80 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
       </Circle>
     </Group>
   );
@@ -817,7 +828,8 @@ function useSegmentReactiveProps(
   segStartFraction: number,
   segEndFraction: number,
   blurScale: number,
-  active: boolean
+  active: boolean,
+  widthScale: number
 ) {
   const end = useDerivedValue(() => {
     if (!active) return segStartFraction;
@@ -830,12 +842,12 @@ function useSegmentReactiveProps(
     return progress.value >= segEndFraction ? 0.95 : 0.5;
   }, [active, segEndFraction]);
   const strokeWidth = useDerivedValue(() => {
-    if (!active) return 10;
+    if (!active) return 10 * widthScale;
     const p = progress.value;
-    if (p < segEndFraction) return 10;
+    if (p < segEndFraction) return 10 * widthScale;
     const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
-    return 10 + justLit * 4;
-  }, [active, segEndFraction]);
+    return (10 + justLit * 4) * widthScale;
+  }, [active, segEndFraction, widthScale]);
   const blur = useDerivedValue(() => {
     if (!active) return 0;
     const p = progress.value;
@@ -848,8 +860,8 @@ function useSegmentReactiveProps(
     const p = progress.value;
     if (p < segEndFraction) return 0;
     const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
-    return 4 + justLit * 3;
-  }, [active, segEndFraction]);
+    return (4 + justLit * 3) * widthScale;
+  }, [active, segEndFraction, widthScale]);
   const dotOpacity = useDerivedValue(() => {
     if (!active) return 0;
     return progress.value >= segEndFraction ? 1 : 0;
@@ -869,6 +881,7 @@ const SegmentLayer = memo(function SegmentLayer({
   playing,
   blurScale,
   onProgressSample,
+  lineStyle,
 }: {
   projected: CanvasPoint[];
   cumulative: number[];
@@ -878,6 +891,7 @@ const SegmentLayer = memo(function SegmentLayer({
   playing: boolean;
   blurScale: number;
   onProgressSample: (progress: number) => void;
+  lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
   const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
 
@@ -912,25 +926,25 @@ const SegmentLayer = memo(function SegmentLayer({
   // 순서로 실행된다(조건·반복문이 아니라 그냥 나열) — 실제 구간 수(segmentCount)가
   // 몇이든 안전하다. bounds[i]가 없을 수 없도록 위에서 항상 MAX_SEGMENTS개를
   // 채워 넣는다.
-  const seg0 = useSegmentReactiveProps(progress, bounds[0].segStartFraction, bounds[0].segEndFraction, blurScale, bounds[0].active);
-  const seg1 = useSegmentReactiveProps(progress, bounds[1].segStartFraction, bounds[1].segEndFraction, blurScale, bounds[1].active);
-  const seg2 = useSegmentReactiveProps(progress, bounds[2].segStartFraction, bounds[2].segEndFraction, blurScale, bounds[2].active);
-  const seg3 = useSegmentReactiveProps(progress, bounds[3].segStartFraction, bounds[3].segEndFraction, blurScale, bounds[3].active);
-  const seg4 = useSegmentReactiveProps(progress, bounds[4].segStartFraction, bounds[4].segEndFraction, blurScale, bounds[4].active);
-  const seg5 = useSegmentReactiveProps(progress, bounds[5].segStartFraction, bounds[5].segEndFraction, blurScale, bounds[5].active);
-  const seg6 = useSegmentReactiveProps(progress, bounds[6].segStartFraction, bounds[6].segEndFraction, blurScale, bounds[6].active);
-  const seg7 = useSegmentReactiveProps(progress, bounds[7].segStartFraction, bounds[7].segEndFraction, blurScale, bounds[7].active);
-  const seg8 = useSegmentReactiveProps(progress, bounds[8].segStartFraction, bounds[8].segEndFraction, blurScale, bounds[8].active);
-  const seg9 = useSegmentReactiveProps(progress, bounds[9].segStartFraction, bounds[9].segEndFraction, blurScale, bounds[9].active);
-  const seg10 = useSegmentReactiveProps(progress, bounds[10].segStartFraction, bounds[10].segEndFraction, blurScale, bounds[10].active);
-  const seg11 = useSegmentReactiveProps(progress, bounds[11].segStartFraction, bounds[11].segEndFraction, blurScale, bounds[11].active);
+  const seg0 = useSegmentReactiveProps(progress, bounds[0].segStartFraction, bounds[0].segEndFraction, blurScale, bounds[0].active, lineStyle.widthScale);
+  const seg1 = useSegmentReactiveProps(progress, bounds[1].segStartFraction, bounds[1].segEndFraction, blurScale, bounds[1].active, lineStyle.widthScale);
+  const seg2 = useSegmentReactiveProps(progress, bounds[2].segStartFraction, bounds[2].segEndFraction, blurScale, bounds[2].active, lineStyle.widthScale);
+  const seg3 = useSegmentReactiveProps(progress, bounds[3].segStartFraction, bounds[3].segEndFraction, blurScale, bounds[3].active, lineStyle.widthScale);
+  const seg4 = useSegmentReactiveProps(progress, bounds[4].segStartFraction, bounds[4].segEndFraction, blurScale, bounds[4].active, lineStyle.widthScale);
+  const seg5 = useSegmentReactiveProps(progress, bounds[5].segStartFraction, bounds[5].segEndFraction, blurScale, bounds[5].active, lineStyle.widthScale);
+  const seg6 = useSegmentReactiveProps(progress, bounds[6].segStartFraction, bounds[6].segEndFraction, blurScale, bounds[6].active, lineStyle.widthScale);
+  const seg7 = useSegmentReactiveProps(progress, bounds[7].segStartFraction, bounds[7].segEndFraction, blurScale, bounds[7].active, lineStyle.widthScale);
+  const seg8 = useSegmentReactiveProps(progress, bounds[8].segStartFraction, bounds[8].segEndFraction, blurScale, bounds[8].active, lineStyle.widthScale);
+  const seg9 = useSegmentReactiveProps(progress, bounds[9].segStartFraction, bounds[9].segEndFraction, blurScale, bounds[9].active, lineStyle.widthScale);
+  const seg10 = useSegmentReactiveProps(progress, bounds[10].segStartFraction, bounds[10].segEndFraction, blurScale, bounds[10].active, lineStyle.widthScale);
+  const seg11 = useSegmentReactiveProps(progress, bounds[11].segStartFraction, bounds[11].segEndFraction, blurScale, bounds[11].active, lineStyle.widthScale);
   const slots = [seg0, seg1, seg2, seg3, seg4, seg5, seg6, seg7, seg8, seg9, seg10, seg11];
 
   if (totalDistance <= 0) return null;
 
   return (
     <Group>
-      <Path path={fullPath} style="stroke" strokeWidth={10} color={GHOST} />
+      <Path path={fullPath} style="stroke" strokeWidth={10 * lineStyle.widthScale} color={GHOST} />
       {slots.map((seg, s) => (
         <Path
           key={s}
@@ -942,16 +956,16 @@ const SegmentLayer = memo(function SegmentLayer({
           strokeCap="round"
           strokeJoin="round"
           opacity={seg.opacity}
-          color={LINE_WARM}>
-          <Shadow dx={0} dy={0} blur={seg.blur} color={GLOW} />
+          color={lineStyle.color}>
+          <Shadow dx={0} dy={0} blur={seg.blur} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
         </Path>
       ))}
       {slots.map((seg, s) => {
         const dot = dotPositions[s];
         if (!dot) return null;
         return (
-          <Circle key={`dot-${s}`} cx={dot.x} cy={dot.y} r={seg.dotR} color={LINE_WARM} opacity={seg.dotOpacity}>
-            <Shadow dx={0} dy={0} blur={60 * blurScale} color={GLOW} />
+          <Circle key={`dot-${s}`} cx={dot.x} cy={dot.y} r={seg.dotR} color={lineStyle.color} opacity={seg.dotOpacity}>
+            <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
           </Circle>
         );
       })}
@@ -1085,6 +1099,8 @@ type StampTextDescriptor = {
   muted?: boolean;
   /** 프리셋과 상관없이 옅은 그림자로 그린다. 자유 문구가 쓴다. */
   softShadow?: boolean;
+  color?: string;
+  contrastColor?: string;
 };
 
 /** 카드·격자 프리셋의 통계 칸 위 라벨. */
@@ -1150,7 +1166,7 @@ const ZERO_OFFSET = { x: 0, y: 0 };
 const EMPTY_STAMP = { texts: [] as StampTextDescriptor[], rects: [] as StampRectDescriptor[] };
 const isCaptionNode = (node: StampTextDescriptor) => node.key.startsWith('caption-');
 
-function stampLayoutDescriptors(
+function rawStampLayoutDescriptors(
   run: RunRecord,
   config: StampConfig,
   progressFraction: number,
@@ -1175,6 +1191,21 @@ function stampLayoutDescriptors(
   const captionTexts = captions.flatMap(item =>
     freeCaptionNodes(item, zeroOffsets && captionId !== undefined));
   return { texts: [...items.texts, ...captionTexts], rects: items.rects };
+}
+
+// 모든 렌더링과 선택 영역이 같은 폰트·색을 받는다. 값이 없으면 옛 저장분 그대로다.
+export function stampLayoutDescriptors(...args: Parameters<typeof rawStampLayoutDescriptors>) {
+  const config = args[1];
+  const layout = rawStampLayoutDescriptors(...args);
+  return {
+    texts: layout.texts.map(node => ({ ...node,
+      family: resolveStampFont(config.font, node.family),
+      color: resolveStampColor(config.textColor), contrastColor: textContrastColor(config.textColor),
+    })),
+    rects: config.textColor !== 'black' ? layout.rects : layout.rects.map(rect =>
+      rect.key === 'glass-bg' ? { ...rect, fill: 'rgba(255,255,255,0.72)', stroke: 'rgba(0,0,0,0.14)' }
+        : rect.key === 'divider' ? { ...rect, fill: 'rgba(0,0,0,0.28)' } : rect),
+  };
 }
 
 // 문구 하나. 가운데 정렬이고, 여러 줄이면 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는
@@ -1667,7 +1698,7 @@ function stampLayoutPass(
     }).join(' · ');
     const oneLine = lineText(value);
     // 기본 너비는 완성 값으로 고정하고, 사용자 크기 배율은 그 위에 적용한다.
-    const fitted = fitStampColumns([estimateOneLineTextWidth(lineText(finalValue), 11 * M)], CANVAS_WIDTH - 24 * M, 0);
+    const fitted = fitStampColumns([(config.font && config.font !== 'preset' ? estimateStampTextWidth : estimateOneLineTextWidth)(lineText(finalValue), 11 * M)], CANVAS_WIDTH - 24 * M, 0);
     const oneLineFont = 11 * u * fitted.scale;
 
     // 실기기 피드백(2026-09-03): "글씨가 매우 멀리 떨어져 나온다" — 통계를 다 꺼서
@@ -1727,7 +1758,7 @@ function stampLayoutPass(
   return { texts: nodes, rects };
 }
 
-function stampTextContent(node: ReturnType<typeof stampLayoutDescriptors>['texts'][number]) {
+function stampTextContent(node: StampTextDescriptor) {
   return node.parts
     ? node.parts.map((part, index) => <TSpan key={index} fontSize={part.size}>{part.text}</TSpan>)
     : node.text;
@@ -1780,21 +1811,27 @@ function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: Stamp
       {/* 정적 썸네일은 필터를 묶고, 실시간 미리보기는 네이티브 그림자로 처리한다. */}
       {!softShadow && texts.map((n) => (
         <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-          fontFamily={n.family} fill="none" stroke="rgba(11,13,16,0.85)" strokeWidth={n.size * 0.24}>
+          fontFamily={n.family} fill="none" stroke={n.contrastColor === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(11,13,16,0.85)'} strokeWidth={n.size * 0.24}>
+          {stampTextContent(n)}
+        </SvgText>
+      ))}
+      {softShadow && texts.filter(n => n.contrastColor === '#FFFFFF').map(n => (
+        <SvgText key={`contrast-${n.key}`} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
+          fontFamily={n.family} fill="none" stroke="#FFFFFF" strokeWidth={n.size * .04}>
           {stampTextContent(n)}
         </SvgText>
       ))}
       <G filter={applyShadow ? "url(#stampGlow)" : undefined}>
         {texts.map((n) => (
           <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-            fontFamily={n.family} fill={softShadow && applyShadow ? 'rgba(0,0,0,0.55)' : n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM}>
+            fontFamily={n.family} fill={softShadow && applyShadow ? n.contrastColor : n.color} fillOpacity={softShadow && applyShadow ? .55 : n.muted ? .5 : 1}>
             {stampTextContent(n)}
           </SvgText>
         ))}
       </G>
       {softShadow && applyShadow && texts.map((n) => (
         <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-          fontFamily={n.family} fill={n.muted ? 'rgba(255,243,236,0.5)' : LINE_WARM}>
+          fontFamily={n.family} fill={n.color} fillOpacity={n.muted ? .5 : 1}>
           {stampTextContent(n)}
         </SvgText>
       ))}
@@ -1816,6 +1853,7 @@ function stampTextViewport(node: StampTextDescriptor): CanvasRect {
 function sameStampText(a: StampTextDescriptor, b: StampTextDescriptor) {
   return a.key === b.key && a.x === b.x && a.y === b.y && a.size === b.size && a.family === b.family
     && a.text === b.text && a.anchor === b.anchor && a.muted === b.muted && a.softShadow === b.softShadow
+    && a.color === b.color && a.contrastColor === b.contrastColor
     && a.parts?.length === b.parts?.length
     && (a.parts?.every((part, i) => part.text === b.parts?.[i].text && part.size === b.parts?.[i].size) ?? true);
 }
@@ -1830,7 +1868,7 @@ const StampPreviewText = memo(function StampPreviewText({ node, viewport, softSh
   // 글자·단위·폰트·좌표는 정적 SVG와 같은 기술자를 그대로 사용한다.
   return <View style={{ position: 'absolute', left: offsetX + viewport.x * fitScale,
     top: offsetY + viewport.y * fitScale, width: viewport.width * fitScale, height: viewport.height * fitScale,
-    shadowColor: softShadow ? '#000000' : LINE_WARM, shadowOpacity: softShadow ? .55 : 1,
+    shadowColor: softShadow ? node.contrastColor : node.color, shadowOpacity: softShadow ? .55 : 1,
     shadowRadius: 6 * fitScale, shadowOffset: { width: 0, height: 0 } }}>
     <Svg width={viewport.width * fitScale} height={viewport.height * fitScale}
       viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="none">
@@ -1928,15 +1966,15 @@ function stampNodeBoxes(
   forThumbnail: boolean
 ): CanvasRect[] {
   // 썸네일은 한글 문구·폭이 넓은 영문도 잘리지 않도록 보수적으로 추정한다.
-  const textWidth = (text: string, size: number) => forThumbnail
+  const textWidth = (text: string, size: number, family: string) => forThumbnail
     ? Array.from(text).reduce((sum, char) => sum + size * (char.charCodeAt(0) > 127 || /[MW@%]/.test(char) ? 1.1 : 0.7), 0)
-    : estimateOneLineTextWidth(text, size);
+    : (family.startsWith('Pretendard_') || family.startsWith('NotoSansKR_') ? estimateStampTextWidth : estimateOneLineTextWidth)(text, size);
   const boxes: CanvasRect[] = texts.map((n) => {
     const width = n.key.startsWith('caption-')
-      ? Math.max(textWidth(n.text, n.size), estimateStampTextWidth(n.text, n.size))
+      ? Math.max(textWidth(n.text, n.size, n.family), estimateStampTextWidth(n.text, n.size))
       : n.parts
-      ? n.parts.reduce((sum, p) => sum + textWidth(p.text, p.size), 0)
-      : textWidth(n.text, n.size);
+      ? n.parts.reduce((sum, p) => sum + textWidth(p.text, p.size, n.family), 0)
+      : textWidth(n.text, n.size, n.family);
     const left = n.anchor === 'middle' ? n.x - width / 2 : n.anchor === 'end' ? n.x - width : n.x;
     const top = n.y - n.size * (forThumbnail ? 1.2 : 0.85);
     return { x: left, y: top, width, height: n.size * 1.15 }; // *1.15 ≈ 0.85(위) + 0.3(대략적인 descent)
