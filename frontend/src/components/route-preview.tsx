@@ -1173,14 +1173,14 @@ function stampLayoutDescriptors(
   const captions = !wantCaption ? [] : captionItems(config)
     .filter(item => (captionId === undefined || item.id === captionId) && !excludeCaptionIds?.includes(item.id));
   const captionTexts = captions.flatMap(item =>
-    freeCaptionNodes(config, item, progressFraction, zeroOffsets && captionId !== undefined));
+    freeCaptionNodes(item, zeroOffsets && captionId !== undefined));
   return { texts: [...items.texts, ...captionTexts], rects: items.rects };
 }
 
 // 문구 하나. 가운데 정렬이고, 여러 줄이면 줄 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는
 // 기준선보다 글자 크기의 0.35배 위로 본다. Swift drawFreeCaptions와 같은 식이다.
-function freeCaptionNodes(config: StampConfig, item: CaptionItem, progressFraction: number, zeroOffset: boolean): StampTextDescriptor[] {
-  if (config.mode === 'hidden' || (config.mode === 'after' && progressFraction < 1)) return [];
+function freeCaptionNodes(item: CaptionItem, zeroOffset: boolean): StampTextDescriptor[] {
+  // 자유 문구는 러닝 데이터의 옛 표시 모드와 무관하게 클립 내내 보인다.
   const text = normalizeCaption(item.text);
   if (!text.trim()) return [];
   const { size, lineHeight } = freeCaptionMetrics(item.scale);
@@ -1211,7 +1211,8 @@ export function migrateLegacyCaption(run: RunRecord | null, config: StampConfig)
   if (config.captionOffset !== undefined) return { ...clean, captions: captionItems(config) };
   const text = normalizeCaption(config.caption ?? '');
   if (!run || !text.trim()) return { ...clean, captions: [] };
-  const old = stampLayoutPass(run, config, 1).texts.filter(isCaptionNode);
+  // 숨김 모드도 문구 내용을 버리지 않도록 표시 여부와 배치 계산을 분리한다.
+  const old = stampLayoutPass(run, { ...config, mode: 'always' }, 1).texts.filter(isCaptionNode);
   if (old.length === 0) return { ...clean, captions: [] };
   const { left, right, top, bottom } = envelopeOf(stampNodeBoxes(old, [], false));
   const scale = Math.min(3, Math.max(1 / 3, old[0].size / freeCaptionMetrics(1).size));

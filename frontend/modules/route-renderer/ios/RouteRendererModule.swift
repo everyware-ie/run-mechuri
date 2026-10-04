@@ -902,7 +902,7 @@ public class RouteRendererModule: Module {
           ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
           caption: "", itemPass: true, captionPass: false)
       }
-      drawFreeCaptions(stamp, progressFraction: progressFraction, canvasSize: canvasSize)
+      drawFreeCaptions(stamp, canvasSize: canvasSize)
       return
     }
     drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
@@ -916,9 +916,8 @@ public class RouteRendererModule: Module {
   /// 화면에 바로 쓰는 문구들. 넣은 순서대로 그려 나중에 넣은 것이 위에 온다. 가운데 정렬이고 줄
   /// 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다 글자 크기의 0.35배 위로 본다.
   /// route-preview.tsx freeCaptionNodes와 같은 식이다.
-  private func drawFreeCaptions(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
-    if stamp.stampMode == "hidden" { return }
-    if stamp.stampMode == "after" && progressFraction < 1 { return }
+  private func drawFreeCaptions(_ stamp: RenderClipOptionsInput, canvasSize: CGSize) {
+    // 자유 문구는 러닝 데이터의 옛 표시 모드와 무관하게 클립 내내 보인다.
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
     ctx.saveGState()
     // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
