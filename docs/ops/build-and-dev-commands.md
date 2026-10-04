@@ -283,3 +283,25 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 ### 공개 링크는 아직 25다
 
 **영상 배경은 개인정보 처리방침과 FAQ가 다루는 범위를 넓힌다.** 그래서 두 문서를 먼저 고쳤다([공개 문서 기록](public-docs-log.md)). 공개 링크를 26 이후 빌드로 바꾸는 일은 지민이 한다(2026-10-03 사용자).
+
+
+## 2026-10-04: 스토리형 편집 1단계 배포 1.0.0(27)
+
+### 소스와 변경
+
+사용자가 1단계 핵심 QA를 마친 뒤 이 완료본을 먼저 배포하고 2단계를 이어 진행하도록 요청했다. 배포 소스는 `3cf64d9d3881998a25561ce31dcff90c126c1ebc`(main, PR #89 포함)다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 production 클라우드 빌드를 요청했다. 개인 설정과 측정용 앱 진입점은 포함하지 않는다.
+
+- [PR #75](https://github.com/everyware-ie/run-mechuri/pull/75)·[PR #76](https://github.com/everyware-ie/run-mechuri/pull/76): 사진·영상 결과물의 두 프레임 병렬 생성. 출력 규격·인코더 설정 유지, 메모리·발열 보호 시 직렬 전환. 영상의 측정된 압축 픽셀 차이는 사용자 수용 범위와 함께 [성능 노트](../product/features/export-parallel-rendering.md)에 남겼다.
+- [PR #78](https://github.com/everyware-ie/run-mechuri/pull/78)·[PR #79](https://github.com/everyware-ie/run-mechuri/pull/79): 스토리형 편집 1단계, 자유 문구·도구·시트·세로 크기 슬라이더·숨기기·되돌리기와 옛 저장분 호환.
+- PR #80~#86: 되돌리기, 핀치 후 실수로 숨기기 방지, 배경 변경·초안 저장·보관함 저장/삭제·사진 앱 저장·인스타그램 공유의 오류와 겹친 요청 처리.
+- [PR #87](https://github.com/everyware-ie/run-mechuri/pull/87)~[PR #89](https://github.com/everyware-ie/run-mechuri/pull/89): 공유 카드도 편집한 전체 내용 기준으로 표시, 완료 전 문구·크기 자동 저장, 문구 탭 재편집과 슬라이더 일시 정지 보완.
+
+### 검증
+
+[1단계 묶음 QA](../product/features/story-editor-stage1-qa-wrapup.md)의 실제 기기·생성 영상 확인과 사용자 직접 확인을 완료했다. 테스트 21개 묶음·195개 항목, 타입·린트·문서·CI 통과(린트 오류 0개, 기존 경고 32개). 큰 글자·다른 기기, 실제 인스타그램 공유·복귀와 최신 Release 기기 통합 확인은 내부 테스트의 남은 항목이며 완료로 처리하지 않는다.
+
+### 빌드와 제출
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/5e913f00-f7ef-4475-ac5c-d4f675fe1923): 빌드 진행 중. 버전 `1.0.0`, 빌드 `27`, 커밋 `3cf64d9` 확인.
+- Apple 제출·내부 테스트 가능 상태는 아직 확인 전이며 완료 뒤 기록한다.
+- 내부 테스터용 배포다. 공개 링크 변경은 기존처럼 지민에게 인계하며 이번 작업에서 바꾸지 않는다. 다음 작업은 편집 2단계(선 색·두께, 폰트·글자 색)다.
