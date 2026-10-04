@@ -19,7 +19,7 @@ function applyEditing(config: StampConfig, editing: EditingCaption | null): Stam
   return { ...config, captions };
 }
 
-export function useCaptionEditing(config: StampConfig, commit: (config: StampConfig) => void) {
+export function useCaptionEditing(config: StampConfig, commit: (config: StampConfig) => void, committedConfig = config) {
   const [editing, setEditing] = useState<EditingCaption | null>(null);
   // 같은 React 갱신 안에서 마지막 입력과 완료가 호출돼도 최신값을 읽는다.
   const editingRef = useRef<EditingCaption | null>(null);
@@ -49,6 +49,7 @@ export function useCaptionEditing(config: StampConfig, commit: (config: StampCon
     const next = applyEditing(config, current);
     if (next !== config) commit(next);
   };
-  const stampForSave = useMemo(() => applyEditing(config, editing), [config, editing]);
+  // 문구 입력만 저장에 덧붙인다. 다른 제스처의 화면용 중간값까지 자동 저장하지 않는다.
+  const stampForSave = useMemo(() => applyEditing(committedConfig, editing), [committedConfig, editing]);
   return { editing, stampForSave, startNew, startEdit, changeText, changeScale, finish };
 }

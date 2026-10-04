@@ -20,8 +20,8 @@ const base: StampConfig = {
 let api: ReturnType<typeof useCaptionEditing>;
 let renderer: ReactTestRenderer;
 const commit = jest.fn();
-function Harness({ config = base, focused = true }: { config?: StampConfig; focused?: boolean }) {
-  const editing = useCaptionEditing(config, commit);
+function Harness({ config = base, committedConfig = config, focused = true }: { config?: StampConfig; committedConfig?: StampConfig; focused?: boolean }) {
+  const editing = useCaptionEditing(config, commit, committedConfig);
   useEffect(() => { api = editing; });
   useDraftAutosave({ stampConfig: editing.stampForSave } as Omit<Draft, 'lastEditedAt'>, focused);
   return null;
@@ -95,6 +95,17 @@ it('포커스를 잃은 편집 화면은 문구 입력 변경으로 초안을 �
   jest.mocked(saveDraft).mockClear();
   await act(async () => api.changeText('가려진 화면'));
   expect(saveDraft).not.toHaveBeenCalled();
+});
+
+it('다른 제스처의 화면용 중간값은 저장에 섞지 않고 문구 입력만 덧붙인다', async () => {
+  const inMotion = { ...base, position: { x: 180, y: 220 }, scale: 1.6 };
+  await act(async () => renderer.update(createElement(Harness, { config: inMotion, committedConfig: base })));
+  expect(api.stampForSave).toBe(base);
+  await act(async () => api.startEdit('first'));
+  await act(async () => api.changeText('쓰는 중'));
+  expect(lastSaved().position).toEqual(base.position);
+  expect(lastSaved().scale).toBe(base.scale);
+  expect(lastSaved().captions![0].text).toBe('쓰는 중');
 });
 
 it('여러 입력을 저장한 뒤 완료하면 실제 되돌리기 기록은 한 단계이고 이전 문구를 복구한다', async () => {

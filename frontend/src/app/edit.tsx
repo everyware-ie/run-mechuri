@@ -223,7 +223,7 @@ export default function EditScreen() {
   };
   // §7 문구: 인스타처럼 화면에서 바로 쓰고 여러 개다(components/caption-editor.tsx). 새 문구는 화면
   // 가운데에 놓인다. 다 지우고 마치면 그 문구는 빠진다.
-  const captionEditing = useCaptionEditing(stampConfig, commitStamp);
+  const captionEditing = useCaptionEditing(stampConfig, commitStamp, draft.stampConfig);
   const editingCaption = captionEditing.editing;
   const updateCaptions = (update: (items: CaptionItem[]) => CaptionItem[]) =>
     commitStamp({ ...stampConfigRef.current, captions: update(captionItems(stampConfigRef.current)) });
