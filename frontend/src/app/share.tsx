@@ -1,3 +1,4 @@
+import { normalizeHandDrawing } from '@/lib/hand-drawing';
 import { resolveRouteStyle } from '@/lib/editor-style';
 import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
@@ -132,6 +133,7 @@ export default function ShareScreen() {
       } : {}),
       outputFileName: `mechuri-${resultId}`,
       preset: draft.preset,
+      handDrawing: normalizeHandDrawing(draft.handDrawing),
       routeColor: resolveRouteStyle(draft.routeStyle).color,
       routeWidthScale: resolveRouteStyle(draft.routeStyle).widthScale,
       stampFont: draft.stampConfig.font ?? 'preset',
@@ -186,6 +188,7 @@ export default function ShareScreen() {
             track,
             preset: draft.preset,
             routeStyle: draft.routeStyle,
+            handDrawing: draft.handDrawing,
             transform: draft.transform,
             smoothOptions: draft.smoothOptions,
             stampConfig: draft.stampConfig,
@@ -267,7 +270,7 @@ export default function ShareScreen() {
               <RouteThumbnail
                 points={encTrack.coordinates}
                 preset={draft.preset}
-                routeStyle={draft.routeStyle}
+                routeStyle={draft.routeStyle} handDrawing={draft.handDrawing}
                 transform={draft.transform}
                 smoothOptions={draft.smoothOptions}
                 run={draft.selectedRun}
@@ -314,7 +317,7 @@ export default function ShareScreen() {
           <RouteThumbnail
             points={track.coordinates}
             preset={draft.preset}
-            routeStyle={draft.routeStyle}
+            routeStyle={draft.routeStyle} handDrawing={draft.handDrawing}
             transform={draft.transform}
             smoothOptions={draft.smoothOptions}
             run={selectedRun}

@@ -15,8 +15,8 @@ const initial: EditSnapshot = {
 };
 
 let output: ReturnType<typeof useEditHistory>;
-function Harness({ snapshot }: { snapshot: EditSnapshot }) {
-  const value = useEditHistory(snapshot);
+function Harness({ snapshot, enabled = true }: { snapshot: EditSnapshot; enabled?: boolean }) {
+  const value = useEditHistory(snapshot, enabled);
   useEffect(() => { output = value; }, [value]);
   return null;
 }
@@ -70,4 +70,16 @@ it('초기 문구 전환을 생략한 뒤 문구 추가·삭제와 배경 변경
   const deleted = { ...withBackground, stampConfig: { ...withBackground.stampConfig, captions: [] } };
   await renderSnapshot(deleted);
   expect(output.history).toEqual([migrated, withBackground]);
+});
+
+
+it('손그림 획을 저장하는 동안은 기다리고 완료된 세션을 한 번만 되돌린다', async () => {
+  const stroke = { id: 'ink', brush: 'pen' as const, color: '#FFFFFF', width: 12, points: [{ x: 100, y: 120 }] };
+  const first = { ...initial, handDrawing: [stroke] };
+  const second = { ...initial, handDrawing: [stroke, { ...stroke, id: 'second' }] };
+  await act(async () => renderer.update(createElement(Harness, { snapshot: first, enabled: false })));
+  await act(async () => renderer.update(createElement(Harness, { snapshot: second, enabled: false })));
+  expect(output.history).toEqual([]);
+  await renderSnapshot(second);
+  expect(output.history).toEqual([initial]);
 });

@@ -1,3 +1,4 @@
+import { normalizeHandDrawing, type HandStroke } from '@/lib/hand-drawing';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import type { RoutePreset, RouteTransform, StampConfig } from '@/components/route-preview';
 import type { PhotoBackground } from './background-storage';
@@ -13,6 +14,7 @@ export type EditSnapshot = {
   preset: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
   smoothOptions: SmoothOptions;
   stampConfig: StampConfig;
 };
@@ -43,6 +45,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 const editableValues = (snapshot: EditSnapshot) => ({
   ...snapshot,
   routeStyle: normalizeRouteStyle(snapshot.routeStyle),
+  handDrawing: normalizeHandDrawing(snapshot.handDrawing),
   stampConfig: { ...snapshot.stampConfig, placeName: undefined, font: snapshot.stampConfig.font === 'preset' ? undefined : snapshot.stampConfig.font,
     scale: snapshot.stampConfig.scale ?? 1, hidden: snapshot.stampConfig.hidden ?? false,
     layout: snapshot.stampConfig.layout ?? 'row' },

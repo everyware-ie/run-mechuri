@@ -200,7 +200,7 @@ export default function BackgroundSelectionScreen() {
   }
 
   const route = draft.track && draft.selectedRun ? (
-    <RoutePreview points={draft.track.coordinates} preset={draft.preset} routeStyle={draft.routeStyle} transform={draft.transform}
+    <RoutePreview points={draft.track.coordinates} preset={draft.preset} routeStyle={draft.routeStyle} handDrawing={draft.handDrawing} transform={draft.transform}
       smoothOptions={draft.smoothOptions} run={draft.selectedRun} stampConfig={draft.stampConfig}
       isInteracting={false} fit="contain" viewWidth={cardWidth} viewHeight={cardHeight} />
   ) : null;

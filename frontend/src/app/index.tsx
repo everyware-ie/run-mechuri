@@ -85,6 +85,7 @@ export default function HomeScreen() {
               track: draft.track,
               preset: draft.preset,
               routeStyle: draft.routeStyle,
+              handDrawing: draft.handDrawing,
               transform: draft.transform,
               smoothOptions: draft.smoothOptions,
               stampConfig: draft.stampConfig,
@@ -102,6 +103,7 @@ export default function HomeScreen() {
       backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
       routeStyle: draft.routeStyle,
+      handDrawing: draft.handDrawing,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
       stampConfig: draft.stampConfig,
@@ -151,7 +153,7 @@ export default function HomeScreen() {
                 <RouteThumbnail
                   points={hero.track.coordinates}
                   preset={hero.preset}
-                  routeStyle={hero.routeStyle}
+                  routeStyle={hero.routeStyle} handDrawing={hero.handDrawing}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
                   size={heroSize}
@@ -195,7 +197,7 @@ export default function HomeScreen() {
               <RouteThumbnail
                 points={item.track.coordinates}
                 preset={item.preset}
-                routeStyle={item.routeStyle}
+                routeStyle={item.routeStyle} handDrawing={item.handDrawing}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
                 size={gridSize}

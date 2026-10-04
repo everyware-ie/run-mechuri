@@ -113,3 +113,12 @@ it('스타일을 포함한 초안을 저장하고 다시 열어 모든 선택값
   expect(loaded?.routeStyle).toEqual(value.routeStyle);
   expect(loaded?.stampConfig).toEqual(value.stampConfig);
 });
+
+
+it('손그림 획과 좌표를 보관하고 오래된 초안은 빈 손그림으로 연다', async () => {
+  await saveDraft(draft);
+  expect((await getDraft())?.handDrawing).toEqual([]);
+  const handDrawing = [{ id: 'ink', brush: 'neon' as const, color: '#8EF0CE', width: 24, points: [{ x: 1080, y: 1920 }] }];
+  await saveDraft({ ...draft, handDrawing });
+  expect((await getDraft())?.handDrawing).toEqual(handDrawing);
+});

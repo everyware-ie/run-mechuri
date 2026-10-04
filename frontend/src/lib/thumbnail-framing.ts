@@ -8,8 +8,9 @@ export function computeThumbnailFrame(
   points: CanvasPoint[],
   transform: RouteTransform,
   stamp: Rect | null,
+  extra: Rect[] = [],
 ): Rect {
-  const boxes: Rect[] = stamp ? [stamp] : [];
+  const boxes: Rect[] = stamp ? [stamp, ...extra] : [...extra];
   if (points.length >= 2) {
     const angle = transform.rotationDeg * Math.PI / 180;
     const cos = Math.cos(angle);

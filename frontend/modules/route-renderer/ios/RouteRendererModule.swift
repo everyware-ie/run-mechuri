@@ -54,7 +54,20 @@ struct StampItemsInput: Record {
   @Field var place: Bool = false
 }
 
+struct InkPointInput: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+}
+
+struct HandStrokeInput: Record {
+  @Field var brush: String = "pen"
+  @Field var color: String = "#FFFFFF"
+  @Field var width: Double = 12
+  @Field var points: [InkPointInput] = []
+}
+
 struct RenderClipOptionsInput: Record {
+  @Field var handDrawing: [HandStrokeInput] = []
   @Field var points: [RoutePointInput] = []
   @Field var backgroundImagePath: String = ""
   /// 배경 영상(선택). 비어 있으면 backgroundImagePath만 쓴다. 있으면 backgroundImagePath는 첫 장면이다.
@@ -655,6 +668,17 @@ public class RouteRendererModule: Module {
       blue: CGFloat(rgb & 255) / 255, alpha: 1)
   }
 
+  // JS runnerLightColors와 같은 RGB 계산. 파스텔 본선과 주변 빛의 대비를 보존한다.
+  private func runnerLightColors(_ color: UIColor) -> (glow: UIColor, core: UIColor) {
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    let channels = [r, g, b], high = channels.max() ?? 1, low = channels.min() ?? 0
+    let glow = channels.map { high == low ? $0 : (255 * (1 - 0.78 * (high - $0) / (high - low))).rounded() / 255 }
+    let core = channels.map { (255 * ($0 * 0.22 + 0.78)).rounded() / 255 }
+    return (UIColor(red: glow[0], green: glow[1], blue: glow[2], alpha: 1),
+      UIColor(red: core[0], green: core[1], blue: core[2], alpha: 1))
+  }
+
   private func selectedTextColor(_ stamp: RenderClipOptionsInput) -> UIColor {
     stamp.stampTextColor == "black" ? UIColor(white: 17 / 255, alpha: 1)
       : stamp.stampTextColor == "white" ? .white : lineWarm
@@ -756,6 +780,43 @@ public class RouteRendererModule: Module {
     }
   }
 
+  /// 손그림은 처음부터 고정된다. 투명 이미지를 한 번 만들어 두 렌더 worker에서 재사용한다.
+  private func makeDrawingOverlay(_ strokes: [HandStrokeInput]) -> UIImage? {
+    guard !strokes.isEmpty else { return nil }
+    let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+    format.preferredRange = .standard
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    return renderer.image { context in
+      var remaining = 10_000
+      for stroke in strokes.prefix(100) {
+        guard remaining > 0, ["pen", "highlight", "neon"].contains(stroke.brush) else { continue }
+        let points = stroke.points.prefix(remaining).filter { $0.x.isFinite && $0.y.isFinite }.map {
+          CGPoint(x: min(1080, max(0, $0.x)), y: min(1920, max(0, $0.y)))
+        }
+        remaining -= points.count
+        guard !points.isEmpty else { continue }
+        let palette = ["#FFFFFF", "#111111", "#FFF3EC", "#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"]
+        let rgb = palette.contains(stroke.color) ? UInt32(stroke.color.dropFirst(), radix: 16) ?? 0xFFFFFF : 0xFFFFFF
+        let color = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        let width = CGFloat(stroke.width.isFinite ? min(48, max(4, stroke.width)) : 12)
+        let neon = stroke.brush == "neon"
+        context.cgContext.saveGState()
+        if stroke.brush == "highlight" { context.cgContext.setAlpha(0.4) }
+        if points.count == 1 {
+          self.fillDot(at: points[0], radius: width / 2, color: color, glowRadius: neon ? 16 : 0, glowColor: color)
+          if neon { self.fillDot(at: points[0], radius: width * 0.19, color: .white) }
+        } else {
+          self.strokePath(points, color: color, width: width, glowRadius: neon ? 16 : 0, glowColor: color)
+          if neon { self.strokePath(points, color: .white, width: width * 0.38) }
+        }
+        context.cgContext.restoreGState()
+      }
+    }
+  }
+
   /// §8 합성 순서(배경 → 경로 → 각인) + 프리셋별 진행 표현(§6).
   /// `background`는 prepareBackground로 이미 출력 크기에 맞춰진 이미지다.
   private func drawFrame(
@@ -766,6 +827,7 @@ public class RouteRendererModule: Module {
     totalDistance: Double,
     progressFraction: Double,
     lightingBounds: [(start: Double, end: Double)],
+    drawingOverlay: UIImage?,
     stamp: RenderClipOptionsInput,
     renderer: UIGraphicsImageRenderer
   ) -> UIImage {
@@ -786,12 +848,15 @@ public class RouteRendererModule: Module {
         self.strokePath(visible, color: routeColor, width: 10 * widthScale, glowRadius: 6, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
 
       case .lightRunner:
+        let coloredLight = ["#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"].contains(stamp.routeColor)
+        let light = self.runnerLightColors(routeColor)
+        let runnerGlow = coloredLight ? light.glow : routeGlow
         // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
         // 머리 발광 점. 끝점에 닿는 순간 경로 전체가 밝아진다.
         self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5 * widthScale)
         let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
         // 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분.
-        self.strokePath(traveled, color: routeColor.withAlphaComponent(0.55), width: 8 * widthScale, glowRadius: 10, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
+        self.strokePath(traveled, color: routeColor.withAlphaComponent(0.55), width: 8 * widthScale, glowRadius: 10, glowColor: coloredLight ? runnerGlow : .white)
 
         let isComplete = progressFraction >= 1
         if !isComplete {
@@ -800,12 +865,14 @@ public class RouteRendererModule: Module {
           let hotStartDistance = max(0, targetDistance - totalDistance * 0.06)
           let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
-          self.strokePath(hotTrail, color: routeColor, width: 10 * widthScale, glowRadius: 14, glowColor: routeGlow)
+          self.strokePath(hotTrail, color: routeColor, width: 10 * widthScale, glowRadius: 14, glowColor: runnerGlow)
+          if coloredLight { self.strokePath(hotTrail, color: light.core, width: 3.4 * widthScale) }
           if let head = traveled.last {
-            self.fillDot(at: head, radius: 8 * widthScale, color: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeColor, glowRadius: 14, glowColor: routeGlow)
+            self.fillDot(at: head, radius: 8 * widthScale, color: coloredLight ? light.core : .white, glowRadius: 14, glowColor: runnerGlow)
           }
         } else {
-          self.strokePath(projectedPoints, color: routeColor, width: 14 * widthScale, glowRadius: 14, glowColor: routeGlow)
+          self.strokePath(projectedPoints, color: routeColor, width: 14 * widthScale, glowRadius: 14, glowColor: runnerGlow)
+          if coloredLight { self.strokePath(projectedPoints, color: light.core, width: 4.3 * widthScale) }
         }
 
       case .segmentLighting:
@@ -839,6 +906,7 @@ public class RouteRendererModule: Module {
         }
       }
 
+      drawingOverlay?.draw(in: CGRect(origin: .zero, size: size))
       self.drawStamps(stamp, progressFraction: progressFraction, canvasSize: size)
     }
   }
@@ -1536,6 +1604,7 @@ public class RouteRendererModule: Module {
     to outputURL: URL,
     job: RenderJob
   ) throws {
+    let drawingOverlay = makeDrawingOverlay(stamp.handDrawing)
     // 실제 미터로 구간을 나누고 변형된 캔버스에는 비율만 대응한다. 프레임마다 GPS를 계산하지 않는다.
     let recordedMeters = stamp.distanceMeters
     let meters = recordedMeters.isFinite && recordedMeters > 0 ? recordedMeters
@@ -1642,7 +1711,7 @@ public class RouteRendererModule: Module {
                     preset: preset, background: scenes[lane], projectedPoints: projectedPoints,
                     cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
                     progressFraction: min(1, Double(batchStart + lane) / Double(ClipSpec.drawFrames)),
-                    lightingBounds: lightingBounds, stamp: stamp, renderer: lanes[lane]
+                    lightingBounds: lightingBounds, drawingOverlay: drawingOverlay, stamp: stamp, renderer: lanes[lane]
                   )
                   slots[lane].rasterSeconds = CFAbsoluteTimeGetCurrent() - rasterStart
                   try job.checkCancellation()

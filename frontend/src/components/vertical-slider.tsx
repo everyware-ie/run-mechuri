@@ -16,6 +16,7 @@ import { Colors } from '@/constants/theme';
 // 범위 밖까지 키운 뒤 잡아도 튀지 않게, 잡은 순간의 실제 값에서 곱셈으로 이어 간다.
 
 type Props = {
+  unit?: string;
   value: number;
   minimumValue: number;
   maximumValue: number;
@@ -28,7 +29,7 @@ type Props = {
 
 const THUMB = 22;
 
-export function VerticalSlider({ value, minimumValue, maximumValue, accessibilityLabel, onChange, onSlidingStart, onSlidingComplete }: Props) {
+export function VerticalSlider({ unit = '%', value, minimumValue, maximumValue, accessibilityLabel, onChange, onSlidingStart, onSlidingComplete }: Props) {
   const [trackHeight, setTrackHeight] = useState(0);
   const [dragValue, setDragValue] = useState<number | null>(null);
   const trackHeightRef = useRef(0);
@@ -90,7 +91,7 @@ export function VerticalSlider({ value, minimumValue, maximumValue, accessibilit
   return (
     <View style={styles.hitArea} onLayout={handleLayout} {...panResponder.panHandlers}
       accessible accessibilityRole="adjustable" accessibilityLabel={accessibilityLabel}
-      accessibilityValue={{ min: Math.round(minimumValue), max: maximumValue, now: shown, text: `${shown}%` }}
+      accessibilityValue={{ min: Math.round(minimumValue), max: maximumValue, now: shown, text: `${shown}${unit}` }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={({ nativeEvent }) => {
         if (!['increment', 'decrement'].includes(nativeEvent.actionName)) return;

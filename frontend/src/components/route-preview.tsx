@@ -1,6 +1,8 @@
+import { HandDrawingLayer, type ActiveHandStroke } from './hand-drawing-layer';
+import { EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
 import { SegmentGlowMarker } from './segment-glow-marker';
 import { lightingDistanceMeters, lightingSegments, segmentMarkerSize } from '@/lib/segment-lighting';
-import { resolveRouteStyle, resolveStampFont, resolveStampColor, textContrastColor, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
+import { runnerLightColors, resolveRouteStyle, resolveStampFont, resolveStampColor, textContrastColor, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, freeCaptionLines, freeCaptionMetrics, normalizeCaption } from '@/lib/caption-layout';
 import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
@@ -200,6 +202,8 @@ type Props = {
   preset: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
+  activeHandDrawing?: ActiveHandStroke;
   /** 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끌기·핀치 중엔
    * transform(React state, 매 프레임 리렌더)을 직접 안 바꾸고, edit.tsx가 이
    * SharedValue들에 바로 쓴다(터치를 처리하는 JS 스레드에서 쓰긴 하지만, 그
@@ -281,6 +285,8 @@ export function RoutePreview({
   transform,
   transformShared,
   routeStyle,
+  handDrawing = EMPTY_HAND_DRAWING,
+  activeHandDrawing,
   smoothOptions,
   run,
   stampConfig,
@@ -478,6 +484,9 @@ export function RoutePreview({
         pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
         playToken={playToken} onProgressSample={setUiStampProgress} selectionBounds={routeLocalBounds}
       />
+
+      <HandDrawingLayer strokes={handDrawing} active={activeHandDrawing} width={viewWidth} height={viewHeight}
+        offsetX={offsetX} offsetY={offsetY} scale={fitScale} />
 
       {/* 안전 영역 가이드는 이 Svg에만 — 각인과 분리해 뒀다(바로 아래 각인 Svg
           설명 참고). Svg 자체는 항상 뷰 전체 크기로 두고(잘림 없음), content와는
@@ -746,6 +755,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   onProgressSample: (progress: number) => void;
   lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
+  const light = runnerLightColors(lineStyle.color);
   const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
   const targetDistance = useDerivedValue(() => totalDistance * progress.value);
 
@@ -763,6 +773,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   // 바뀌는 값이 아니라 두 상태 사이 전환이라, 엘리먼트를 마운트/언마운트하는 대신(그러면
   // React 리렌더가 다시 필요해진다) opacity로 켜고 끈다 — 항상 같은 엘리먼트 트리를 유지.
   const runningOpacity = useDerivedValue(() => (progress.value >= 1 ? 0 : 1));
+  const coreStartFraction = useDerivedValue(() => progress.value >= 1 ? 0 : hotStartFraction.value);
   const completeOpacity = useDerivedValue(() => (progress.value >= 1 ? 1 : 0));
 
   return (
@@ -778,7 +789,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
         strokeCap="round"
         strokeJoin="round"
         color={lineStyle.color + '99'}>
-        <Shadow dx={0} dy={0} blur={30 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
+        <Shadow dx={0} dy={0} blur={30 * blurScale} color={light.glow} />
       </Path>
       <Path
         path={fullPath}
@@ -790,7 +801,7 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
         strokeJoin="round"
         color={lineStyle.color}
         opacity={runningOpacity}>
-        <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={light.glow} />
       </Path>
       <Path
         path={fullPath}
@@ -800,10 +811,12 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
         strokeJoin="round"
         color={lineStyle.color}
         opacity={completeOpacity}>
-        <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
+        <Shadow dx={0} dy={0} blur={60 * blurScale} color={light.glow} />
       </Path>
-      <Circle cx={headX} cy={headY} r={16 * lineStyle.widthScale} color={lineStyle.color === LINE_WARM ? '#FFFFFF' : lineStyle.color} opacity={runningOpacity}>
-        <Shadow dx={0} dy={0} blur={80 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
+      {light.colored && <Path path={fullPath} start={coreStartFraction} end={progress}
+        style="stroke" strokeWidth={4 * lineStyle.widthScale} strokeCap="round" strokeJoin="round" color={light.core} />}
+      <Circle cx={headX} cy={headY} r={16 * lineStyle.widthScale} color={light.colored ? light.core : '#FFFFFF'} opacity={runningOpacity}>
+        <Shadow dx={0} dy={0} blur={80 * blurScale} color={light.glow} />
       </Circle>
     </Group>
   );
