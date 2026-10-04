@@ -2,7 +2,7 @@ import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
@@ -258,21 +258,16 @@ export default function ShareScreen() {
         <View style={styles.doneBody}>
           <View style={styles.encCard}>
             {encTrack && draft.selectedRun && draft.backgroundImagePath && (
-              <>
-                <Image
-                  source={{ uri: draft.backgroundImagePath }}
-                  style={StyleSheet.absoluteFill}
-                  resizeMode="cover"
-                />
-                <RouteThumbnail
-                  points={encTrack.coordinates}
-                  transform={draft.transform}
-                  smoothOptions={draft.smoothOptions}
-                  run={draft.selectedRun}
-                  stampConfig={draft.stampConfig}
-                  size={CARD_SIZE}
-                />
-              </>
+              <RouteThumbnail
+                points={encTrack.coordinates}
+                transform={draft.transform}
+                smoothOptions={draft.smoothOptions}
+                run={draft.selectedRun}
+                stampConfig={draft.stampConfig}
+                size={CARD_SIZE}
+                framing="content"
+                backgroundImagePath={draft.backgroundImagePath}
+              />
             )}
             <View style={styles.encOverlay}>
               <Text style={styles.encPct}>{pct}%</Text>
@@ -308,7 +303,6 @@ export default function ShareScreen() {
       <ScreenHeader title="완성!" onBack={null} />
       <View style={styles.doneBody}>
         <View style={styles.card}>
-          <Image source={{ uri: backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           <RouteThumbnail
             points={track.coordinates}
             transform={draft.transform}
@@ -316,6 +310,8 @@ export default function ShareScreen() {
             run={selectedRun}
             stampConfig={draft.stampConfig}
             size={CARD_SIZE}
+            framing="content"
+            backgroundImagePath={backgroundImagePath}
           />
           <Text style={styles.cardTag}>Runary · {selectedRun.date.slice(0, 10)}</Text>
         </View>
