@@ -1,32 +1,35 @@
 import { Skia } from '@shopify/react-native-skia';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from 'react';
-import { Alert, AppState, Image, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Alert, AppState, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import { Colors, Fonts } from '@/constants/theme';
 import { eraseHandStrokes, inkPoint, INK_COLORS, MAX_INK_POINTS, MAX_STROKES, type HandStroke, type InkBrush, type InkPoint } from '@/lib/hand-drawing';
-import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
-import { RoutePreview } from './route-preview';
+import type { ActiveHandStroke } from './hand-drawing-layer';
 import { VerticalSlider } from './vertical-slider';
 
 const newStrokeId = () => `ink-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const BRUSHES = [{ id: 'pen', label: '펜', symbol: 'pencil.tip' }, { id: 'highlight', label: '형광', symbol: 'highlighter' },
   { id: 'neon', label: '네온', symbol: 'sparkles' }, { id: 'eraser', label: '지우개', symbol: 'eraser' }] as const;
+export type HandDrawingPreview = { strokes: HandStroke[]; active?: ActiveHandStroke };
 type Props = {
-  initial: HandStroke[]; backgroundImagePath: string;
-  preview: Omit<ComponentProps<typeof RoutePreview>, 'viewWidth' | 'viewHeight' | 'handDrawing' | 'activeHandDrawing'>;
+  initial: HandStroke[]; canvasSize: { width: number; height: number };
+  onPreviewChange: (preview: HandDrawingPreview) => void;
   onChange: (strokes: HandStroke[]) => void; onDone: () => void;
 };
-export function HandDrawingEditor({ initial, backgroundImagePath, preview, onChange, onDone }: Props) {
+export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChange, onDone }: Props) {
   const [strokes, setStrokes] = useState(initial), [history, setHistory] = useState<HandStroke[][]>([]);
   const [brush, setBrush] = useState<InkBrush | 'eraser'>('pen'), [color, setColor] = useState('#FFFFFF'), [width, setWidth] = useState(12);
-  const [size, setSize] = useState({ width: 0, height: 0 });
   const path = useSharedValue(Skia.Path.Make());
-  const sizeRef = useRef(size), strokesRef = useRef(strokes);
+  const sizeRef = useRef(canvasSize), strokesRef = useRef(strokes);
+  useLayoutEffect(() => { sizeRef.current = canvasSize; }, [canvasSize]);
   const options = useRef({ brush, color, width, onChange });
   useLayoutEffect(() => { options.current = { brush, color, width, onChange }; }, [brush, color, width, onChange]);
+  // 기존 미리보기를 유지하고 SharedValue 경로만 연결한다. 점마다 React를 다시 그리지 않는다.
+  useLayoutEffect(() => {
+    onPreviewChange({ strokes, active: brush === 'eraser' ? undefined : { path, brush, color, width } });
+  }, [strokes, brush, color, width, path, onPreviewChange]);
   const gesture = useRef<{ before: HandStroke[]; stroke?: HandStroke; previous: InkPoint; remaining: number; limited: boolean } | null>(null);
   const local = useCallback((next: HandStroke[]) => { strokesRef.current = next; setStrokes(next); }, []);
   const finish = useRef(() => {});
@@ -86,39 +89,31 @@ export function HandDrawingEditor({ initial, backgroundImagePath, preview, onCha
     const previous = history.at(-1); if (!previous) return;
     setHistory(h => h.slice(0, -1)); local(previous); onChange(previous);
   };
-  return <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-    <View style={styles.stage} onLayout={evt => { const s = fitPortraitPreview(evt.nativeEvent.layout.width, evt.nativeEvent.layout.height); sizeRef.current = s; setSize(s); }}>
-      {size.width > 0 && <View style={[styles.frame, size]}>
-        <Image source={{ uri: backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        <RoutePreview {...preview} viewWidth={size.width} viewHeight={size.height} handDrawing={strokes}
-          activeHandDrawing={brush === 'eraser' ? undefined : { path, brush, color, width }} playing={false} isInteracting={false} />
-        <View style={StyleSheet.absoluteFill} {...pan.panHandlers} accessibilityLabel="손그림 캔버스" />
-        <View style={styles.header}>
-          <Pressable onPress={undo} disabled={!history.length} style={[styles.button, !history.length && styles.disabled]}
-            accessibilityRole="button" accessibilityLabel="손그림 되돌리기" accessibilityState={{ disabled: !history.length }}>
-            <SymbolView name="arrow.uturn.backward" size={17} tintColor={Colors.text} />
-          </Pressable>
-          <View style={styles.brushRow}>{BRUSHES.map(b => <Pressable key={b.id} onPress={() => setBrush(b.id)}
-            style={[styles.button, brush === b.id && styles.selected]} accessibilityRole="button" accessibilityLabel={b.label} accessibilityState={{ selected: brush === b.id }}>
-            <SymbolView name={b.symbol} size={16} tintColor={brush === b.id ? Colors.bg : Colors.text} />
-            <Text style={[styles.brushLabel, brush === b.id && styles.selectedLabel]}>{b.label}</Text>
-          </Pressable>)}</View>
-          <Pressable onPress={() => { finish.current(); onDone(); }} style={styles.done} accessibilityRole="button" accessibilityLabel="그리기 완료">
-            <Text style={styles.doneText}>완료</Text>
-          </Pressable>
-        </View>
-        <View style={styles.slider}><VerticalSlider value={width} minimumValue={4} maximumValue={48} unit="px"
-          accessibilityLabel={brush === 'eraser' ? '지우개 크기' : '붓 굵기'} onChange={setWidth} onSlidingComplete={setWidth} /></View>
-        <View style={styles.palette}>{INK_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchOn]}
-          accessibilityRole="button" accessibilityLabel={`손그림 색 ${c}`} accessibilityState={{ selected: c === color }} hitSlop={5} />)}</View>
-        {strokes.length === 0 && <View pointerEvents="none" style={styles.hint}><Text style={styles.hintText}>경로 옆에 자유롭게 그려 보세요</Text></View>}
-      </View>}
+  return <View style={StyleSheet.absoluteFill}>
+    <View style={StyleSheet.absoluteFill} {...pan.panHandlers} accessibilityLabel="손그림 캔버스" />
+    <View style={styles.header}>
+      <Pressable onPress={undo} disabled={!history.length} style={[styles.button, !history.length && styles.disabled]}
+        accessibilityRole="button" accessibilityLabel="손그림 되돌리기" accessibilityState={{ disabled: !history.length }}>
+        <SymbolView name="arrow.uturn.backward" size={17} tintColor={Colors.text} />
+      </Pressable>
+      <View style={styles.brushRow}>{BRUSHES.map(b => <Pressable key={b.id} onPress={() => setBrush(b.id)}
+        style={[styles.button, brush === b.id && styles.selected]} accessibilityRole="button" accessibilityLabel={b.label} accessibilityState={{ selected: brush === b.id }}>
+        <SymbolView name={b.symbol} size={16} tintColor={brush === b.id ? Colors.bg : Colors.text} />
+        <Text style={[styles.brushLabel, brush === b.id && styles.selectedLabel]}>{b.label}</Text>
+      </Pressable>)}</View>
+      <Pressable onPress={() => { finish.current(); onDone(); }} style={styles.done} accessibilityRole="button" accessibilityLabel="그리기 완료">
+        <Text style={styles.doneText}>완료</Text>
+      </Pressable>
     </View>
-  </SafeAreaView>;
+    <View style={styles.slider}><VerticalSlider value={width} minimumValue={4} maximumValue={48} unit="px"
+      accessibilityLabel={brush === 'eraser' ? '지우개 크기' : '붓 굵기'} onChange={setWidth} onSlidingComplete={setWidth} /></View>
+    <View style={styles.palette}>{INK_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchOn]}
+      accessibilityRole="button" accessibilityLabel={`손그림 색 ${c}`} accessibilityState={{ selected: c === color }} hitSlop={5} />)}</View>
+    {strokes.length === 0 && <View pointerEvents="none" style={styles.hint}><Text style={styles.hintText}>경로 옆에 자유롭게 그려 보세요</Text></View>}
+  </View>;
 }
 const styles = StyleSheet.create({
-  root: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: Colors.bg }, stage: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  frame: { overflow: 'hidden', borderRadius: 20 }, header: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brushRow: { flexDirection: 'row', gap: 4 }, button: { width: 40, height: 44, borderRadius: 22, backgroundColor: 'rgba(11,13,16,.68)', alignItems: 'center', justifyContent: 'center', gap: 3 },
   brushLabel: { color: Colors.text, fontFamily: Fonts.sans, fontSize: 9 }, selected: { backgroundColor: Colors.text }, selectedLabel: { color: Colors.bg },
   disabled: { opacity: .4 }, done: { backgroundColor: Colors.text, borderRadius: 20, height: 40, paddingHorizontal: 13, justifyContent: 'center' },

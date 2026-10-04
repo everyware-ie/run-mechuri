@@ -13,8 +13,11 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = jest.requireActual('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
-jest.mock('@/hooks/use-draft-autosave', () => ({ useDraftAutosave: () => {} }));
-jest.mock('@/components/hand-drawing-editor', () => ({ HandDrawingEditor: () => null }));
+jest.mock('@/hooks/use-draft-autosave', () => ({ useDraftAutosave: () => jest.fn() }));
+jest.mock('@/components/hand-drawing-editor', () => {
+  const { createElement: element } = jest.requireActual('react');
+  return { HandDrawingEditor: (props: object) => element('drawing-controls', props) };
+});
 jest.mock('@/components/background-video', () => ({ CroppedBackgroundVideo: () => null }));
 jest.mock('@/components/my-style-sheet', () => ({ MyStyleSheet: () => null }));
 jest.mock('@shopify/react-native-skia', () => ({}));
@@ -80,4 +83,24 @@ it('핀치 후 한 손가락을 먼저 떼어도 크기가 원래 값으로 돌�
   expect(preview().handStrokeEditing.scale.value).toBe(2);
   await act(async () => pan.onTouchEnd());
   expect(preview().handDrawing[0].scale).toBe(2);
+});
+it('그리기 진입·복귀는 기존 미리보기와 크기를 유지하며 재생을 초기화하지 않는다', async () => {
+  const canvas = renderer.root.findByType('ink-preview' as never);
+  const size = { width: preview().viewWidth, height: preview().viewHeight };
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '그리기' }).props.onPress());
+  const controls = renderer.root.findByType('drawing-controls' as never);
+  expect(controls.props.canvasSize).toEqual(size);
+  expect(renderer.root.findAllByType('ink-preview' as never)).toEqual([canvas]);
+  expect(preview()).toMatchObject({ playing: true, isInteracting: true, viewWidth: size.width, viewHeight: size.height });
+  expect(handlers().pointerEvents).toBe('none');
+  const active = { path: {}, brush: 'pen', color: '#FFFFFF', width: 12 };
+  await act(async () => controls.props.onPreviewChange({ strokes: [], active }));
+  expect(preview().handDrawing).toEqual([]);
+  expect(preview().activeHandDrawing).toBe(active);
+  await act(async () => controls.props.onDone());
+  expect(renderer.root.findAllByType('ink-preview' as never)).toEqual([canvas]);
+  expect(preview()).toMatchObject({ playing: true, isInteracting: false, viewWidth: size.width, viewHeight: size.height });
+  expect(preview().activeHandDrawing).toBeUndefined();
+  expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
+  expect(handlers().pointerEvents).toBe('auto');
 });

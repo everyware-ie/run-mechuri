@@ -1,5 +1,5 @@
 import { HandStrokeBrushes, HandStrokeControls } from '@/components/hand-stroke-controls';
-import { HandDrawingEditor } from '@/components/hand-drawing-editor';
+import { HandDrawingEditor, type HandDrawingPreview } from '@/components/hand-drawing-editor';
 import { MyStyleSheet } from '@/components/my-style-sheet';
 import { constrainHandStroke, hitHandStroke, EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
 import { applyMyStyle, type MyStyle } from '@/lib/my-style-store';
@@ -149,6 +149,7 @@ export default function EditScreen() {
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [drawingPreview, setDrawingPreview] = useState<HandDrawingPreview | null>(null);
   const [selectedInkId, setSelectedInkId] = useState<string | null>(null);
   const selectedInkRef = useRef<string | null>(null);
   const inkRef = useRef(draft.handDrawing ?? EMPTY_HAND_DRAWING);
@@ -913,7 +914,7 @@ export default function EditScreen() {
         return `심박 ${run.averageHeartRate ? formatHeartRate(run.averageHeartRate) : ''}`;
     }
   };
-  const showChrome = dragging === null && !editingCaption;
+  const showChrome = dragging === null && !editingCaption && !drawing;
   const selectionFor = (target: SheetTarget) => dragging ? dragging.kind === target : tool === target;
   const sizeLabel = inkToolOpen ? '손그림 크기' : sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
   const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
@@ -938,7 +939,7 @@ export default function EditScreen() {
               {isVideoBackground(draft.backgroundPhoto)
                 ? <CroppedBackgroundVideo video={draft.backgroundPhoto} width={previewSize.width} height={previewSize.height} />
                 : <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
-              <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill}
+              <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill} pointerEvents={drawing ? 'none' : 'auto'}
                 accessibilityLabel="결과물 미리보기. 끌어서 옮기고 두 손가락으로 크기를 바꿔요">
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   <RoutePreview
@@ -946,7 +947,8 @@ export default function EditScreen() {
                     preset={draft.preset}
                     transform={transform}
                     routeStyle={routeStyle}
-                    handDrawing={inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
+                    handDrawing={drawing && drawingPreview ? drawingPreview.strokes : inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
+                    activeHandDrawing={drawing ? drawingPreview?.active : undefined}
                     selectedHandStrokeId={dragging?.kind === 'ink' ? dragging.id : selectedInkId}
                     handStrokeEditing={(dragging?.kind === 'ink' || inkToolOpen) ? { id: dragging?.kind === 'ink' ? dragging.id : selectedInkId!, x: inkX, y: inkY, scale: inkScaleShared } : undefined}
                     transformShared={{
@@ -958,7 +960,7 @@ export default function EditScreen() {
                     smoothOptions={smoothOptions}
                     run={draft.selectedRun}
                     stampConfig={stampConfig}
-                    isInteracting={isInteracting}
+                    isInteracting={isInteracting || drawing}
                     viewWidth={previewSize.width}
                     viewHeight={previewSize.height}
                     fit="contain"
@@ -966,12 +968,16 @@ export default function EditScreen() {
                     stampSelected={selectionFor('stamp') && !stampConfig.hidden}
                     activeCaptionId={activeCaptionId}
                     hiddenCaptionId={editingCaption && !editingCaption.isNew ? editingCaption.id : null}
-                    playing={LOOP_PREVIEW && !drawing}
+                    playing={LOOP_PREVIEW}
                     stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
                     captionPositionShared={{ x: captionPositionX, y: captionPositionY }}
                   />
                 </View>
               </View>
+
+              {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} canvasSize={previewSize}
+                onPreviewChange={setDrawingPreview} onChange={commitHandDrawing}
+                onDone={() => { setDrawing(false); setDrawingPreview(null); }} />}
 
               {showChrome && inkToolOpen && selectedInk && <View style={styles.inkHeader}>
                 <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
@@ -1040,7 +1046,7 @@ export default function EditScreen() {
         </View>
         <View style={styles.bottomBar}>
           {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
-          {dragging === null && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
+          {dragging === null && !drawing && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
             style={[styles.doneButton, (applyingBackground || applyingStyle) && styles.doneButtonDisabled]}
             accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로"
             accessibilityState={{ disabled: !!applyingBackground || applyingStyle, busy: !!applyingBackground || applyingStyle }}>
@@ -1191,10 +1197,6 @@ export default function EditScreen() {
         limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
         onInteractionChange={setIsInteracting}
         onDone={finishEditingCaption} />}
-      {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} backgroundImagePath={draft.backgroundImagePath}
-        preview={{ points: draft.track.coordinates, preset: draft.preset, transform, routeStyle, smoothOptions,
-          run: draft.selectedRun, stampConfig, isInteracting: false, playing: false, fit: 'contain' }}
-        onChange={commitHandDrawing} onDone={() => setDrawing(false)} />}
     </View>
   );
 }
