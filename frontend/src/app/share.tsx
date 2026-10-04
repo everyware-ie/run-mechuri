@@ -15,6 +15,7 @@ import { captionLines, freeCaptionLines } from '@/lib/caption-layout';
 import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
+import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
 
 import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
 import { isVideoBackground } from '@/lib/background-storage';
@@ -58,7 +59,7 @@ export default function ShareScreen() {
   const [uiPhase, setUiPhase] = useState<UiPhase>('hidden');
   const [progress, setProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const { saving, saveStatus, saveToPhotos: handleSaveToPhotos } = useSaveToPhotos(outputPath);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
@@ -240,35 +241,6 @@ export default function ShareScreen() {
     }
   };
 
-  const handleSaveToPhotos = async () => {
-    if (!outputPath) return;
-    // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
-    // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
-    const MediaLibrary = await import('expo-media-library');
-    // expo-media-library 57(SDK 57)에서 top-level 함수들이 새 클래스형 API로
-    // 갈아끼워지면서, 기본 진입점의 saveToLibraryAsync는 실제 구현이 없고 항상
-    // throw만 하는 껍데기로 바뀌었다(권한 승인 여부와 무관하게 무조건 실패).
-    // 실제 구현은 legacy 서브패스에만 남아 있어 거기서 따로 불러온다.
-    // (requestPermissionsAsync는 deprecated 목록에 없어 기본 진입점 그대로 둔다.)
-    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
-    // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
-    // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
-    // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
-    // writeOnly로 요청해 plist와 맞춘다.
-    const { status } = await MediaLibrary.requestPermissionsAsync(true);
-    if (status !== 'granted') {
-      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
-      return;
-    }
-    try {
-      await saveToLibraryAsync(outputPath);
-      setSaveStatus('기기에 저장했어요');
-    } catch (error) {
-      console.warn('saveToLibraryAsync failed', error);
-      setSaveStatus('저장에 실패했어요');
-    }
-  };
-
   const handleDone = () => {
     reset();
     router.replace('/');
@@ -378,7 +350,15 @@ export default function ShareScreen() {
               필요한 동작이라 그대로 아래 별도 버튼으로 둔다. */}
           <View style={styles.primaryRow}>
             <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
-            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+            <Pressable
+              onPress={handleSaveToPhotos}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel={saving ? '기기에 저장 중' : '기기에 저장'}
+              accessibilityState={{ disabled: saving, busy: saving }}
+              style={[styles.iconButton, saving && { opacity: 0.5 }]}
+              hitSlop={8}
+            >
               <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
             </Pressable>
           </View>
@@ -394,7 +374,7 @@ export default function ShareScreen() {
         primaryLabel="기기에 저장"
         onPrimary={() => {
           setShowMissingSheet(false);
-          handleSaveToPhotos();
+          void handleSaveToPhotos();
         }}
         onClose={() => setShowMissingSheet(false)}
       />
