@@ -1815,12 +1815,6 @@ function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: Stamp
           {stampTextContent(n)}
         </SvgText>
       ))}
-      {softShadow && texts.filter(n => n.contrastColor === '#FFFFFF').map(n => (
-        <SvgText key={`contrast-${n.key}`} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-          fontFamily={n.family} fill="none" stroke="#FFFFFF" strokeWidth={n.size * .04}>
-          {stampTextContent(n)}
-        </SvgText>
-      ))}
       <G filter={applyShadow ? "url(#stampGlow)" : undefined}>
         {texts.map((n) => (
           <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}

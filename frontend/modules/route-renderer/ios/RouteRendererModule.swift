@@ -948,16 +948,12 @@ public class RouteRendererModule: Module {
     // 자유 문구는 러닝 데이터의 옛 표시 모드와 무관하게 클립 내내 보인다.
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
     ctx.saveGState()
-    // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
+    // 글자와 반대 색의 옅은 그림자. 외곽선을 겹치면 작은 검정 라벨이 흰색처럼 보여 생략한다.
     ctx.setShadow(offset: .zero, blur: 6, color: (stamp.stampTextColor == "black" ? UIColor.white : UIColor.black).withAlphaComponent(0.55).cgColor)
     for caption in stamp.freeCaptions where !caption.lines.isEmpty {
       let size = Self.freeCaptionSize * CGFloat(caption.scale)
       let font = selectedFont(stamp, name: "NotoSansKR-Bold", size: size, fallback: .systemFont(ofSize: size, weight: .bold))
-      var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: selectedTextColor(stamp)]
-      if stamp.stampTextColor == "black" {
-        attrs[.strokeColor] = UIColor.white
-        attrs[.strokeWidth] = -4
-      }
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: selectedTextColor(stamp)]
       let lineHeight = size * 1.3
       let centerX = canvasSize.width / 2 + CGFloat(caption.x)
       let top = canvasSize.height / 2 + CGFloat(caption.y) - CGFloat(caption.lines.count) * lineHeight / 2
@@ -1046,8 +1042,7 @@ public class RouteRendererModule: Module {
     var drawingCaption = false
     func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
       if drawingCaption ? !captionPass : !itemPass { return }
-      var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? textColor]
-      if stamp.stampTextColor == "black" { attrs[.strokeColor] = UIColor.white; attrs[.strokeWidth] = -4 }
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? textColor]
       let w = (text as NSString).size(withAttributes: attrs).width
       let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
       // 실기기 피드백(2026-09-08) "인스타 공유 결과물에서 각인이 다 겹쳐 보인다":
@@ -1087,12 +1082,8 @@ public class RouteRendererModule: Module {
       }
       let mainFont = heroValueFont(size)
       let unitFont = heroValueFont(size * 0.42)
-      var mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: textColor]
-      var unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: textColor]
-      if stamp.stampTextColor == "black" {
-        mainAttrs[.strokeColor] = UIColor.white; mainAttrs[.strokeWidth] = -4
-        unitAttrs[.strokeColor] = UIColor.white; unitAttrs[.strokeWidth] = -4
-      }
+      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: textColor]
+      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: textColor]
       let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
       let unitText = " \(split.unit)"
       let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
