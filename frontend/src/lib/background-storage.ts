@@ -45,10 +45,20 @@ export function resolvePhotoBackground(photo?: PhotoBackground): PhotoBackground
   };
 }
 
+const preparingDefaults = new Map<string, Promise<string>>();
+
 /** 앱에 들어 있는 기본 배경을 파일로 꺼내 보관한다. 배경 선택과 편집의 배경 시트가 함께 쓴다. */
-export async function persistDefaultBackground(background: DefaultBackground): Promise<string> {
-  const asset = await Asset.fromModule(background.source).downloadAsync();
-  return persistBackground(asset.localUri ?? asset.uri, `${background.id}.jpg`);
+export function persistDefaultBackground(background: DefaultBackground): Promise<string> {
+  // 화면을 떠나도 파일 준비 자체는 계속된다. 같은 배경을 다시 고르면 그 복사가 끝날 때까지
+  // 기다려, 동일한 파일을 두 번 쓰거나 복사 중인 파일을 완성본으로 읽지 않게 한다.
+  const existing = preparingDefaults.get(background.id);
+  if (existing) return existing;
+  const preparation = (async () => {
+    const asset = await Asset.fromModule(background.source).downloadAsync();
+    return persistBackground(asset.localUri ?? asset.uri, `${background.id}.jpg`);
+  })().finally(() => { preparingDefaults.delete(background.id); });
+  preparingDefaults.set(background.id, preparation);
+  return preparation;
 }
 
 export async function persistBackground(sourceUri: string, name: string): Promise<string> {

@@ -1,8 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
   Alert,
@@ -46,7 +46,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
 import { ThemedButton } from '@/components/ui';
 import { VerticalSlider } from '@/components/vertical-slider';
-import { DEFAULT_BACKGROUNDS, type DefaultBackground } from '@/constants/default-backgrounds';
+import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
 import { limitFreeCaptionInput } from '@/lib/caption-layout';
@@ -55,6 +55,7 @@ import { EditDropGesture } from '@/lib/edit-drop-gesture';
 import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
 import type { EditSnapshot } from '@/lib/edit-history';
 import { useEditHistory } from '@/hooks/use-edit-history';
+import { useBackgroundApply } from '@/hooks/use-background-apply';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
@@ -138,7 +139,14 @@ export default function EditScreen() {
   const toolRef = useRef<Tool | null>(null);
   const [stampTab, setStampTab] = useState<'layout' | 'items'>('layout');
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [applyingBackground, setApplyingBackground] = useState<string | null>(null);
+  const { pendingId: applyingBackground, apply: applyDefaultBackground,
+    cancel: cancelBackgroundApply, isPending: isBackgroundPending } = useBackgroundApply({
+    prepare: persistDefaultBackground,
+    onApply: (path) => setBackground(path, undefined),
+    onError: () => Alert.alert('배경을 바꾸지 못했어요', '다시 시도해 주세요.'),
+  });
+  // 스택에 편집 화면이 남아 있어도 갤러리·홈 등으로 떠난 뒤 늦은 작업은 반영하지 않는다.
+  useFocusEffect(useCallback(() => () => cancelBackgroundApply(), [cancelBackgroundApply]));
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -710,15 +718,18 @@ export default function EditScreen() {
     commitStampConfig(stampConfigRef.current);
   };
   const handleDone = () => {
+    if (isBackgroundPending()) return;
     commitAll();
     router.push('/share');
   };
   const handleClose = () => {
+    cancelBackgroundApply();
     commitAll();
     if (router.canDismiss()) router.dismissAll();
     else router.replace('/');
   };
   const handleUndo = () => {
+    cancelBackgroundApply();
     const previous = history[history.length - 1];
     if (!previous) return;
     Keyboard.dismiss();
@@ -737,19 +748,9 @@ export default function EditScreen() {
 
   const handlePresetSelect = (preset: RoutePreset) => commitPreset(preset);
 
-  const applyDefaultBackground = async (background: DefaultBackground) => {
-    if (applyingBackground) return;
-    setApplyingBackground(background.id);
-    try {
-      setBackground(await persistDefaultBackground(background), undefined);
-    } catch {
-      Alert.alert('배경을 바꾸지 못했어요', '다시 시도해 주세요.');
-    } finally {
-      setApplyingBackground(null);
-    }
-  };
   // §1: 갤러리·카메라는 배경 선택 화면에서 구도를 잡고 돌아온다.
   const openBackgroundPicker = (pick: 'gallery' | 'camera') => {
+    cancelBackgroundApply();
     closeTool();
     router.push({ pathname: '/background-selection', params: { returnTo: 'edit', pick } });
   };
@@ -884,8 +885,11 @@ export default function EditScreen() {
         </View>
         <View style={styles.bottomBar}>
           {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
-          {dragging === null && <Pressable onPress={handleDone} style={styles.doneButton} accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로">
-            <Text style={styles.doneText}>완료</Text>
+          {dragging === null && <Pressable onPress={handleDone} disabled={!!applyingBackground}
+            style={[styles.doneButton, applyingBackground && styles.doneButtonDisabled]}
+            accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로"
+            accessibilityState={{ disabled: !!applyingBackground, busy: !!applyingBackground }}>
+            <Text style={styles.doneText}>{applyingBackground ? '배경 적용 중' : '완료'}</Text>
           </Pressable>}
         </View>
       </SafeAreaView>
@@ -919,7 +923,7 @@ export default function EditScreen() {
               return (
                 <Pressable key={bg.id} onPress={() => { void applyDefaultBackground(bg); }} disabled={!!applyingBackground}
                   style={[styles.backgroundSwatch, on && styles.backgroundSwatchOn]}
-                  accessibilityRole="button" accessibilityLabel={`기본 배경 ${bg.label}`} accessibilityState={{ selected: on }}>
+                  accessibilityRole="button" accessibilityLabel={`기본 배경 ${bg.label}`} accessibilityState={{ selected: on, disabled: !!applyingBackground }}>
                   <Image source={bg.source} style={styles.backgroundImage} />
                   <Text style={styles.backgroundLabel}>{applyingBackground === bg.id ? '바꾸는 중' : bg.label}</Text>
                 </Pressable>
@@ -1045,6 +1049,7 @@ const styles = StyleSheet.create({
   // 화면 왼쪽 끝에서 밀면 뒤로 가기라 그 자리를 피한다.
   sizeSlider: { position: 'absolute', left: 12, top: '26%', height: '40%' },
   bottomBar: { height: BOTTOM_BAR_HEIGHT, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 20 },
+  doneButtonDisabled: { opacity: 0.5 },
   doneButton: { minHeight: 44, minWidth: 120, paddingHorizontal: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 22 },
   doneText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
   hideZone: {
