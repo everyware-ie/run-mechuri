@@ -302,6 +302,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
 ### 빌드와 제출
 
-- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/5e913f00-f7ef-4475-ac5c-d4f675fe1923): 빌드 진행 중. 버전 `1.0.0`, 빌드 `27`, 커밋 `3cf64d9` 확인.
-- Apple 제출·내부 테스트 가능 상태는 아직 확인 전이며 완료 뒤 기록한다.
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/5e913f00-f7ef-4475-ac5c-d4f675fe1923): `FINISHED`. 버전 `1.0.0`, 빌드 `27`, 커밋 `3cf64d9` 확인. IPA의 표시 이름·번들 ID·processing 모드·백그라운드 식별자·JS 번들과 앱·프레임워크 서명 검증 통과.
+- IPA SHA-256: `f732b7054ab25e5b5e8db4715f8ff1231e871670c869b9c33eb90efb2de0b63e`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c59f0d9e-d8c5-4d71-a338-be7088e6d1fa): `FINISHED`, 2026-10-04 12:49 KST Apple 업로드 완료. 2026-10-04 Apple 조회에서 빌드 `27`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크는 빌드 25다.
 - 내부 테스터용 배포다. 공개 링크 변경은 기존처럼 지민에게 인계하며 이번 작업에서 바꾸지 않는다. 다음 작업은 편집 2단계(선 색·두께, 폰트·글자 색)다.
