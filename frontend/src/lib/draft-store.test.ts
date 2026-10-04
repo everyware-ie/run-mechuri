@@ -103,3 +103,13 @@ it('대기 중 객체가 바뀌어도 저장 요청 당시의 편집값을 남�
   await saving;
   expect((await getDraft())?.transform.x).toBe(42);
 });
+
+
+it('스타일을 포함한 초안을 저장하고 다시 열어 모든 선택값을 유지한다', async () => {
+  const value = { ...draft, routeStyle: { color: 'mint' as const, widthScale: 1.5 },
+    stampConfig: { ...draft.stampConfig, font: 'pretendard' as const, textColor: 'black' as const } };
+  await saveDraft(value);
+  const loaded = await getDraft();
+  expect(loaded?.routeStyle).toEqual(value.routeStyle);
+  expect(loaded?.stampConfig).toEqual(value.stampConfig);
+});

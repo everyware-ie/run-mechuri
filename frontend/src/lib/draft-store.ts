@@ -1,3 +1,4 @@
+import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
@@ -26,6 +27,7 @@ export type Draft = {
   backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
   /** result-editing FRD §5. v1 저장분엔 없을 수 있어 getDraft에서 기본값을 채운다. */
   smoothOptions: SmoothOptions;
   /** result-editing FRD §7. 마찬가지로 없을 수 있어 기본값을 채운다. */
@@ -51,6 +53,7 @@ export async function getDraft(): Promise<Draft | null> {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return { smoothOptions: IDENTITY_SMOOTH, stampConfig: IDENTITY_STAMP, ...parsed,
+      routeStyle: normalizeRouteStyle(parsed.routeStyle),
       backgroundImagePath: resolveBackgroundPath(parsed.backgroundImagePath),
       backgroundPhoto: resolvePhotoBackground(parsed.backgroundPhoto),
     };

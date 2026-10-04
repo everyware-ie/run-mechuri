@@ -63,6 +63,11 @@ struct RenderClipOptionsInput: Record {
   @Field var outputFileName: String = ""
   @Field var preset: String = "default-drawing"
   @Field var transform: RouteTransformInput = RouteTransformInput()
+  /// 스토리형 편집 2단계. 생략하면 옛 저장분의 색·두께·폰트가 그대로다.
+  @Field var routeColor: String = ""
+  @Field var routeWidthScale: Double = 1
+  @Field var stampFont: String = "preset"
+  @Field var stampTextColor: String = ""
   /// result-editing FRD §5. 0~100, 기본 0(무보정).
   @Field var smooth: Double = 0
   /// result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정).
@@ -642,6 +647,26 @@ public class RouteRendererModule: Module {
   // (docs/ideation/JiEung2/2026-08-04-route-overlay-mockup.html)의 캔버스 드로잉 로직을
   // 그대로 옮긴 것이다 — 미리보기(route-preview.tsx)도 같은 값을 쓴다.
 
+  // JS editor-style.ts의 팔레트·범위와 같다. 임의 문자열·비정상 수치는 기본값으로 되돌린다.
+  private func selectedRouteColor(_ value: String) -> UIColor {
+    let allowed = ["#FFF3EC", "#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"]
+    guard allowed.contains(value), let rgb = UInt32(value.dropFirst(), radix: 16) else { return lineWarm }
+    return UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255,
+      blue: CGFloat(rgb & 255) / 255, alpha: 1)
+  }
+
+  private func selectedTextColor(_ stamp: RenderClipOptionsInput) -> UIColor {
+    stamp.stampTextColor == "black" ? UIColor(white: 17 / 255, alpha: 1)
+      : stamp.stampTextColor == "white" ? .white : lineWarm
+  }
+
+  private func selectedFont(_ stamp: RenderClipOptionsInput, name: String, size: CGFloat, fallback: UIFont) -> UIFont {
+    let bold = name.hasSuffix("Bold")
+    let selected = stamp.stampFont == "pretendard" ? (bold ? "Pretendard-Bold" : "Pretendard-Medium")
+      : stamp.stampFont == "noto" ? (bold ? "NotoSansKR-Bold" : "NotoSansKR-Medium") : name
+    return UIFont(name: selected, size: size) ?? fallback
+  }
+
   private let lineWarm = UIColor(red: 255 / 255, green: 243 / 255, blue: 236 / 255, alpha: 1)
   private let glowColor = UIColor(red: 255 / 255, green: 107 / 255, blue: 74 / 255, alpha: 1)
 
@@ -724,6 +749,9 @@ public class RouteRendererModule: Module {
     renderer: UIGraphicsImageRenderer
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+    let routeColor = selectedRouteColor(stamp.routeColor)
+    let widthScale = CGFloat(stamp.routeWidthScale.isFinite ? min(2, max(0.5, stamp.routeWidthScale)) : 1)
+    let routeGlow = stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? glowColor : routeColor
     let targetDistance = totalDistance * progressFraction
 
     return renderer.image { _ in
@@ -734,15 +762,15 @@ public class RouteRendererModule: Module {
       case .defaultDrawing:
         // §6-1: 빈 화면에서 시작해 선으로 그려져 나간다. 따뜻한 흰색 + 옅은 글로우.
         let visible = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
-        self.strokePath(visible, color: self.lineWarm, width: 10, glowRadius: 6, glowColor: .white)
+        self.strokePath(visible, color: routeColor, width: 10 * widthScale, glowRadius: 6, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
 
       case .lightRunner:
         // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
         // 머리 발광 점. 끝점에 닿는 순간 경로 전체가 밝아진다.
-        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5)
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5 * widthScale)
         let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
         // 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분.
-        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8, glowRadius: 10, glowColor: .white)
+        self.strokePath(traveled, color: routeColor.withAlphaComponent(0.55), width: 8 * widthScale, glowRadius: 10, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
 
         let isComplete = progressFraction >= 1
         if !isComplete {
@@ -751,18 +779,18 @@ public class RouteRendererModule: Module {
           let hotStartDistance = max(0, targetDistance - totalDistance * 0.06)
           let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
-          self.strokePath(hotTrail, color: self.lineWarm, width: 10, glowRadius: 14, glowColor: self.glowColor)
+          self.strokePath(hotTrail, color: routeColor, width: 10 * widthScale, glowRadius: 14, glowColor: routeGlow)
           if let head = traveled.last {
-            self.fillDot(at: head, radius: 8, color: .white, glowRadius: 14, glowColor: self.glowColor)
+            self.fillDot(at: head, radius: 8 * widthScale, color: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeColor, glowRadius: 14, glowColor: routeGlow)
           }
         } else {
-          self.strokePath(projectedPoints, color: self.lineWarm, width: 14, glowRadius: 14, glowColor: self.glowColor)
+          self.strokePath(projectedPoints, color: routeColor, width: 14 * widthScale, glowRadius: 14, glowColor: routeGlow)
         }
 
       case .segmentLighting:
         // §6-3: 경로 전체가 희미하게 깔린 채 시작, 구간이 하나씩 켜진다.
         // 완료된 구간은 밝게(+짧은 반짝임), 그리는 중인 구간은 중간 밝기.
-        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10)
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10 * widthScale)
         guard totalDistance > 0 else { return }
 
         let unit = self.segmentUnitMeters(totalDistance)
@@ -785,18 +813,18 @@ public class RouteRendererModule: Module {
           let alpha: CGFloat = done ? 0.95 : 0.5
           self.strokePath(
             slice,
-            color: self.lineWarm.withAlphaComponent(alpha),
-            width: 10 + CGFloat(justLit) * 4,
+            color: routeColor.withAlphaComponent(alpha),
+            width: (10 + CGFloat(justLit) * 4) * widthScale,
             glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0,
-            glowColor: self.glowColor
+            glowColor: routeGlow
           )
           if done, let boundary = self.pointsUpTo(distance: segEndDist, projected: projectedPoints, cumulative: cumulativeDistances).last {
             self.fillDot(
               at: boundary,
-              radius: 4 + CGFloat(justLit) * 3,
-              color: self.lineWarm,
+              radius: (4 + CGFloat(justLit) * 3) * widthScale,
+              color: routeColor,
               glowRadius: 16 + CGFloat(justLit) * 24,
-              glowColor: self.glowColor
+              glowColor: routeGlow
             )
           }
         }
@@ -920,12 +948,12 @@ public class RouteRendererModule: Module {
     // 자유 문구는 러닝 데이터의 옛 표시 모드와 무관하게 클립 내내 보인다.
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
     ctx.saveGState()
-    // 프리셋과 상관없이 옅은 검정 그림자(미리보기 StampPreviewText softShadow와 같다).
-    ctx.setShadow(offset: .zero, blur: 6, color: UIColor.black.withAlphaComponent(0.55).cgColor)
+    // 글자와 반대 색의 옅은 그림자. 외곽선을 겹치면 작은 검정 라벨이 흰색처럼 보여 생략한다.
+    ctx.setShadow(offset: .zero, blur: 6, color: (stamp.stampTextColor == "black" ? UIColor.white : UIColor.black).withAlphaComponent(0.55).cgColor)
     for caption in stamp.freeCaptions where !caption.lines.isEmpty {
       let size = Self.freeCaptionSize * CGFloat(caption.scale)
-      let font = UIFont(name: "NotoSansKR-Bold", size: size) ?? .systemFont(ofSize: size, weight: .bold)
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
+      let font = selectedFont(stamp, name: "NotoSansKR-Bold", size: size, fallback: .systemFont(ofSize: size, weight: .bold))
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: selectedTextColor(stamp)]
       let lineHeight = size * 1.3
       let centerX = canvasSize.width / 2 + CGFloat(caption.x)
       let top = canvasSize.height / 2 + CGFloat(caption.y) - CGFloat(caption.lines.count) * lineHeight / 2
@@ -978,7 +1006,9 @@ public class RouteRendererModule: Module {
     // 피드백으로 나뉜 것). 이 파일은 그 구분 없이 전부 흰색 글로우로 그리고
     // 있었다 — 지금 쓰는 프리셋 전부가 미리보기보다 더 "빛나 보이는" 원인이다.
     let isSoftShadow = stamp.stampLayout != "row"
-    let stampShadowColor: UIColor = isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
+    let stampShadowColor: UIColor = stamp.stampTextColor == "black" ? UIColor.white.withAlphaComponent(0.55)
+      : isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
+    let textColor = selectedTextColor(stamp)
 
     // 2026-09-17 — 폰트 불일치(v0 근사, 구현 노트 "폰트 불일치" 참고) 수정.
     // 미리보기(route-preview.tsx)는 @expo-google-fonts로 로드한 실제 폰트를
@@ -988,7 +1018,7 @@ public class RouteRendererModule: Module {
     // 실제 PostScript 이름으로 여기서도 찾을 수 있다 — 못 찾으면(등록 전 등)
     // 기존 시스템 폰트로 그대로 폴백한다.
     func loadedFont(_ postscriptName: String, size: CGFloat, fallback: UIFont) -> UIFont {
-      UIFont(name: postscriptName, size: size) ?? fallback
+      selectedFont(stamp, name: postscriptName, size: size, fallback: fallback)
     }
     // route-preview.tsx의 'JetBrainsMono_500Medium'/'_700Bold' — 라벨·날짜·mono 값.
     func monoFont(_ size: CGFloat, bold: Bool) -> UIFont {
@@ -1012,7 +1042,7 @@ public class RouteRendererModule: Module {
     var drawingCaption = false
     func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
       if drawingCaption ? !captionPass : !itemPass { return }
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? textColor]
       let w = (text as NSString).size(withAttributes: attrs).width
       let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
       // 실기기 피드백(2026-09-08) "인스타 공유 결과물에서 각인이 다 겹쳐 보인다":
@@ -1028,7 +1058,7 @@ public class RouteRendererModule: Module {
       (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
-    let mutedColor = self.lineWarm.withAlphaComponent(0.5)
+    let mutedColor = textColor.withAlphaComponent(0.5)
 
     // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(ox/oy)는 그대로 두고
     // 글자 크기·내부 간격에만 곱한다. 문구 배치에서는 문구 크기(captionScale)가 들어온다.
@@ -1052,8 +1082,8 @@ public class RouteRendererModule: Module {
       }
       let mainFont = heroValueFont(size)
       let unitFont = heroValueFont(size * 0.42)
-      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: self.lineWarm]
-      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: self.lineWarm]
+      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: textColor]
+      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: textColor]
       let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
       let unitText = " \(split.unit)"
       let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
@@ -1207,7 +1237,7 @@ public class RouteRendererModule: Module {
       if !caption.isEmpty { drawCaption(CGPoint(x: leftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left) }
       if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
       if !caption.isEmpty || !dateText.isEmpty {
-        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
+        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.28))
       }
       if !statOrder.isEmpty {
         let widths = statOrder.map { key -> CGFloat in
@@ -1317,8 +1347,8 @@ public class RouteRendererModule: Module {
       fillRect(
         CGRect(x: panelLeft, y: panelTop, width: panelWidth, height: panelHeight),
         radius: 18 * u,
-        color: UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
-        strokeColor: UIColor(white: 1, alpha: 0.14)
+        color: stamp.stampTextColor == "black" ? UIColor(white: 1, alpha: 0.72) : UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
+        strokeColor: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.14)
       )
 
       var cursor = panelTop + padY
@@ -1427,7 +1457,7 @@ public class RouteRendererModule: Module {
       }
       let oneLine = lineText(valueFor)
       // 미리보기와 같은 완성 값 기준 너비 보정. 사용자 크기 배율은 유지한다.
-      let fitted = fitStampColumns([estimateOneLineTextWidth(lineText(finalValueFor), 11 * M)], canvasSize.width - 24 * M, 0)
+      let fitted = fitStampColumns([(stamp.stampFont == "pretendard" || stamp.stampFont == "noto" ? estimateStampTextWidth(lineText(finalValueFor), 11 * M) : estimateOneLineTextWidth(lineText(finalValueFor), 11 * M))], canvasSize.width - 24 * M, 0)
       let oneLineFont = 11 * u * fitted.scale
 
       // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
@@ -1439,7 +1469,7 @@ public class RouteRendererModule: Module {
 
       if !oneLine.isEmpty {
         draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), monoFont(oneLineFont, bold: false), .center)
-        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
+        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.5))
       }
       if !caption.isEmpty {
         drawCaption(CGPoint(x: centerX, y: titleBaseline), hangulFont(titleFont, bold: true), .center)

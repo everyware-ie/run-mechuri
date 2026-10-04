@@ -1,3 +1,5 @@
+import { RouteStyleControls, TextStyleControls } from '@/components/editor-style-controls';
+import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
 import { router, useFocusEffect, useIsFocused } from 'expo-router';
@@ -126,6 +128,7 @@ export default function EditScreen() {
     draft,
     setPreset: commitPreset,
     setTransform: commitTransform,
+    setRouteStyle: commitRouteStyle,
     setSmoothOptions: commitSmoothOptions,
     setStampConfig: commitStampConfig,
     setBackground,
@@ -138,7 +141,20 @@ export default function EditScreen() {
 
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
-  const [stampTab, setStampTab] = useState<'layout' | 'items'>('layout');
+  const [stampTab, setStampTab] = useState<'layout' | 'items' | 'style'>('layout');
+  const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
+  const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
+  const routeStyleRef = useRef(routeStyle);
+  const updateRouteStyle = (value: RouteStyle) => {
+    const next = normalizeRouteStyle(value);
+    routeStyleRef.current = next;
+    setRouteStyle(next);
+  };
+  const handleRouteStyleCommit = (value: RouteStyle) => {
+    updateRouteStyle(value);
+    commitRouteStyle(normalizeRouteStyle(value));
+    setIsInteracting(false);
+  };
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const { pendingId: applyingBackground, apply: applyDefaultBackground,
     cancel: cancelBackgroundApply, isPending: isBackgroundPending } = useBackgroundApply({
@@ -258,9 +274,10 @@ export default function EditScreen() {
     backgroundPhoto: draft.backgroundPhoto,
     preset: draft.preset,
     transform: draft.transform,
+    routeStyle: draft.routeStyle,
     smoothOptions: draft.smoothOptions,
     stampConfig: draft.stampConfig,
-  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
+  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.routeStyle, draft.smoothOptions, draft.stampConfig]);
   const { history, skipNextChange, popHistory } = useEditHistory(editSnapshot);
 
   // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
@@ -679,6 +696,7 @@ export default function EditScreen() {
       backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
       transform: draft.transform,
+      routeStyle: draft.routeStyle,
       smoothOptions: draft.smoothOptions,
       stampConfig: captionEditing.stampForSave,
     };
@@ -689,6 +707,7 @@ export default function EditScreen() {
     draft.backgroundPhoto,
     draft.preset,
     draft.transform,
+    draft.routeStyle,
     draft.smoothOptions,
     captionEditing.stampForSave,
   ]);
@@ -700,11 +719,13 @@ export default function EditScreen() {
     flushPendingSmooth();
     flushPendingStampConfig();
     commitTransform(transformRef.current);
+    commitRouteStyle(routeStyleRef.current);
     commitSmoothOptions(smoothOptionsRef.current);
     commitStampConfig(stampConfigRef.current);
     if (persistedDraft) persistDraft({
       ...persistedDraft,
       transform: transformRef.current,
+      routeStyle: routeStyleRef.current,
       smoothOptions: smoothOptionsRef.current,
       stampConfig: stampConfigRef.current,
     });
@@ -733,6 +754,7 @@ export default function EditScreen() {
     const placeName = stampConfigRef.current.placeName || previous.stampConfig.placeName;
     const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
     updateTransform(restored.transform);
+    updateRouteStyle(normalizeRouteStyle(restored.routeStyle));
     updateSmoothOptions(restored.smoothOptions);
     updateStampConfig(migrateLegacyCaption(draft.selectedRun, restored.stampConfig));
     loadDraft(restored);
@@ -816,6 +838,7 @@ export default function EditScreen() {
                     points={draft.track.coordinates}
                     preset={draft.preset}
                     transform={transform}
+                    routeStyle={routeStyle}
                     transformShared={{
                       x: transformXShared,
                       y: transformYShared,
@@ -908,6 +931,8 @@ export default function EditScreen() {
           </View>
         </View>
 
+        <ScrollView style={{ flexGrow: 0, maxHeight: Math.max(100, window.height - insets.top - insets.bottom - keyboardHeight - 140) }}
+          contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {tool === 'background' && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundRow}>
             {DEFAULT_BACKGROUNDS.map((bg) => {
@@ -936,6 +961,15 @@ export default function EditScreen() {
         </>}
 
         {tool === 'route' && <>
+          <View style={styles.tabs}>
+            {([{ id: 'drawing', label: '경로 그림' }, { id: 'style', label: '스타일' }] as const).map(tab =>
+              <Pressable key={tab.id} onPress={() => setRouteTab(tab.id)} style={styles.tab}
+                accessibilityRole="tab" accessibilityState={{ selected: routeTab === tab.id }}>
+                <Text style={routeTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
+              </Pressable>)}
+          </View>
+          {routeTab === 'style' ? <RouteStyleControls value={routeStyle} onChange={updateRouteStyle}
+            onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit} /> : <>
           <Text style={styles.hint}>경로를 끌어서 옮기고, 두 손가락으로 키우거나 돌려요.</Text>
           <View style={styles.presetRow}>
             {PRESETS.map((p) => (
@@ -960,18 +994,20 @@ export default function EditScreen() {
             </View>
             <Text style={styles.sliderValue}>{smoothOptions.corner === 0 ? '각지게' : `${smoothOptions.corner} %`}</Text>
           </View>
+          </>}
         </>}
 
         {tool === 'stamp' && <>
           <View style={styles.tabs}>
-            {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '항목' }] as const).map((tab) => (
+            {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '항목' }, { id: 'style', label: '스타일' }] as const).map((tab) => (
               <Pressable key={tab.id} onPress={() => setStampTab(tab.id)} style={styles.tab}
                 accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}>
                 <Text style={stampTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
               </Pressable>
             ))}
           </View>
-          {stampTab === 'layout' ? (
+          {stampTab === 'style' ? <TextStyleControls value={stampConfig}
+            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : stampTab === 'layout' ? (
             <View style={styles.layoutChipRow}>
               {STAMP_LAYOUTS.map((l) => {
                 const on = (stampConfig.layout ?? 'row') === l.id;
@@ -1000,6 +1036,7 @@ export default function EditScreen() {
           )}
           <Text style={styles.hint}>화면에서 끌어서 옮기고, 아래 동그라미로 끌면 숨겨요.</Text>
         </>}
+        </ScrollView>
       </Animated.View>}
 
       {undoToast && dragging === null && !tool && <View style={[styles.toast, { bottom: insets.bottom + BOTTOM_BAR_HEIGHT + 8 }]}
@@ -1011,6 +1048,7 @@ export default function EditScreen() {
       </View>}
 
       {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
+        font={stampConfig.font} textColor={stampConfig.textColor}
         fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
         limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
         onInteractionChange={setIsInteracting}
