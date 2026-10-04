@@ -1,6 +1,7 @@
 import { normalizeHandDrawing, type HandStroke } from '@/lib/hand-drawing';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import {
   IDENTITY_SMOOTH,
@@ -44,6 +45,16 @@ export type SavedResult = {
 
 const STORAGE_KEY = 'mechuri.results.v2';
 
+// 새 영상 보관 경로만 다시 연결한다. 외부 파일과 옛 임시 경로는 그대로 둔다.
+function resolveOutputPath(path: string): string {
+  const match = /^file:\/\/.*\/Documents\/clips\/(mechuri-[A-Za-z0-9_-]+\.mp4)$/.exec(path);
+  return match && FileSystem.documentDirectory ? `${FileSystem.documentDirectory}clips/${match[1]}` : path;
+}
+function ownsOutputPath(path: string): boolean {
+  return !!FileSystem.documentDirectory && path.startsWith(`${FileSystem.documentDirectory}clips/`)
+    && /^mechuri-[A-Za-z0-9_-]+\.mp4$/.test(path.slice(`${FileSystem.documentDirectory}clips/`.length));
+}
+
 // 목록 읽기부터 쓰기 완료까지 순서를 보장해 서로의 변경을 덮어쓰지 않게 한다.
 let storageTail: Promise<void> = Promise.resolve();
 function inStorageOrder<T>(operation: () => Promise<T>): Promise<T> {
@@ -59,6 +70,7 @@ async function readResults(): Promise<SavedResult[]> {
   const results: SavedResult[] = JSON.parse(raw);
   const withDefaults = results.map((r) => ({
     ...r,
+    outputPath: resolveOutputPath(r.outputPath),
     routeStyle: normalizeRouteStyle(r.routeStyle),
     handDrawing: normalizeHandDrawing(r.handDrawing),
     backgroundImagePath: resolveBackgroundPath(r.backgroundImagePath),
@@ -95,6 +107,14 @@ export async function deleteResult(id: string): Promise<void> {
     const existing = await readResults();
     const updated = existing.filter((r) => r.id !== id);
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    // 목록 저장 실패에는 파일을 보존하고, 다른 결과물이 참조하는 파일도 남긴다.
+    const removedPaths = new Set(existing.filter(r => r.id === id).map(r => r.outputPath));
+    for (const path of removedPaths) {
+      if (ownsOutputPath(path) && !updated.some(r => r.outputPath === path)) {
+        await FileSystem.deleteAsync(path, { idempotent: true })
+          .catch(() => console.warn('Removed result video cleanup failed'));
+      }
+    }
   });
 }
 

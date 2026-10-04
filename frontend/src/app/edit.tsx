@@ -167,7 +167,13 @@ export default function EditScreen() {
     commitInk(inkRef.current.map(s => s.id === id ? { ...s, ...patch } : s));
   };
   const [applyingStyle, setApplyingStyle] = useState(false);
+  const applyingStyleRef = useRef(false);
   const styleOperation = useRef(0);
+  const cancelStyleApply = useCallback(() => {
+    styleOperation.current++;
+    applyingStyleRef.current = false;
+    setApplyingStyle(false);
+  }, []);
   const [stampTab, setStampTab] = useState<'items' | 'style'>('items');
   const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
   const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
@@ -191,7 +197,7 @@ export default function EditScreen() {
     onError: () => Alert.alert('배경을 바꾸지 못했어요', '다시 시도해 주세요.'),
   });
   // 스택에 편집 화면이 남아 있어도 갤러리·홈 등으로 떠난 뒤 늦은 작업은 반영하지 않는다.
-  useFocusEffect(useCallback(() => () => { cancelBackgroundApply(); styleOperation.current++; setApplyingStyle(false); }, [cancelBackgroundApply]));
+  useFocusEffect(useCallback(() => () => { cancelBackgroundApply(); cancelStyleApply(); }, [cancelBackgroundApply, cancelStyleApply]));
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => setKeyboardHeight(e.endCoordinates.height));
@@ -547,7 +553,7 @@ export default function EditScreen() {
 
   const openTool = (next: Tool) => {
     if (next !== 'ink') clearInkSelection();
-    if (next !== 'style') { styleOperation.current++; setApplyingStyle(false); }
+    if (next !== 'style') cancelStyleApply();
     Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
@@ -558,8 +564,7 @@ export default function EditScreen() {
   };
   const closeTool = () => {
     clearInkSelection();
-    styleOperation.current++;
-    setApplyingStyle(false);
+    cancelStyleApply();
     Keyboard.dismiss();
     toolRef.current = null;
     setTool(null);
@@ -829,21 +834,21 @@ export default function EditScreen() {
     });
   };
   const handleDone = () => {
-    if (isBackgroundPending() || applyingStyle) return;
+    if (isBackgroundPending() || applyingStyleRef.current) return;
     commitAll();
     router.push('/share');
   };
   const handleClose = () => {
-    styleOperation.current++; setApplyingStyle(false);
+    cancelStyleApply();
     cancelBackgroundApply();
     commitAll();
     if (router.canDismiss()) router.dismissAll();
     else router.replace('/');
   };
   const handleUndo = () => {
-    styleOperation.current++; setApplyingStyle(false);
+    cancelStyleApply();
     cancelBackgroundApply();
-    const previous = history[history.length - 1];
+    const previous = popHistory();
     if (!previous) return;
     Keyboard.dismiss();
     flushPendingSmooth();
@@ -851,7 +856,6 @@ export default function EditScreen() {
     clearInkSelection();
     if (toolRef.current === 'ink') closeTool();
     skipNextChange();
-    popHistory();
     // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
     const placeName = stampConfigRef.current.placeName || previous.stampConfig.placeName;
     const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
@@ -863,10 +867,12 @@ export default function EditScreen() {
   };
 
   const handlePresetSelect = (preset: RoutePreset) => commitPreset(preset);
-  const startDrawing = () => { if (isBackgroundPending() || applyingStyle) return; commitAll(); closeTool(); setDrawing(true); };
+  const startDrawing = () => { if (isBackgroundPending() || applyingStyleRef.current) return; commitAll(); closeTool(); setDrawing(true); };
   const handleStyleApply = async (style: MyStyle): Promise<boolean> => {
+    if (applyingStyleRef.current) return false;
     cancelBackgroundApply();
     const operation = ++styleOperation.current;
+    applyingStyleRef.current = true;
     setApplyingStyle(true);
     try {
       const bg = DEFAULT_BACKGROUNDS.find(b => b.id === style.backgroundId);
@@ -881,7 +887,7 @@ export default function EditScreen() {
       loadDraft(next);
       return true;
     } catch (error) { if (operation === styleOperation.current) throw error; return false; }
-    finally { if (operation === styleOperation.current) setApplyingStyle(false); }
+    finally { if (operation === styleOperation.current) { applyingStyleRef.current = false; setApplyingStyle(false); } }
   };
 
 

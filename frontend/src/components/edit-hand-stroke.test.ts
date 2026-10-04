@@ -2,10 +2,13 @@ import { act, createElement } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { ActionSheetIOS, PanResponder, Platform } from 'react-native';
 import EditScreen from '../app/edit';
+import { persistDefaultBackground } from '@/lib/background-storage';
+import { router } from 'expo-router';
+import { captureMyStyle } from '@/lib/my-style-store';
 import { IDENTITY_STAMP, IDENTITY_TRANSFORM } from '@/components/route-preview';
 
 jest.mock('@react-native-async-storage/async-storage', () => jest.requireActual('@react-native-async-storage/async-storage/jest/async-storage-mock'));
-jest.mock('expo-router', () => ({ router: {}, useFocusEffect: jest.fn(), useIsFocused: () => true }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn(), canDismiss: () => false, replace: jest.fn() }, useFocusEffect: jest.fn(), useIsFocused: () => true }));
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('expo-location', () => ({ reverseGeocodeAsync: jest.fn().mockResolvedValue([]) }));
 jest.mock('expo-haptics', () => ({ impactAsync: jest.fn().mockResolvedValue(undefined), ImpactFeedbackStyle: { Medium: 'medium' } }));
@@ -23,7 +26,11 @@ jest.mock('@/components/route-color-picker', () => {
   return { RouteColorPicker: (props: object) => element('route-color-picker', props) };
 });
 jest.mock('@/components/background-video', () => ({ CroppedBackgroundVideo: () => null }));
-jest.mock('@/components/my-style-sheet', () => ({ MyStyleSheet: () => null }));
+jest.mock('@/components/my-style-sheet', () => {
+  const { createElement: element } = jest.requireActual('react');
+  return { MyStyleSheet: (props: object) => element('style-controls', props) };
+});
+jest.mock('@/lib/background-storage', () => ({ ...jest.requireActual('@/lib/background-storage'), persistDefaultBackground: jest.fn() }));
 jest.mock('@shopify/react-native-skia', () => ({}));
 jest.mock('react-native-worklets', () => ({}));
 jest.mock('react-native-reanimated', () => {
@@ -63,6 +70,7 @@ const event = (x: number, y: number, second?: [number, number]) => ({ nativeEven
 const preview = () => renderer.root.findByType('ink-preview' as never).props;
 const handlers = () => renderer.root.findByProps({ accessibilityLabel: '결과물 미리보기. 끌어서 옮기고 두 손가락으로 크기를 바꿔요' }).props;
 beforeEach(async () => {
+  jest.clearAllMocks();
   jest.spyOn(PanResponder, 'create').mockImplementation(config => ({ panHandlers: {
     onTouchStart: config.onPanResponderGrant, onTouchMove: config.onPanResponderMove, onTouchEnd: config.onPanResponderRelease,
   } } as unknown as ReturnType<typeof PanResponder.create>));
@@ -165,4 +173,94 @@ it('자유 색상 후보는 편집 이력을 만들지 않고 완료한 색만 �
   expect(preview().routeStyle.color).toBeUndefined();
   expect(renderer.root.findByProps({ accessibilityLabel: '경로 편집 되돌리기' }).props.disabled).toBe(true);
   expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
+});
+
+
+it.each([['경로', '경로 그림 크기', '경로 편집 되돌리기', 'transform'], ['러닝 데이터', '러닝 데이터 크기', '러닝 데이터 편집 되돌리기', 'stampConfig']] as const)('%s 되돌리기를 연속으로 눌러도 편집 이력을 순서대로 복원한다', async (tool, size, undoLabel, field) => {
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: tool }).props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: size }).props.onSlidingComplete(120));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: size }).props.onSlidingComplete(150));
+  const undo = renderer.root.findByProps({ accessibilityLabel: undoLabel }).props.onPress;
+  await act(async () => { undo(); undo(); undo(); });
+  expect(preview()[field].scale).toBe(1);
+  expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
+  expect(preview().stampConfig.placeName).toBe('테스트');
+  expect(renderer.root.findByProps({ accessibilityLabel: undoLabel }).props.disabled).toBe(true);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: size }).props.onSlidingComplete(140));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: undoLabel }).props.onPress());
+  expect(preview()[field].scale).toBe(1);
+  expect(renderer.root.findByProps({ accessibilityLabel: undoLabel }).props.disabled).toBe(true);
+});
+
+
+it('내 스타일 적용 직후 화면 갱신 전 완료를 눌러도 이전 값으로 내보내지 않는다', async () => {
+  let resolve!: (path: string) => void;
+  jest.mocked(persistDefaultBackground).mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
+  const controls = renderer.root.findByType('style-controls' as never).props;
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning', routeStyle: { color: '#123456' as const } };
+  const done = renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress;
+  let applying!: Promise<boolean>;
+  await act(async () => { applying = controls.onApply(style); done(); });
+  expect(router.push).not.toHaveBeenCalled();
+  await act(async () => { resolve('style-bg.jpg'); await applying; });
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress());
+  expect(router.push).toHaveBeenCalledWith('/share');
+  expect(preview().routeStyle.color).toBe('#123456');
+});
+
+
+it('스타일 적용 중 그리기 진입·중복 요청은 기다리고 도구 전환 뒤 늦은 완료는 무시한다', async () => {
+  let resolve!: (path: string) => void;
+  jest.mocked(persistDefaultBackground).mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
+  const controls = renderer.root.findByType('style-controls' as never).props;
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning', routeStyle: { color: '#123456' as const } };
+  const draw = renderer.root.findByProps({ accessibilityLabel: '그리기' }).props.onPress;
+  let applying!: Promise<boolean>, duplicate!: Promise<boolean>;
+  await act(async () => { applying = controls.onApply(style); draw(); duplicate = controls.onApply(style); });
+  expect(renderer.root.findAllByType('drawing-controls' as never)).toHaveLength(0);
+  expect(await duplicate).toBe(false);
+  expect(persistDefaultBackground).toHaveBeenCalledTimes(1);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '경로' }).props.onPress());
+  let applied = true;
+  await act(async () => { resolve('late-bg.jpg'); applied = await applying; });
+  expect(applied).toBe(false);
+  expect(preview().routeStyle.color).toBeUndefined();
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '경로 편집 완료' }).props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress());
+  expect(router.push).toHaveBeenCalledWith('/share');
+});
+
+it('스타일 준비 실패 뒤 다시 적용하고 완료할 수 있다', async () => {
+  jest.mocked(persistDefaultBackground).mockRejectedValueOnce(new Error('copy failed')).mockResolvedValueOnce('ready-bg.jpg');
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
+  const controls = renderer.root.findByType('style-controls' as never).props;
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning' };
+  await act(async () => { await expect(controls.onApply(style)).rejects.toThrow('copy failed'); });
+  expect(renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.disabled).toBe(false);
+  await act(async () => { expect(await controls.onApply(style)).toBe(true); });
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress());
+  expect(router.push).toHaveBeenCalledWith('/share');
+});
+
+
+it('취소한 스타일의 늦은 완료가 새 적용의 대기를 풀지 않는다', async () => {
+  const resolve: ((path: string) => void)[] = [];
+  jest.mocked(persistDefaultBackground).mockImplementation(() => new Promise<string>(done => { resolve.push(done); }));
+  const open = async () => act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
+  await open();
+  const firstControls = renderer.root.findByType('style-controls' as never).props;
+  const style = { ...captureMyStyle(firstControls.snapshot, 'QA'), backgroundId: 'morning' };
+  let first!: Promise<boolean>, second!: Promise<boolean>;
+  await act(async () => { first = firstControls.onApply(style); });
+  // 같은 도구를 다시 누르면 닫히며, 다음에 여는 적용은 별도 작업이다.
+  await open(); await open();
+  await act(async () => { second = renderer.root.findByType('style-controls' as never).props.onApply(style); });
+  await act(async () => { resolve[0]('old.jpg'); expect(await first).toBe(false); });
+  expect(renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.disabled).toBe(true);
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress());
+  expect(router.push).not.toHaveBeenCalled();
+  await act(async () => { resolve[1]('new.jpg'); expect(await second).toBe(true); });
+  expect(renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.disabled).toBe(false);
 });

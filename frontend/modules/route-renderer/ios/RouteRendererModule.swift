@@ -420,7 +420,7 @@ public class RouteRendererModule: Module {
     let projected = applyTransform(smoothed, transform: options.transform)
     let distances = cumulativeCanvasDistances(projected)
     let routePreparationSeconds = CFAbsoluteTimeGetCurrent() - routeStart
-    let output = outputURL(named: options.outputFileName)
+    let output = try outputURL(named: options.outputFileName)
     try writeClip(preset: preset, projectedPoints: projected, cumulativeDistances: distances,
                   totalDistance: distances.last ?? 0, background: background, videoSource: videoSource,
                   stamp: options, to: output, job: job)
@@ -1592,9 +1592,12 @@ public class RouteRendererModule: Module {
 
   // MARK: - 인코딩
 
-  private func outputURL(named name: String) -> URL {
-    let tempDir = FileManager.default.temporaryDirectory
-    return tempDir.appendingPathComponent("\(name).mp4")
+  private func outputURL(named name: String) throws -> URL {
+    // 홈과 보관함 FRD §2-3: 완성 파일은 임시 공간 정리로 사라지면 안 된다.
+    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("clips", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory.appendingPathComponent("\(name).mp4")
   }
 
   // 각 slot은 한 worker만 쓰고, 합류 후 renderQueue에서 읽는다.
@@ -1833,34 +1836,40 @@ final class RouteColorPickerView: ExpoView, UIColorPickerViewControllerDelegate 
   let onColorChange = EventDispatcher()
   private let picker = UIColorPickerViewController()
   private var hasInitialColor = false
+  private var receivedSelectionEvent = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
-    picker.supportsAlpha = false
-    if #available(iOS 26.0, *) { picker.maximumLinearExposure = 0 }
     picker.overrideUserInterfaceStyle = .dark
     clipsToBounds = true
-    addSubview(picker.view)
   }
 
   override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window != nil, picker.parent == nil {
+    attachPickerIfReady()
+    if window == nil, picker.parent != nil {
+      picker.willMove(toParent: nil)
+      picker.view.removeFromSuperview()
+      picker.removeFromParent()
+    }
+  }
+
+  private func attachPickerIfReady() {
+    if window != nil, hasInitialColor, picker.parent == nil {
       var owner: UIResponder? = self.next
       while owner != nil, !(owner is UIViewController) { owner = owner?.next }
       if let parent = owner as? UIViewController {
         parent.addChild(picker)
+        addSubview(picker.view)
+        picker.view.frame = bounds
         picker.didMove(toParent: parent)
       }
-    } else if window == nil, picker.parent != nil {
-      picker.willMove(toParent: nil)
-      picker.removeFromParent()
     }
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    picker.view.frame = bounds
+    if picker.isViewLoaded { picker.view.frame = bounds }
   }
 
   func setColor(_ hex: String) {
@@ -1868,16 +1877,26 @@ final class RouteColorPickerView: ExpoView, UIColorPickerViewControllerDelegate 
     // 뷰 생성과 초기 색 설정은 사용자의 선택으로 전달하지 않는다.
     picker.delegate = nil
     picker.selectedColor = color
+    picker.supportsAlpha = false
+    if #available(iOS 26.0, *) { picker.maximumLinearExposure = 0 }
     hasInitialColor = true
+    attachPickerIfReady()
     picker.delegate = self
   }
 
-  func colorPickerViewControllerDidSelectColor(_ viewController: UIColorPickerViewController) {
+  func colorPickerViewController(_ viewController: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
+    // 기존 delegate의 selectedColor 조회 대신 시스템이 전달한 후보를 사용한다.
     guard hasInitialColor, window != nil,
       let space = CGColorSpace(name: CGColorSpace.sRGB),
-      let converted = viewController.selectedColor.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
+      let converted = color.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
       let components = converted.components, components.count >= 3 else { return }
     let rgb = components.prefix(3).map { Int((max(0, min(1, $0)) * 255).rounded()) }
+    let firstEvent = !receivedSelectionEvent
+    receivedSelectionEvent = true
+    // iOS 26 초기화는 화면의 시작 색과 다른 검정을 첫 비연속 이벤트로 통지한다.
+    // 해당 첫 이벤트만 제외하고 실제 선택과 이후 확정 이벤트는 모두 받는다.
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26,
+      firstEvent, !continuously, rgb == [0, 0, 0] { return }
     onColorChange(["color": String(format: "#%02X%02X%02X", rgb[0], rgb[1], rgb[2])])
   }
 }

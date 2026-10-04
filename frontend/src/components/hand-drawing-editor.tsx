@@ -20,6 +20,7 @@ type Props = {
 };
 export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChange, onDone }: Props) {
   const [strokes, setStrokes] = useState(initial), [history, setHistory] = useState<HandStroke[][]>([]);
+  const historyRef = useRef<HandStroke[][]>([]);
   const [brush, setBrush] = useState<InkBrush | 'eraser'>('pen'), [color, setColor] = useState('#FFFFFF'), [width, setWidth] = useState(12);
   const path = useSharedValue(Skia.Path.Make());
   const sizeRef = useRef(canvasSize), strokesRef = useRef(strokes);
@@ -40,7 +41,8 @@ export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChan
     const next = g.stroke ? [...g.before, g.stroke] : strokesRef.current;
     path.set(Skia.Path.Make());
     if (next !== g.before) {
-      setHistory(previous => [...previous.slice(-59), g.before]);
+      historyRef.current = [...historyRef.current.slice(-59), g.before];
+      setHistory(historyRef.current);
       local(next); options.current.onChange(next);
     }
     if (g.limited) Alert.alert('손그림이 꽉 찼어요', '획을 지우거나 되돌린 뒤 이어서 그려 주세요.');
@@ -86,8 +88,9 @@ export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChan
     onPanResponderRelease: () => finish.current(), onPanResponderTerminate: () => finish.current(),
   }));
   const undo = () => {
-    const previous = history.at(-1); if (!previous) return;
-    setHistory(h => h.slice(0, -1)); local(previous); onChange(previous);
+    const previous = historyRef.current.at(-1); if (!previous) return;
+    historyRef.current = historyRef.current.slice(0, -1);
+    setHistory(historyRef.current); local(previous); onChange(previous);
   };
   return <View style={StyleSheet.absoluteFill}>
     <View style={StyleSheet.absoluteFill} {...pan.panHandlers} accessibilityLabel="손그림 캔버스" />

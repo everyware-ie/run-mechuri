@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { addResult, deleteResult, getResult, listResults, type SavedResult } from './results-store';
 
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(), setItem: jest.fn() }));
@@ -6,7 +7,7 @@ jest.mock('@/components/route-preview', () => ({
   IDENTITY_SMOOTH: { smooth: 0, corner: 0 },
   IDENTITY_STAMP: { mode: 'always', position: { x: 0, y: 0 }, caption: '' },
 }));
-jest.mock('expo-file-system/legacy', () => ({ documentDirectory: 'file:///new/Documents/' }));
+jest.mock('expo-file-system/legacy', () => ({ documentDirectory: 'file:///new/Documents/', deleteAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('expo-asset', () => ({ Asset: {} }));
 
 function result(id: string, runDate = '2026-10-04', createdAt = '2026-10-04T10:00:00Z'): SavedResult {
@@ -131,4 +132,54 @@ it('완성한 손그림은 다시 편집할 때 같은 붓·좌표로 남고 기
   const handDrawing = [{ id: 'ink', brush: 'neon' as const, color: '#8EF0CE', width: 24, points: [{ x: 900, y: 1800 }], offset: { x: -350, y: -600 }, scale: .5 }];
   await addResult({ ...result('new'), handDrawing });
   expect((await getResult('new'))?.handDrawing).toEqual(handDrawing);
+});
+
+
+it('새 보관 영상은 업데이트 뒤 현재 컨테이너로 연결하고 옛 임시 파일은 그대로 둔다', async () => {
+  stored = JSON.stringify([
+    { ...result('new'), outputPath: 'file:///old/Documents/clips/mechuri-run-123.mp4' },
+    { ...result('legacy'), outputPath: 'file:///old/tmp/mechuri-old.mp4' },
+  ]);
+  expect((await getResult('new'))?.outputPath).toBe('file:///new/Documents/clips/mechuri-run-123.mp4');
+  expect((await getResult('legacy'))?.outputPath).toBe('file:///old/tmp/mechuri-old.mp4');
+});
+
+it('결과물을 삭제하면 앱 소유 보관 영상만 정리한다', async () => {
+  stored = JSON.stringify([{ ...result('new'), outputPath: 'file:///old/Documents/clips/mechuri-run-123.mp4' }, result('keep')]);
+  await deleteResult('new');
+  expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///new/Documents/clips/mechuri-run-123.mp4', { idempotent: true });
+  expect((await listResults()).map(r => r.id)).toEqual(['keep']);
+});
+
+it('목록 저장이 실패하면 영상도 지우지 않는다', async () => {
+  stored = JSON.stringify([{ ...result('new'), outputPath: 'file:///old/Documents/clips/mechuri-run-123.mp4' }]);
+  jest.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('full'));
+  await expect(deleteResult('new')).rejects.toThrow('full');
+  expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  expect(await getResult('new')).not.toBeNull();
+});
+
+it('다른 결과물이 같은 영상을 참조하면 파일은 보존한다', async () => {
+  const outputPath = 'file:///old/Documents/clips/mechuri-run-123.mp4';
+  stored = JSON.stringify([{ ...result('a'), outputPath }, { ...result('b'), outputPath }]);
+  await deleteResult('a');
+  expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  expect(await getResult('b')).not.toBeNull();
+});
+
+it.each(['file:///old/tmp/mechuri-old.mp4', 'file:///old/Documents/clips/../secret.mp4', 'file:///outside.mp4'])('소유하지 않은 경로는 삭제하지 않는다: %s', async (outputPath) => {
+  stored = JSON.stringify([{ ...result('a'), outputPath }]);
+  await deleteResult('a');
+  expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+});
+
+it('영상 정리 실패는 삭제 결과와 다음 저장을 막지 않는다', async () => {
+  stored = JSON.stringify([{ ...result('a'), outputPath: 'file:///old/Documents/clips/mechuri-run-123.mp4' }]);
+  jest.mocked(FileSystem.deleteAsync).mockRejectedValueOnce(new Error('busy'));
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  await deleteResult('a');
+  await addResult(result('b'));
+  expect((await listResults()).map(r => r.id)).toEqual(['b']);
+  expect(warn).toHaveBeenCalledTimes(1);
+  warn.mockRestore();
 });
