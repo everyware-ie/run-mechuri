@@ -109,7 +109,6 @@ export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChan
       accessibilityLabel={brush === 'eraser' ? '지우개 크기' : '붓 굵기'} onChange={setWidth} onSlidingComplete={setWidth} /></View>
     <View style={styles.palette}>{INK_COLORS.map(c => <Pressable key={c} onPress={() => setColor(c)} style={[styles.swatch, { backgroundColor: c }, color === c && styles.swatchOn]}
       accessibilityRole="button" accessibilityLabel={`손그림 색 ${c}`} accessibilityState={{ selected: c === color }} hitSlop={5} />)}</View>
-    {strokes.length === 0 && <View pointerEvents="none" style={styles.hint}><Text style={styles.hintText}>경로 옆에 자유롭게 그려 보세요</Text></View>}
   </View>;
 }
 const styles = StyleSheet.create({
@@ -120,5 +119,4 @@ const styles = StyleSheet.create({
   doneText: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.bg }, slider: { position: 'absolute', left: 2, top: '27%', height: '30%' },
   palette: { position: 'absolute', bottom: 18, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 8, paddingVertical: 8, backgroundColor: 'rgba(11,13,16,.45)', borderRadius: 24 },
   swatch: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,.3)' }, swatchOn: { borderWidth: 3, borderColor: Colors.accent },
-  hint: { position: 'absolute', top: '50%', left: 0, right: 0, alignItems: 'center' }, hintText: { color: Colors.text, fontFamily: Fonts.sans, fontSize: 12, backgroundColor: 'rgba(11,13,16,.6)', padding: 10, borderRadius: 16 },
 });
