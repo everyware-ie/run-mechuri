@@ -70,3 +70,13 @@ describe('dropZoneFor', () => {
     expect(dropZoneFor({ kind: 'route' })).toBeNull();
   });
 });
+
+it('손그림 획은 직접 선택·이동하고 주변 빈 곳에서 선택을 유지해 움직인다', () => {
+  const ink = { kind: 'ink' as const, id: 'ink-a' };
+  expect(dragTargetFor(ink, 'route', true)).toEqual(ink);
+  expect(dragTargetFor(null, ink, false)).toEqual(ink);
+  expect(dragTargetFor(stamp, ink, true)).toEqual(stamp);
+  expect(dragTargetFor(caption('a'), ink, true)).toEqual(caption('a'));
+  expect(tapActionFor(ink, true, true)).toEqual({ kind: 'editInk', id: 'ink-a' });
+  expect(dropZoneFor(ink)).toBe('delete');
+});

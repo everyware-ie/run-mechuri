@@ -83,3 +83,15 @@ it('손그림 획을 저장하는 동안은 기다리고 완료된 세션을 한
   await renderSnapshot(second);
   expect(output.history).toEqual([initial]);
 });
+
+it('획 이동·크기·붓·색·삭제는 서로 한 단계씩 복구하고 경로 그림은 바꾸지 않는다', async () => {
+  const stroke = { id: 'ink', brush: 'pen' as const, color: '#FFFFFF', width: 12, points: [{ x: 100, y: 120 }] };
+  const first = { ...initial, handDrawing: [stroke] };
+  const moved = { ...first, handDrawing: [{ ...stroke, offset: { x: 80, y: 40 }, scale: 1.5 }] };
+  const recolored = { ...moved, handDrawing: [{ ...moved.handDrawing[0], brush: 'neon' as const, color: '#FFADD5' }] };
+  const deleted = { ...recolored, handDrawing: [] };
+  for (const snapshot of [first, moved, recolored, deleted]) await renderSnapshot(snapshot);
+  expect(output.history).toEqual([initial, first, moved, recolored]);
+  await act(async () => { output.skipNextChange(); output.popHistory(); renderer.update(createElement(Harness, { snapshot: recolored })); });
+  expect(output.history).toEqual([initial, first, moved]);
+});

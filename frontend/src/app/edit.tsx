@@ -1,6 +1,7 @@
-import { HandDrawingEditor } from '@/components/hand-drawing-editor';
+import { HandStrokeBrushes, HandStrokeControls } from '@/components/hand-stroke-controls';
+import { HandDrawingEditor, type HandDrawingPreview } from '@/components/hand-drawing-editor';
 import { MyStyleSheet } from '@/components/my-style-sheet';
-import { EMPTY_HAND_DRAWING } from '@/lib/hand-drawing';
+import { constrainHandStroke, hitHandStroke, EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
 import { applyMyStyle, type MyStyle } from '@/lib/my-style-store';
 import { RouteStyleControls, TextStyleControls } from '@/components/editor-style-controls';
 import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
@@ -11,6 +12,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
+  ActionSheetIOS,
   Alert,
   Animated,
   Image,
@@ -39,7 +41,6 @@ import {
   IDENTITY_TRANSFORM,
   migrateLegacyCaption,
   RoutePreview,
-  STAMP_LAYOUTS,
   type CanvasRect,
   type CaptionItem,
   type RoutePreset,
@@ -50,6 +51,7 @@ import {
 } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
+import { StampPresetSelector } from '@/components/stamp-preset-selector';
 import { ThemedButton } from '@/components/ui';
 import { VerticalSlider } from '@/components/vertical-slider';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
@@ -84,17 +86,17 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 시안 S6 "넣을 것" 순서. 칩에는 실제 값도 함께 보여준다(stampChipLabel).
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
-const PRESETS: { id: RoutePreset; label: string }[] = [
-  { id: 'default-drawing', label: '기본 경로 그림' },
-  { id: 'light-runner', label: '불빛 러너' },
-  { id: 'segment-lighting', label: '구간 점등' },
+const PRESETS: { id: RoutePreset; label: string; shortLabel: string; symbol: SymbolViewProps['name'] }[] = [
+  { id: 'default-drawing', label: '기본 경로 그림', shortLabel: '기본', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'light-runner', label: '불빛 러너', shortLabel: '불빛', symbol: 'sparkles' },
+  { id: 'segment-lighting', label: '구간 점등', shortLabel: '구간', symbol: 'point.3.connected.trianglepath.dotted' },
 ];
 
-type Tool = 'background' | 'route' | 'stamp' | 'style';
+type Tool = 'background' | 'route' | 'stamp' | 'style' | 'ink';
 // 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
 const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
-  { id: 'route', label: '경로', symbol: 'scribble' },
+  { id: 'route', label: '경로', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
   { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
   { id: 'caption', label: '문구', symbol: 'textformat' },
   { id: 'draw', label: '그리기', symbol: 'pencil.tip' },
@@ -148,9 +150,25 @@ export default function EditScreen() {
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
   const [drawing, setDrawing] = useState(false);
+  const [drawingPreview, setDrawingPreview] = useState<HandDrawingPreview | null>(null);
+  const [selectedInkId, setSelectedInkId] = useState<string | null>(null);
+  const selectedInkRef = useRef<string | null>(null);
+  const inkRef = useRef(draft.handDrawing ?? EMPTY_HAND_DRAWING);
+  useEffect(() => { inkRef.current = draft.handDrawing ?? EMPTY_HAND_DRAWING; }, [draft.handDrawing]);
+  const inkX = useSharedValue(0), inkY = useSharedValue(0), inkScaleShared = useSharedValue(1);
+  const baseInk = useRef<HandStroke | null>(null);
+  const inkPinchRatio = useRef(1);
+  const [inkWidthPreview, setInkWidthPreview] = useState<number | null>(null);
+  const commitInk = (next: HandStroke[]) => { inkRef.current = next; commitHandDrawing(next); };
+  const clearInkSelection = () => { selectedInkRef.current = null; setSelectedInkId(null); setInkWidthPreview(null); };
+  const patchInk = (patch: Partial<Pick<HandStroke, 'brush' | 'color' | 'width'>>) => {
+    const id = selectedInkRef.current;
+    if (!id) return;
+    commitInk(inkRef.current.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
   const [applyingStyle, setApplyingStyle] = useState(false);
   const styleOperation = useRef(0);
-  const [stampTab, setStampTab] = useState<'layout' | 'items' | 'style'>('layout');
+  const [stampTab, setStampTab] = useState<'items' | 'style'>('items');
   const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
   const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
   const routeStyleRef = useRef(routeStyle);
@@ -268,13 +286,26 @@ export default function EditScreen() {
     rememberStampLayout(layout);
     commitStamp({ ...stampConfigRef.current, layout });
   };
-  // §4-3 초기화: 되돌리는 단위는 그 도구의 대상뿐이다. 켠 항목·프리셋·문구는 그대로 둔다.
+  // §4-3 배치 복원: 그 도구의 배치만 돌린다. 켠 항목·프리셋·문구는 그대로 둔다.
   const handleStampReset = () => {
     commitStamp({ ...stampConfigRef.current, position: { x: 0, y: 0 }, scale: 1 });
   };
   const handleRouteReset = () => {
     updateTransform(IDENTITY_TRANSFORM);
     resetTransform();
+  };
+  const showLayoutMenu = (target: 'route' | 'stamp') => {
+    const title = target === 'route' ? '경로 배치' : '러닝 데이터 배치';
+    const message = target === 'route'
+      ? '위치·크기·회전을 기본 배치로 돌려요. 프리셋과 선 스타일은 유지돼요.'
+      : '위치·크기를 기본 배치로 돌려요. 항목과 글자 스타일은 유지돼요.';
+    const restore = target === 'route' ? handleRouteReset : handleStampReset;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({ title, message, options: ['배치 복원', '취소'],
+        cancelButtonIndex: 1, userInterfaceStyle: 'dark' }, index => { if (index === 0) restore(); });
+    } else {
+      Alert.alert(title, message, [{ text: '취소', style: 'cancel' }, { text: '배치 복원', onPress: restore }]);
+    }
   };
 
   // §4-3: 값이 같은 조작과 자동 장소 채우기는 단계를 만들지 않는다.
@@ -443,7 +474,8 @@ export default function EditScreen() {
       if (contains(captions[i].rect, canvasX, canvasY)) return { kind: 'caption', id: captions[i].id };
     }
     if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return { kind: 'stamp' };
-    return null;
+    const inkId = hitHandStroke(inkRef.current, { x: canvasX, y: canvasY }, 12 / Math.max(.1, gestureFitScaleRef.current));
+    return inkId ? { kind: 'ink', id: inkId } : null;
   };
   const textHitRef = useRef<TextHit>(null);
 
@@ -513,6 +545,7 @@ export default function EditScreen() {
   }, [sheetAway, sheetDragY]);
 
   const openTool = (next: Tool) => {
+    if (next !== 'ink') clearInkSelection();
     if (next !== 'style') { styleOperation.current++; setApplyingStyle(false); }
     Keyboard.dismiss();
     flushPendingSmooth();
@@ -523,6 +556,7 @@ export default function EditScreen() {
     setTool(next);
   };
   const closeTool = () => {
+    clearInkSelection();
     styleOperation.current++;
     setApplyingStyle(false);
     Keyboard.dismiss();
@@ -532,9 +566,21 @@ export default function EditScreen() {
   // §4-1: 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를 탭하면
   // 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을, 경로 그림을 탭해도
   // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
+  const selectInk = (id: string) => {
+    const stroke = inkRef.current.find(s => s.id === id);
+    if (!stroke) return;
+    inkX.set(stroke.offset?.x ?? 0); inkY.set(stroke.offset?.y ?? 0); inkScaleShared.set(stroke.scale ?? 1);
+    selectedInkRef.current = id; setSelectedInkId(id); setInkWidthPreview(null);
+    openTool('ink');
+  };
+  const deleteInk = (id: string) => {
+    commitInk(inkRef.current.filter(s => s.id !== id));
+    closeTool(); showUndoToast('손그림을 지웠어요');
+  };
   const handleTap = () => {
     const action = tapActionFor(textHitRef.current, isOnRoute(tapPointRef.current), toolRef.current !== null);
     if (action.kind === 'open') openTool(action.tool);
+    else if (action.kind === 'editInk') selectInk(action.id);
     else if (action.kind === 'editCaption') startEditCaption(action.id);
     else if (action.kind === 'close') closeTool();
   };
@@ -555,13 +601,20 @@ export default function EditScreen() {
         textHitRef.current = textHitAt(tapPointRef.current.x, tapPointRef.current.y);
         // 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다(선택된 러닝 데이터를 끌다 경로가 움직이지 않게).
         // 선택된 것이 없으면 경로 그림 영역 안일 때만 경로 그림을 움직인다.
-        const target = dragTargetFor(textHitRef.current, selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
+        const target = dragTargetFor(textHitRef.current, toolRef.current === 'ink' && selectedInkRef.current ? { kind: 'ink', id: selectedInkRef.current } : selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
         dragTargetRef.current = target;
         gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
         const config = stampConfigRef.current;
         if (!target) {
           // 빈 곳. 끌어도 아무것도 움직이지 않고, 탭만 받는다.
+        } else if (target.kind === 'ink') {
+          const stroke = inkRef.current.find(s => s.id === target.id);
+          baseInk.current = stroke ?? null;
+          inkPinchRatio.current = 1;
+          if (stroke?.id === selectedInkRef.current || evt.nativeEvent.touches.length > 1) {
+            inkX.set(stroke?.offset?.x ?? 0); inkY.set(stroke?.offset?.y ?? 0); inkScaleShared.set(stroke?.scale ?? 1);
+          }
         } else if (target.kind === 'stamp') {
           baseStampPosition.current = config.position;
           baseStampScale.current = config.scale ?? 1;
@@ -601,6 +654,18 @@ export default function EditScreen() {
         const scaleDelta = touches.length === 2 && gestureStart.current
           ? touchDistance(touches[0], touches[1]) / (gestureStart.current.distance || 1) : 1;
 
+        if (target.kind === 'ink') {
+          const base = baseInk.current;
+          if (!base) return;
+          if (touches.length === 2) inkPinchRatio.current = scaleDelta;
+          const next = constrainHandStroke(base, { x: (base.offset?.x ?? 0) + gestureState.dx / fitScale,
+            y: (base.offset?.y ?? 0) + gestureState.dy / fitScale }, (base.scale ?? 1) * inkPinchRatio.current);
+          inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+          const wasOver = dropGestureRef.current.overZone;
+          const over = dropGestureRef.current.move(touches.length, !!touches[0] && isOverHideZone(touches[0]));
+          if (wasOver !== over) { setOverHideZone(over); if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); }
+          return;
+        }
         if (target.kind === 'stamp' || target.kind === 'caption') {
           const isStamp = target.kind === 'stamp';
           const base = isStamp ? baseStampPosition.current : baseCaptionPosition.current;
@@ -658,7 +723,15 @@ export default function EditScreen() {
     setOverHideZone(false);
   }
   function commitGesture(target: DragTarget, overDropZone: boolean) {
-    if (target.kind === 'stamp') {
+    if (target.kind === 'ink') {
+      const stroke = baseInk.current;
+      if (overDropZone) deleteInk(target.id);
+      else if (stroke) {
+        const next = constrainHandStroke(stroke, { x: inkX.value, y: inkY.value }, inkScaleShared.value);
+        commitInk(inkRef.current.map(s => s.id === target.id ? next : s));
+        if (toolRef.current === 'ink') selectInk(target.id);
+      }
+    } else if (target.kind === 'stamp') {
       if (overDropZone) hideStamp();
       else finishStampGesture();
     } else if (target.kind === 'caption') {
@@ -679,9 +752,12 @@ export default function EditScreen() {
   // §4-2: 시트를 열면 왼쪽에 크기 슬라이더가 나온다. 핀치와 같은 값을 쓴다.
   // 문구 크기는 문구를 쓰는 화면의 슬라이더에서 바꾼다(caption-editor.tsx).
   const sizeTarget: SheetTarget | null = selectedTarget(tool);
-  const committedSize = sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
+  const selectedInk = (draft.handDrawing ?? EMPTY_HAND_DRAWING).find(s => s.id === selectedInkId);
+  const inkToolOpen = tool === 'ink' && !!selectedInk;
+  const committedSize = inkToolOpen ? Math.round((selectedInk.scale ?? 1) * 100) : sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
   // 손잡이는 슬라이더가 바로 그린다. 여기서는 경로 그림이면 SharedValue만 바꿔 다시 그리지 않는다.
   const handleSizeChange = (percent: number) => {
+    if (inkToolOpen) { inkScaleShared.set(clampScale(percent / 100)); return; }
     if (!sizeTarget) return;
     const scale = percent / 100;
     if (sizeTarget === 'route') transformScaleShared.value = scale;
@@ -690,7 +766,11 @@ export default function EditScreen() {
   const handleSizeCommit = (percent: number) => {
     setIsInteracting(false);
     const scale = percent / 100;
-    if (sizeTarget === 'route') {
+    if (inkToolOpen && selectedInk) {
+      const next = constrainHandStroke(selectedInk, { x: inkX.value, y: inkY.value }, scale);
+      inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+      commitInk(inkRef.current.map(s => s.id === next.id ? next : s));
+    } else if (sizeTarget === 'route') {
       const next = { ...transformRef.current, scale };
       updateTransform(next);
       commitTransform(next);
@@ -767,6 +847,8 @@ export default function EditScreen() {
     Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
+    clearInkSelection();
+    if (toolRef.current === 'ink') closeTool();
     skipNextChange();
     popHistory();
     // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
@@ -846,22 +928,11 @@ export default function EditScreen() {
         return `심박 ${run.averageHeartRate ? formatHeartRate(run.averageHeartRate) : ''}`;
     }
   };
-  const showChrome = dragging === null && !editingCaption;
+  const showChrome = dragging === null && !editingCaption && !drawing;
   const selectionFor = (target: SheetTarget) => dragging ? dragging.kind === target : tool === target;
-  const sizeLabel = sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
+  const sizeLabel = inkToolOpen ? '손그림 크기' : sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
   const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
   const dropZone = dragging ? dropZoneFor(dragging) : null;
-  const resetChip = (label: string, onPress: () => void) => (
-    <Pressable onPress={onPress} style={styles.resetButton} accessibilityRole="button" accessibilityLabel={label}>
-      {({ pressed }) => (
-        <View style={[styles.resetChip, pressed && styles.resetChipPressed]}>
-          <SymbolView name="arrow.counterclockwise" size={11} tintColor={Colors.textMuted} />
-          <Text style={styles.resetText}>초기화</Text>
-        </View>
-      )}
-    </Pressable>
-  );
-
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -871,7 +942,7 @@ export default function EditScreen() {
               {isVideoBackground(draft.backgroundPhoto)
                 ? <CroppedBackgroundVideo video={draft.backgroundPhoto} width={previewSize.width} height={previewSize.height} />
                 : <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
-              <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill}
+              <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill} pointerEvents={drawing ? 'none' : 'auto'}
                 accessibilityLabel="결과물 미리보기. 끌어서 옮기고 두 손가락으로 크기를 바꿔요">
                 <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                   <RoutePreview
@@ -879,7 +950,10 @@ export default function EditScreen() {
                     preset={draft.preset}
                     transform={transform}
                     routeStyle={routeStyle}
-                    handDrawing={draft.handDrawing}
+                    handDrawing={drawing && drawingPreview ? drawingPreview.strokes : inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
+                    activeHandDrawing={drawing ? drawingPreview?.active : undefined}
+                    selectedHandStrokeId={dragging?.kind === 'ink' ? dragging.id : selectedInkId}
+                    handStrokeEditing={(dragging?.kind === 'ink' || inkToolOpen) ? { id: dragging?.kind === 'ink' ? dragging.id : selectedInkId!, x: inkX, y: inkY, scale: inkScaleShared } : undefined}
                     transformShared={{
                       x: transformXShared,
                       y: transformYShared,
@@ -889,7 +963,7 @@ export default function EditScreen() {
                     smoothOptions={smoothOptions}
                     run={draft.selectedRun}
                     stampConfig={stampConfig}
-                    isInteracting={isInteracting}
+                    isInteracting={isInteracting || drawing}
                     viewWidth={previewSize.width}
                     viewHeight={previewSize.height}
                     fit="contain"
@@ -897,25 +971,69 @@ export default function EditScreen() {
                     stampSelected={selectionFor('stamp') && !stampConfig.hidden}
                     activeCaptionId={activeCaptionId}
                     hiddenCaptionId={editingCaption && !editingCaption.isNew ? editingCaption.id : null}
-                    playing={LOOP_PREVIEW && !drawing}
+                    playing={LOOP_PREVIEW}
                     stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
                     captionPositionShared={{ x: captionPositionX, y: captionPositionY }}
                   />
                 </View>
               </View>
 
-              {showChrome && <View style={styles.topLeft} pointerEvents="box-none">
+              {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} canvasSize={previewSize}
+                onPreviewChange={setDrawingPreview} onChange={commitHandDrawing}
+                onDone={() => { setDrawing(false); setDrawingPreview(null); }} />}
+
+              {showChrome && inkToolOpen && selectedInk && <View style={styles.inkHeader}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="손그림 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <HandStrokeBrushes brush={selectedInk.brush} onChange={brush => patchInk({ brush })} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="손그림 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && tool === 'route' && <View style={styles.inkHeader} testID="route-preset-toolbar">
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="경로 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <View style={styles.routePresetRow}>
+                  {PRESETS.map(p => {
+                    const selected = draft.preset === p.id;
+                    return <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
+                      accessibilityRole="button" accessibilityLabel={`경로 프리셋 ${p.label}`} accessibilityState={{ selected }}
+                      style={[styles.routePreset, selected && styles.presetChipOn]}>
+                      <SymbolView name={p.symbol} size={17} tintColor={selected ? Colors.accentText : Colors.text} />
+                      <Text style={[styles.routePresetLabel, selected && styles.presetChipTextOn]}>{p.shortLabel}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="경로 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && tool === 'stamp' && <View style={[styles.inkHeader, styles.stampHeader]}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <StampPresetSelector value={stampConfig.layout ?? 'row'} onChange={handleLayoutSelect} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.topLeft} pointerEvents="box-none">
                 <Pressable onPress={handleClose} style={styles.roundButton} accessibilityRole="button" accessibilityLabel="편집 나가기">
                   <SymbolView name="xmark" size={15} tintColor={Colors.text} />
                 </Pressable>
                 <Pressable onPress={handleUndo} disabled={history.length === 0}
                   style={[styles.roundButton, history.length === 0 && styles.disabled]}
                   accessibilityRole="button" accessibilityLabel="되돌리기" accessibilityState={{ disabled: history.length === 0 }}>
-                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
                 </Pressable>
               </View>}
 
-              {showChrome && <View style={styles.toolRail} pointerEvents="box-none">
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.toolRail} pointerEvents="box-none">
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
@@ -931,7 +1049,7 @@ export default function EditScreen() {
                 })}
               </View>}
 
-              {sizeTarget && <View style={styles.sizeSlider}>
+              {(sizeTarget || inkToolOpen) && <View style={styles.sizeSlider}>
                 <VerticalSlider value={committedSize} onSlidingStart={handleSlidingStart}
                   minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
                   accessibilityLabel={sizeLabel} onChange={handleSizeChange} onSlidingComplete={handleSizeCommit} />
@@ -941,7 +1059,7 @@ export default function EditScreen() {
         </View>
         <View style={styles.bottomBar}>
           {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
-          {dragging === null && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
+          {dragging === null && !drawing && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
             style={[styles.doneButton, (applyingBackground || applyingStyle) && styles.doneButtonDisabled]}
             accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로"
             accessibilityState={{ disabled: !!applyingBackground || applyingStyle, busy: !!applyingBackground || applyingStyle }}>
@@ -952,7 +1070,7 @@ export default function EditScreen() {
 
       {dropZone && <View pointerEvents="none"
         style={[styles.hideZone, overHideZone && styles.hideZoneOn, { bottom: hideZoneBottom, left: window.width / 2 - HIDE_ZONE / 2 }]}
-        accessibilityLabel={dropZone === 'delete' ? '여기에 놓으면 문구를 지워요' : '여기에 놓으면 러닝 데이터를 숨겨요'}>
+        accessibilityLabel={dropZone === 'delete' ? `여기에 놓으면 ${dragging?.kind === 'ink' ? '손그림' : '문구'}를 지워요` : '여기에 놓으면 러닝 데이터를 숨겨요'}>
         <SymbolView name={dropZone === 'delete' ? 'trash' : 'eye.slash'} size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
       </View>}
 
@@ -962,18 +1080,28 @@ export default function EditScreen() {
         onLayout={(e) => { sheetHeightRef.current = e.nativeEvent.layout.height; }}>
         <View style={styles.sheetGrabber} accessible={false} />
         <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{TOOLS.find((t) => t.id === tool)?.label}</Text>
+          <Text style={styles.sheetTitle}>{tool === 'ink' ? '손그림' : TOOLS.find((t) => t.id === tool)?.label}</Text>
           <View style={styles.sheetHeaderRight}>
-            {tool === 'route' && resetChip('경로 초기화', handleRouteReset)}
-            {tool === 'stamp' && resetChip('러닝 데이터 초기화', handleStampReset)}
-            <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
+            {(tool === 'route' || tool === 'stamp') && <Pressable onPress={() => showLayoutMenu(tool)}
+              style={({ pressed }) => [styles.moreButton, pressed && styles.moreButtonPressed]}
+              accessibilityRole="button" accessibilityLabel={`${tool === 'route' ? '경로' : '러닝 데이터'} 더 보기`}
+              accessibilityHint="배치 복원 메뉴를 열어요">
+              <SymbolView name="ellipsis" size={18} tintColor={Colors.textMuted} />
+            </Pressable>}
+            {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
+              accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
+            tool !== 'route' && tool !== 'stamp' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
               <Text style={styles.sheetDone}>완료</Text>
-            </Pressable>
+            </Pressable>}
           </View>
         </View>
 
         <ScrollView style={{ flexGrow: 0, maxHeight: Math.max(100, window.height - insets.top - insets.bottom - keyboardHeight - 140) }}
           contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {inkToolOpen && selectedInk && <HandStrokeControls stroke={inkWidthPreview !== null ? { ...selectedInk, width: inkWidthPreview } : selectedInk}
+          onChange={patchInk} onWidthStart={handleSlidingStart}
+          onWidthChange={setInkWidthPreview}
+          onWidthCommit={width => { patchInk({ width }); setInkWidthPreview(null); setIsInteracting(false); }} />}
         {tool === 'style' && <MyStyleSheet snapshot={editSnapshot} onApply={handleStyleApply} />}
         {tool === 'background' && <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundRow}>
@@ -1004,7 +1132,7 @@ export default function EditScreen() {
 
         {tool === 'route' && <>
           <View style={styles.tabs}>
-            {([{ id: 'drawing', label: '경로 그림' }, { id: 'style', label: '스타일' }] as const).map(tab =>
+            {([{ id: 'drawing', label: '다듬기' }, { id: 'style', label: '선 스타일' }] as const).map(tab =>
               <Pressable key={tab.id} onPress={() => setRouteTab(tab.id)} style={styles.tab}
                 accessibilityRole="tab" accessibilityState={{ selected: routeTab === tab.id }}>
                 <Text style={routeTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
@@ -1013,15 +1141,6 @@ export default function EditScreen() {
           {routeTab === 'style' ? <RouteStyleControls value={routeStyle} onChange={updateRouteStyle}
             onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit} /> : <>
           <Text style={styles.hint}>경로를 끌어서 옮기고, 두 손가락으로 키우거나 돌려요.</Text>
-          <View style={styles.presetRow}>
-            {PRESETS.map((p) => (
-              <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
-                accessibilityRole="button" accessibilityState={{ selected: draft.preset === p.id }}
-                style={[styles.presetChip, draft.preset === p.id && styles.presetChipOn]}>
-                <Text style={draft.preset === p.id ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
-              </Pressable>
-            ))}
-          </View>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>직선</Text>
             <View style={styles.sliderTrack}>
@@ -1041,7 +1160,7 @@ export default function EditScreen() {
 
         {tool === 'stamp' && <>
           <View style={styles.tabs}>
-            {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '항목' }, { id: 'style', label: '스타일' }] as const).map((tab) => (
+            {([{ id: 'items', label: '항목' }, { id: 'style', label: '글자 스타일' }] as const).map((tab) => (
               <Pressable key={tab.id} onPress={() => setStampTab(tab.id)} style={styles.tab}
                 accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}>
                 <Text style={stampTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
@@ -1049,20 +1168,7 @@ export default function EditScreen() {
             ))}
           </View>
           {stampTab === 'style' ? <TextStyleControls value={stampConfig}
-            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : stampTab === 'layout' ? (
-            <View style={styles.layoutChipRow}>
-              {STAMP_LAYOUTS.map((l) => {
-                const on = (stampConfig.layout ?? 'row') === l.id;
-                return (
-                  <Pressable key={l.id} onPress={() => handleLayoutSelect(l.id)}
-                    accessibilityRole="button" accessibilityState={{ selected: on }}
-                    style={[styles.layoutChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
+            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : (
             <View style={styles.chipRowWrap}>
               {stampItems.map((item) => {
                 const on = stampConfig.enabled?.[item] ?? false;
@@ -1095,10 +1201,6 @@ export default function EditScreen() {
         limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
         onInteractionChange={setIsInteracting}
         onDone={finishEditingCaption} />}
-      {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} backgroundImagePath={draft.backgroundImagePath}
-        preview={{ points: draft.track.coordinates, preset: draft.preset, transform, routeStyle, smoothOptions,
-          run: draft.selectedRun, stampConfig, isInteracting: false, playing: false, fit: 'contain' }}
-        onChange={commitHandDrawing} onDone={() => setDrawing(false)} />}
     </View>
   );
 }
@@ -1108,6 +1210,10 @@ const CHIP_ON_BG = 'rgba(255,90,43,0.12)';
 const OVERLAY_BG = 'rgba(11,13,16,0.55)';
 
 const styles = StyleSheet.create({
+  inkHeader: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stampHeader: { gap: 8 },
+  inkDone: { height: 40, paddingHorizontal: 13, borderRadius: 20, backgroundColor: Colors.text, justifyContent: 'center' },
+  inkDoneText: { color: Colors.bg, fontFamily: Fonts.sansBold, fontSize: 12 },
   root: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   stage: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
@@ -1153,14 +1259,12 @@ const styles = StyleSheet.create({
   sheetDone: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.accent },
   hint: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16, color: Colors.textMuted },
   note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
-  resetButton: { minHeight: 44, justifyContent: 'center' },
-  resetChip: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: Colors.borderStrong },
-  resetChipPressed: { backgroundColor: Colors.border },
-  resetText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
-  presetRow: { flexDirection: 'row', gap: 8 },
-  presetChip: { flex: 1, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
+  moreButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  moreButtonPressed: { backgroundColor: Colors.border },
+  routePresetRow: { flexDirection: 'row', gap: 8 },
+  routePreset: { width: 44, minHeight: 44, paddingVertical: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: OVERLAY_BG },
+  routePresetLabel: { fontFamily: Fonts.sans, fontSize: 9, color: Colors.text },
   presetChipOn: { backgroundColor: Colors.accent },
-  presetChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   presetChipTextOn: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accentText },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 36 },
   sliderLabel: { width: 30, fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
@@ -1170,8 +1274,6 @@ const styles = StyleSheet.create({
   tab: { minHeight: 32, justifyContent: 'center' },
   tabText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   tabTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
-  layoutChipRow: { flexDirection: 'row', columnGap: '2%', rowGap: 6, flexWrap: 'wrap' },
-  layoutChip: { width: '32%', minHeight: 40, paddingHorizontal: 4, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
   chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   itemChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.chip, borderWidth: 1, borderColor: Colors.borderStrong },
   itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },

@@ -10,9 +10,9 @@
 // - "아무것도 선택되지 않은 상태에서 경로의 선택 범위가 너무 크다": 아무것도 선택하지 않았으면 경로
 //   그림 영역(점선 상자) 안에서 끌 때만 경로 그림이 움직인다. 빈 곳을 끌면 아무것도 움직이지 않는다.
 
-export type EditTarget = { kind: 'route' } | { kind: 'stamp' } | { kind: 'caption'; id: string };
+export type EditTarget = { kind: 'ink'; id: string } | { kind: 'route' } | { kind: 'stamp' } | { kind: 'caption'; id: string };
 /** 손가락이 닿은 글자. 글자가 아닌 곳이면 null. */
-export type TextHit = { kind: 'stamp' } | { kind: 'caption'; id: string } | null;
+export type TextHit = { kind: 'ink'; id: string } | { kind: 'stamp' } | { kind: 'caption'; id: string } | null;
 /** 시트로 고르는 대상. 문구는 시트 없이 화면에서 바로 고쳐 쓴다. */
 export type SheetTarget = 'route' | 'stamp';
 
@@ -25,8 +25,9 @@ export function selectedTarget(tool: string | null): SheetTarget | null {
  * 끌기·핀치가 움직일 대상. 글자를 직접 짚으면 그 글자, 아니면 선택된 대상, 선택된 것이 없으면 경로
  * 그림 영역 안일 때만 경로 그림. 아무것도 아니면 null이다.
  */
-export function dragTargetFor(hit: TextHit, selected: SheetTarget | null, onRoute: boolean): EditTarget | null {
+export function dragTargetFor(hit: TextHit, selected: SheetTarget | { kind: 'ink'; id: string } | null, onRoute: boolean): EditTarget | null {
   if (hit) return hit;
+  if (typeof selected === 'object' && selected) return selected;
   if (selected) return { kind: selected };
   return onRoute ? { kind: 'route' } : null;
 }
@@ -34,11 +35,13 @@ export function dragTargetFor(hit: TextHit, selected: SheetTarget | null, onRout
 export type TapAction =
   | { kind: 'open'; tool: SheetTarget }
   | { kind: 'editCaption'; id: string }
+  | { kind: 'editInk'; id: string }
   | { kind: 'close' }
   | { kind: 'none' };
 
 /** 탭. 문구면 그 자리에서 고쳐 쓰고, 러닝 데이터·경로 그림 영역이면 그 시트를 연다. 빈 곳이면 열린 시트를 닫는다. */
 export function tapActionFor(hit: TextHit, onRoute: boolean, toolOpen: boolean): TapAction {
+  if (hit?.kind === 'ink') return { kind: 'editInk', id: hit.id };
   if (hit?.kind === 'caption') return { kind: 'editCaption', id: hit.id };
   if (hit?.kind === 'stamp') return { kind: 'open', tool: 'stamp' };
   if (onRoute) return { kind: 'open', tool: 'route' };
@@ -48,6 +51,6 @@ export function tapActionFor(hit: TextHit, onRoute: boolean, toolOpen: boolean):
 /** 끄는 동안 아래에 나오는 동그라미의 역할. 러닝 데이터는 숨기고 문구는 지운다. 경로 그림은 없다. */
 export function dropZoneFor(target: EditTarget): 'hide' | 'delete' | null {
   if (target.kind === 'stamp') return 'hide';
-  if (target.kind === 'caption') return 'delete';
+  if (target.kind === 'caption' || target.kind === 'ink') return 'delete';
   return null;
 }
