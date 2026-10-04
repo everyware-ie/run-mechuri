@@ -1,6 +1,7 @@
-import { lightingDistanceMeters, lightingSegments, SEGMENT_DOT_RADIUS, SEGMENT_DOT_BORDER, SEGMENT_DOT_OUTLINE } from '@/lib/segment-lighting';
+import { SegmentGlowMarker } from './segment-glow-marker';
+import { lightingDistanceMeters, lightingSegments, segmentMarkerSize } from '@/lib/segment-lighting';
 import { resolveRouteStyle, type RouteStyle } from '@/lib/editor-style';
-import { Blur, Circle, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
+import { Blur, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { memo, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-native-svg';
@@ -46,6 +47,10 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   backgroundImagePath,
 }: Props) {
   const lineStyle = resolveRouteStyle(routeStyle);
+  const markerSize = segmentMarkerSize(lineStyle.widthScale);
+  // 영상의 마지막 3초와 같다. 완주 끝점은 마무리의 빛을 살짝 더 남긴다.
+  const finishMarkerSize = { radius: markerSize.radius * 1.12, coreRadius: markerSize.coreRadius * 1.12,
+    haloRadius: markerSize.haloRadius * 1.25, haloOpacity: 0.42 };
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
   const markers = useMemo(() => {
@@ -97,10 +102,8 @@ export const RouteThumbnail = memo(function RouteThumbnail({
             color={lineStyle.color}>
             <Shadow dx={0} dy={0} blur={60} color={lineStyle.color === '#FFF3EC' ? GLOW : lineStyle.color} />
           </Path>
-          {markers.map((point, index) => point && <Group key={index}>
-            <Circle cx={point.x} cy={point.y} r={(SEGMENT_DOT_RADIUS + SEGMENT_DOT_BORDER) * lineStyle.widthScale} color={SEGMENT_DOT_OUTLINE} />
-            <Circle cx={point.x} cy={point.y} r={SEGMENT_DOT_RADIUS * lineStyle.widthScale} color={lineStyle.color} />
-          </Group>)}
+          {markers.map((point, index) => point && <SegmentGlowMarker key={index} point={point}
+            color={lineStyle.color} {...(index === markers.length - 1 ? finishMarkerSize : markerSize)} />)}
         </Group>
       </Canvas>
 

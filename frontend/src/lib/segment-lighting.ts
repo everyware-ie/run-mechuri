@@ -17,7 +17,8 @@ export function lightingSegments(meters: number) {
   }));
 }
 
-// 1080×1920 캔버스 기준. 선 두께 10보다 크며 밝은 사진에서도 테두리가 남는다.
-export const SEGMENT_DOT_RADIUS = 12;
-export const SEGMENT_DOT_BORDER = 4;
-export const SEGMENT_DOT_OUTLINE = 'rgba(11,13,16,0.85)';
+// 1080×1920 기준. 선이 굵어져도 표식은 완만하게 커져 그림보다 앞서 보이지 않는다.
+export function segmentMarkerSize(widthScale: number) {
+  const scale = Math.sqrt(widthScale);
+  return { radius: 9 * scale, coreRadius: 3.2 * scale, haloRadius: 26 * scale };
+}

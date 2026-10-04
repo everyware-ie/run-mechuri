@@ -722,6 +722,26 @@ public class RouteRendererModule: Module {
     ctx.restoreGState()
   }
 
+  // JS segmentMarkerSize·SegmentGlowMarker와 같은 크기와 빛 분포.
+  private func fillSegmentMarker(at point: CGPoint, color: UIColor, widthScale: CGFloat, flash: Double) {
+    let scale = sqrt(widthScale)
+    let radius = 9 * scale * (1 + CGFloat(flash) * 0.12)
+    let coreRadius = 3.2 * scale * (1 + CGFloat(flash) * 0.12)
+    let haloRadius = 26 * scale * (1 + CGFloat(flash) * 0.25)
+    let haloOpacity = 0.24 + CGFloat(flash) * 0.18
+    if let context = UIGraphicsGetCurrentContext(), let gradient = CGGradient(
+      colorsSpace: CGColorSpaceCreateDeviceRGB(),
+      colors: [color.withAlphaComponent(haloOpacity).cgColor, color.withAlphaComponent(0).cgColor] as CFArray,
+      locations: [0, 1]) {
+      context.saveGState()
+      context.drawRadialGradient(gradient, startCenter: point, startRadius: 0,
+        endCenter: point, endRadius: haloRadius, options: [])
+      context.restoreGState()
+    }
+    fillDot(at: point, radius: radius, color: color)
+    fillDot(at: point, radius: coreRadius, color: UIColor.white.withAlphaComponent(0.9))
+  }
+
   /// 배경을 출력 크기(1080×1920)로 한 번만 크롭·스케일한다(짧은 축 기준 확대 후 중앙 크롭).
   /// writeClip 루프에서 프레임마다 원본을 다시 그리지 않도록.
   private func prepareBackground(_ background: UIImage) -> UIImage {
@@ -794,7 +814,7 @@ public class RouteRendererModule: Module {
         self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10 * widthScale)
         guard totalDistance > 0 else { return }
 
-        var completedMarkers: [CGPoint] = []
+        var completedMarkers: [(point: CGPoint, flash: Double)] = []
         for bound in lightingBounds {
           let segStartDist = bound.start * totalDistance
           let segEndDist = bound.end * totalDistance
@@ -811,13 +831,11 @@ public class RouteRendererModule: Module {
           self.strokePath(slice, color: routeColor.withAlphaComponent(done ? 0.95 : 0.5),
             width: (10 + CGFloat(justLit) * 4) * widthScale,
             glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0, glowColor: routeGlow)
-          if done, let boundary = segPoints.last { completedMarkers.append(boundary) }
+          if done, let boundary = segPoints.last { completedMarkers.append((point: boundary, flash: justLit * justLit)) }
         }
         // 선을 모두 그린 뒤 표시해 다음 구간이 경계 점을 덮지 않게 한다.
-        for boundary in completedMarkers {
-          self.fillDot(at: boundary, radius: 16 * widthScale,
-            color: UIColor(red: 11 / 255, green: 13 / 255, blue: 16 / 255, alpha: 0.85))
-          self.fillDot(at: boundary, radius: 12 * widthScale, color: routeColor)
+        for marker in completedMarkers {
+          self.fillSegmentMarker(at: marker.point, color: routeColor, widthScale: widthScale, flash: marker.flash)
         }
       }
 
