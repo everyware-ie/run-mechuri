@@ -331,3 +331,27 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 - IPA SHA-256: `bc42c969e6b8a5ccbc44827388e91a598d2be8facd9ba1a85c5c5664ddffc0c5`.
 - [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c2af5c11-d310-4172-b1d5-c43ec435c43b): `FINISHED`, 2026-10-04 17:51 KST Apple 업로드 완료. 2026-10-04 17:54 KST Apple 조회에서 빌드 `29`가 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
 - 내부 테스터용 배포다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.
+
+
+## 2026-10-04: 손그림·내 스타일과 편집 도구 배포 1.0.0(30)
+
+### 소스와 변경
+
+사용자가 TestFlight 배포를 요청해 [PR #100](https://github.com/everyware-ie/run-mechuri/pull/100)을 main에 머지했다. 배포 소스는 `52513c89260c0ad896c232eded659734a305030b`다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 production 클라우드 빌드를 요청했다. 개인 설정 `.claude/launch.json`과 진단용 파일은 포함하지 않는다.
+
+- [PR #98](https://github.com/everyware-ie/run-mechuri/pull/98): 펜·형광·네온 손그림, 내 스타일 저장·적용·삭제와 다듬기 값 보관, 선택색을 유지하는 불빛 러너의 밝은 중심·주변 발광. 미리보기·썸네일·새 영상에 함께 적용한다.
+- [PR #100](https://github.com/everyware-ie/run-mechuri/pull/100): 손그림 획별 선택·이동·크기·붓·색·굵기 수정·삭제. 경로와 러닝 데이터 프리셋을 상단에 두고 아래에는 세부 조절을 남긴다. 그리기 진입 시 캔버스 흔들림과 빈 손그림 안내를 제거했다. 원형 화살표 되돌리기를 통일하고 경로·러닝 데이터의 배치 복원은 더 보기 메뉴로 옮겼다.
+
+### 검증과 남은 범위
+
+배포 소스의 main CI에서 타입·린트·전체 테스트·문서 검사가 통과했다. 최종 테스트는 31개 묶음·249개, 린트 오류 0개·기존 경고 30개다. 구현 중 iOS Debug 빌드와 iPhone 11 Pro에서 핵심 편집 흐름을 확인했고, 사용자가 획 이동·핀치·크기 슬라이더가 정상이라고 확인했다.
+
+PR #98의 새 민트 영상은 1080×1920·30fps·12초·360프레임 디코딩과 손그림 합성을 확인했다. 후속 획 이동·크기 변환의 새 영상 픽셀 비교는 아직 하지 않았다. 다른 기기 크기·큰 글자 설정·사진/영상 배경의 모든 조합, 러닝 데이터 프리셋의 직접 좌우 스와이프는 남은 내부 QA다. 자세한 확인 범위는 [편집 3단계](../product/features/story-editor-stage3.md), [손그림 획 편집](../product/features/hand-stroke-editing.md), [편집 도구 상단 선택](../product/features/editor-context-toolbar.md)에 있다. 기존 MP4는 바뀌지 않는다.
+
+### 빌드와 제출
+
+EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. IPA CDN 다운로드가 반복해서 멈춰 로컬 IPA 전체 무결성·서명 확인은 마치지 못했다. 이 검증은 완료로 처리하지 않는다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/0cf511c5-39d6-4ebe-8ad9-9a09d9e17e6d): 빌드 번호 `30`, 버전 `1.0.0`, 커밋 `52513c8`를 확인했고 `FINISHED`다.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c55aca58-72bf-45e2-9449-64afc576217e): Apple 업로드 완료. 2026-10-04 22:24 KST 업로드된 빌드 `30`이 Apple 조회에서 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- 내부 테스터용 배포다. 이번 작업에서 외부 공개 설정은 바꾸지 않았다. 같은 조회에서 빌드 `29`의 외부 상태는 `IN_BETA_TESTING`이었다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.
