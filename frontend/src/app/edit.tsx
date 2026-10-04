@@ -1013,6 +1013,7 @@ export default function EditScreen() {
       {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
         fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
         limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
+        onInteractionChange={setIsInteracting}
         onDone={finishEditingCaption} />}
     </View>
   );
