@@ -1,3 +1,4 @@
+import { lightingDistanceMeters, lightingSegments, SEGMENT_DOT_RADIUS, SEGMENT_DOT_BORDER, SEGMENT_DOT_OUTLINE } from '@/lib/segment-lighting';
 import { resolveRouteStyle, resolveStampFont, resolveStampColor, textContrastColor, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, freeCaptionLines, freeCaptionMetrics, normalizeCaption } from '@/lib/caption-layout';
@@ -32,7 +33,6 @@ import {
   cumulativeCanvasDistances,
   projectPoints,
   pointAtDistance,
-  segmentUnitMeters,
   type CanvasPoint,
   type Point,
 } from '@/lib/route-projection';
@@ -315,6 +315,7 @@ export function RoutePreview({
   );
   const cumulative = useMemo(() => cumulativeCanvasDistances(projected), [projected]);
   const totalDistance = cumulative[cumulative.length - 1] ?? 0;
+  const recordDistanceMeters = useMemo(() => lightingDistanceMeters(run.distanceMeters, points), [run.distanceMeters, points]);
   const paceTimeline = useMemo(() => buildPaceTimeline(points, run.averagePaceSecPerKm),
     [points, run.averagePaceSecPerKm]);
 
@@ -471,7 +472,7 @@ export function RoutePreview({
   return (
     <View style={{ width: viewWidth, height: viewHeight }}>
       <RouteDrawingCanvas
-        lineStyle={lineStyle} preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance}
+        lineStyle={lineStyle} preset={preset} projected={projected} cumulative={cumulative} totalDistance={totalDistance} recordDistanceMeters={recordDistanceMeters}
         fullPath={fullPath} rawFullPath={rawFullPath} groupTransform={groupTransform}
         pauseAnimation={pauseAnimation} playing={playing} blurScale={blurScale}
         playToken={playToken} onProgressSample={setUiStampProgress} selectionBounds={routeLocalBounds}
@@ -519,7 +520,7 @@ export function RoutePreview({
 // 각인 숫자만 바뀔 때 Canvas children이 새로 생기면 Skia root.render가 다시 실행된다.
 // 프리셋 내부 memo 외에 Canvas 자체도 경계 안에 둬 경로 트리 갱신을 건너뛴다.
 const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
-  preset, projected, cumulative, totalDistance, fullPath, rawFullPath, groupTransform,
+  preset, projected, cumulative, totalDistance, recordDistanceMeters, fullPath, rawFullPath, groupTransform,
   pauseAnimation, playing, blurScale, playToken, onProgressSample, selectionBounds, lineStyle,
 }: {
   preset: RoutePreset;
@@ -527,6 +528,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
   projected: CanvasPoint[];
   cumulative: number[];
   totalDistance: number;
+  recordDistanceMeters: number;
   fullPath: ReturnType<typeof skPath>;
   rawFullPath: ReturnType<typeof skPath>;
   groupTransform: ComponentProps<typeof Group>['transform'];
@@ -545,6 +547,7 @@ const RouteDrawingCanvas = memo(function RouteDrawingCanvas({
             projected={projected}
             cumulative={cumulative}
             totalDistance={totalDistance}
+            recordDistanceMeters={recordDistanceMeters}
             fullPath={fullPath}
             isInteracting={pauseAnimation}
             playing={playing}
@@ -805,172 +808,52 @@ const LightRunnerLayer = memo(function LightRunnerLayer({
   );
 });
 
-// 시안 "seg": 옅은 전체 경로 위에 구간마다(완료=밝게, 그리는 중=중간) 쌓고,
-// 방금 완료된 구간일수록 반짝인다.
-// 실기기 피드백(2026-09-02): light-runner만 UI 스레드(Reanimated)로 옮겨져 있어서
-// 구간 점등은 여전히 매 프레임 JS state(progressFraction)가 바뀔 때마다 이 함수
-// 전체가 다시 불려 도형 배열을 통째로 새로 만들었다 — 셋 중 가장 무거운 경로였다.
-// 구간 하나하나의 end/opacity/strokeWidth/blur를 각자의 Reanimated 파생값으로
-// 만들어 두면, 진행률이 바뀌어도 네이티브 쪽에서만 값이 갱신되고 이 컴포넌트
-// 자체는 다시 렌더링될 필요가 없다(light-runner와 같은 원리).
-//
-// 구간 개수(segmentCount)는 경로 길이에 따라 달라지는데, 컴포넌트 안에서 훅을
-// 개수만큼 반복 호출(.map 등)하면 React 훅 규칙을 어긴다 — 매 렌더 훅 호출 수가
-// 같아야 한다는 규칙은 여기선 "이 라우트가 살아있는 동안 segmentCount가 안
-// 바뀐다"고 보장할 수 없어서(다듬기 세기를 바꾸면 totalDistance가 바뀌고,
-// segmentCount도 같이 바뀔 수 있다) 실제로 위험하다. 그래서 넉넉한 고정 칸수
-// (MAX_SEGMENTS)만큼 항상 훅을 부르고, 실제 구간 수를 넘는 칸은 안 그린다
-// (opacity 0 등으로) — FRD §6-3 목표(점등 5~8회)를 크게 웃도는 값이다.
-const MAX_SEGMENTS = 12;
+// 각 구간을 자식 컴포넌트로 둬 훅 호출 수를 고정하고 긴 기록도 끝까지 그린다.
+const SegmentStroke = memo(function SegmentStroke({ progress, start, finish, fullPath, blurScale, lineStyle }: {
+  progress: SharedValue<number>; start: number; finish: number; fullPath: ReturnType<typeof skPath>;
+  blurScale: number; lineStyle: ReturnType<typeof resolveRouteStyle>;
+}) {
+  const end = useDerivedValue(() => Math.max(start, Math.min(progress.value, finish)), [start, finish]);
+  const opacity = useDerivedValue(() => progress.value >= finish ? 0.95 : 0.5, [finish]);
+  const flash = useDerivedValue(() => progress.value >= finish ? Math.max(0, 1 - (progress.value - finish) * 14) : 0, [finish]);
+  const width = useDerivedValue(() => (10 + flash.value * 4) * lineStyle.widthScale, [lineStyle.widthScale]);
+  const blur = useDerivedValue(() => progress.value >= finish ? (45 + flash.value * 65) * blurScale : 0, [finish, blurScale]);
+  return <Path path={fullPath} start={start} end={end} style="stroke" strokeWidth={width}
+    strokeCap="round" strokeJoin="round" opacity={opacity} color={lineStyle.color}>
+    <Shadow dx={0} dy={0} blur={blur} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
+  </Path>;
+});
 
-function useSegmentReactiveProps(
-  progress: ReturnType<typeof useSharedValue<number>>,
-  segStartFraction: number,
-  segEndFraction: number,
-  blurScale: number,
-  active: boolean,
-  widthScale: number
-) {
-  const end = useDerivedValue(() => {
-    if (!active) return segStartFraction;
-    const p = progress.value;
-    if (p <= segStartFraction) return segStartFraction;
-    return Math.min(p, segEndFraction);
-  }, [active, segStartFraction, segEndFraction]);
-  const opacity = useDerivedValue(() => {
-    if (!active) return 0;
-    return progress.value >= segEndFraction ? 0.95 : 0.5;
-  }, [active, segEndFraction]);
-  const strokeWidth = useDerivedValue(() => {
-    if (!active) return 10 * widthScale;
-    const p = progress.value;
-    if (p < segEndFraction) return 10 * widthScale;
-    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
-    return (10 + justLit * 4) * widthScale;
-  }, [active, segEndFraction, widthScale]);
-  const blur = useDerivedValue(() => {
-    if (!active) return 0;
-    const p = progress.value;
-    if (p < segEndFraction) return 0;
-    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
-    return (45 + justLit * 65) * blurScale;
-  }, [active, segEndFraction, blurScale]);
-  const dotR = useDerivedValue(() => {
-    if (!active) return 0;
-    const p = progress.value;
-    if (p < segEndFraction) return 0;
-    const justLit = Math.max(0, 1 - (p - segEndFraction) * 14);
-    return (4 + justLit * 3) * widthScale;
-  }, [active, segEndFraction, widthScale]);
-  const dotOpacity = useDerivedValue(() => {
-    if (!active) return 0;
-    return progress.value >= segEndFraction ? 1 : 0;
-  }, [active, segEndFraction]);
-  return { end, opacity, strokeWidth, blur, dotR, dotOpacity };
-}
-
-// memo(2026-09-03): DefaultDrawingLayer·LightRunnerLayer와 같은 이유 — 셋 중
-// 도형 개수가 가장 많은(최대 12구간 × Path·Circle) 컴포넌트라 이 리렌더 비용이
-// 제일 크다.
-const SegmentLayer = memo(function SegmentLayer({
-  projected,
-  cumulative,
-  totalDistance,
-  fullPath,
-  isInteracting,
-  playing,
-  blurScale,
-  onProgressSample,
-  lineStyle,
-}: {
-  projected: CanvasPoint[];
-  cumulative: number[];
-  totalDistance: number;
-  fullPath: ReturnType<typeof skPath>;
-  isInteracting: boolean;
-  playing: boolean;
-  blurScale: number;
-  onProgressSample: (progress: number) => void;
+const SegmentBoundary = memo(function SegmentBoundary({ progress, finish, point, lineStyle }: {
+  progress: SharedValue<number>; finish: number; point: CanvasPoint;
   lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
+  const opacity = useDerivedValue(() => progress.value >= finish ? 1 : 0, [finish]);
+  return <Group opacity={opacity}>
+    <Circle cx={point.x} cy={point.y} r={(SEGMENT_DOT_RADIUS + SEGMENT_DOT_BORDER) * lineStyle.widthScale} color={SEGMENT_DOT_OUTLINE} />
+    <Circle cx={point.x} cy={point.y} r={SEGMENT_DOT_RADIUS * lineStyle.widthScale} color={lineStyle.color} />
+  </Group>;
+});
+
+const SegmentLayer = memo(function SegmentLayer({ projected, cumulative, totalDistance, recordDistanceMeters,
+  fullPath, isInteracting, playing, blurScale, onProgressSample, lineStyle }: {
+  projected: CanvasPoint[]; cumulative: number[]; totalDistance: number; recordDistanceMeters: number;
+  fullPath: ReturnType<typeof skPath>; isInteracting: boolean; playing: boolean; blurScale: number;
+  onProgressSample: (progress: number) => void; lineStyle: ReturnType<typeof resolveRouteStyle>;
+}) {
   const progress = useUIThreadProgress(isInteracting, playing, onProgressSample);
-
-  const unit = totalDistance > 0 ? segmentUnitMeters(totalDistance) : 1;
-  const segmentCount = totalDistance > 0 ? Math.min(MAX_SEGMENTS, Math.ceil(totalDistance / unit)) : 0;
-
-  // 구간 경계(거리·비율)는 totalDistance/unit이 바뀔 때만 다시 계산 — 매 프레임이 아니라
-  // "다듬기 세기를 바꿨다" 같은 드문 경우에만 바뀐다.
-  const bounds = useMemo(() => {
-    const arr: { segStartFraction: number; segEndFraction: number; segEndDist: number; active: boolean }[] = [];
-    for (let s = 0; s < MAX_SEGMENTS; s++) {
-      const segStartDist = s * unit;
-      const segEndDist = Math.min(totalDistance, (s + 1) * unit);
-      arr.push({
-        segStartFraction: totalDistance > 0 ? segStartDist / totalDistance : 0,
-        segEndFraction: totalDistance > 0 ? segEndDist / totalDistance : 0,
-        segEndDist,
-        active: s < segmentCount,
-      });
-    }
-    return arr;
-  }, [unit, totalDistance, segmentCount]);
-
-  // 점(boundary dot) 자리는 시간에 안 따라 바뀌는 값이라(어느 구간이 "막 켜졌는지"의
-  // 잔광 정도만 바뀔 뿐, 점 자체의 캔버스 위치는 고정) 훅 없이 그냥 계산한다.
-  const dotPositions = useMemo(
-    () => bounds.map((b) => (b.active ? pointAtDistance(b.segEndDist, projected, cumulative) : undefined)),
-    [bounds, projected, cumulative]
-  );
-
-  // MAX_SEGMENTS는 리터럴 상수라 이 12개 호출은 매 렌더 항상 정확히 12번, 같은
-  // 순서로 실행된다(조건·반복문이 아니라 그냥 나열) — 실제 구간 수(segmentCount)가
-  // 몇이든 안전하다. bounds[i]가 없을 수 없도록 위에서 항상 MAX_SEGMENTS개를
-  // 채워 넣는다.
-  const seg0 = useSegmentReactiveProps(progress, bounds[0].segStartFraction, bounds[0].segEndFraction, blurScale, bounds[0].active, lineStyle.widthScale);
-  const seg1 = useSegmentReactiveProps(progress, bounds[1].segStartFraction, bounds[1].segEndFraction, blurScale, bounds[1].active, lineStyle.widthScale);
-  const seg2 = useSegmentReactiveProps(progress, bounds[2].segStartFraction, bounds[2].segEndFraction, blurScale, bounds[2].active, lineStyle.widthScale);
-  const seg3 = useSegmentReactiveProps(progress, bounds[3].segStartFraction, bounds[3].segEndFraction, blurScale, bounds[3].active, lineStyle.widthScale);
-  const seg4 = useSegmentReactiveProps(progress, bounds[4].segStartFraction, bounds[4].segEndFraction, blurScale, bounds[4].active, lineStyle.widthScale);
-  const seg5 = useSegmentReactiveProps(progress, bounds[5].segStartFraction, bounds[5].segEndFraction, blurScale, bounds[5].active, lineStyle.widthScale);
-  const seg6 = useSegmentReactiveProps(progress, bounds[6].segStartFraction, bounds[6].segEndFraction, blurScale, bounds[6].active, lineStyle.widthScale);
-  const seg7 = useSegmentReactiveProps(progress, bounds[7].segStartFraction, bounds[7].segEndFraction, blurScale, bounds[7].active, lineStyle.widthScale);
-  const seg8 = useSegmentReactiveProps(progress, bounds[8].segStartFraction, bounds[8].segEndFraction, blurScale, bounds[8].active, lineStyle.widthScale);
-  const seg9 = useSegmentReactiveProps(progress, bounds[9].segStartFraction, bounds[9].segEndFraction, blurScale, bounds[9].active, lineStyle.widthScale);
-  const seg10 = useSegmentReactiveProps(progress, bounds[10].segStartFraction, bounds[10].segEndFraction, blurScale, bounds[10].active, lineStyle.widthScale);
-  const seg11 = useSegmentReactiveProps(progress, bounds[11].segStartFraction, bounds[11].segEndFraction, blurScale, bounds[11].active, lineStyle.widthScale);
-  const slots = [seg0, seg1, seg2, seg3, seg4, seg5, seg6, seg7, seg8, seg9, seg10, seg11];
-
+  const bounds = useMemo(() => lightingSegments(recordDistanceMeters), [recordDistanceMeters]);
+  const markers = useMemo(() => bounds.map(bound => pointAtDistance(bound.endFraction * totalDistance, projected, cumulative)),
+    [bounds, totalDistance, projected, cumulative]);
   if (totalDistance <= 0) return null;
-
-  return (
-    <Group>
-      <Path path={fullPath} style="stroke" strokeWidth={10 * lineStyle.widthScale} color={GHOST} />
-      {slots.map((seg, s) => (
-        <Path
-          key={s}
-          path={fullPath}
-          start={bounds[s].segStartFraction}
-          end={seg.end}
-          style="stroke"
-          strokeWidth={seg.strokeWidth}
-          strokeCap="round"
-          strokeJoin="round"
-          opacity={seg.opacity}
-          color={lineStyle.color}>
-          <Shadow dx={0} dy={0} blur={seg.blur} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
-        </Path>
-      ))}
-      {slots.map((seg, s) => {
-        const dot = dotPositions[s];
-        if (!dot) return null;
-        return (
-          <Circle key={`dot-${s}`} cx={dot.x} cy={dot.y} r={seg.dotR} color={lineStyle.color} opacity={seg.dotOpacity}>
-            <Shadow dx={0} dy={0} blur={60 * blurScale} color={lineStyle.color === LINE_WARM ? GLOW : lineStyle.color} />
-          </Circle>
-        );
-      })}
-    </Group>
-  );
+  return <Group>
+    <Path path={fullPath} style="stroke" strokeWidth={10 * lineStyle.widthScale} color={GHOST} />
+    {bounds.map((bound, index) => <SegmentStroke key={index} progress={progress} start={bound.startFraction}
+      finish={bound.endFraction} fullPath={fullPath} blurScale={blurScale} lineStyle={lineStyle} />)}
+    {/* 다음 구간의 선이 이미 켜진 경계 점을 덮지 않도록 마지막에 표시한다. */}
+    {bounds.map((bound, index) => markers[index] && <SegmentBoundary key={index} progress={progress}
+      finish={bound.endFraction} point={markers[index]!} lineStyle={lineStyle} />)}
+  </Group>;
 });
 
 // §7-1: 인스타 스토리 UI가 가리는 상하단. 기본 숨김, 편집 화면의 토글 버튼으로만 켠다

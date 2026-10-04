@@ -266,6 +266,7 @@ export default function ShareScreen() {
             {encTrack && draft.selectedRun && draft.backgroundImagePath && (
               <RouteThumbnail
                 points={encTrack.coordinates}
+                preset={draft.preset}
                 routeStyle={draft.routeStyle}
                 transform={draft.transform}
                 smoothOptions={draft.smoothOptions}
@@ -312,6 +313,7 @@ export default function ShareScreen() {
         <View style={styles.card}>
           <RouteThumbnail
             points={track.coordinates}
+            preset={draft.preset}
             routeStyle={draft.routeStyle}
             transform={draft.transform}
             smoothOptions={draft.smoothOptions}

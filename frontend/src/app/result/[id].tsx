@@ -128,6 +128,7 @@ export default function ResultDetailScreen() {
         <View style={styles.previewBox}>
           <RouteThumbnail
             points={result.track.coordinates}
+            preset={result.preset}
             routeStyle={result.routeStyle}
             transform={result.transform}
             smoothOptions={result.smoothOptions}
