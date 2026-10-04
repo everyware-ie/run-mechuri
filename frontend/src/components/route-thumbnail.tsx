@@ -1,27 +1,27 @@
+import { lightingDistanceMeters, lightingSegments, SEGMENT_DOT_RADIUS, SEGMENT_DOT_BORDER, SEGMENT_DOT_OUTLINE } from '@/lib/segment-lighting';
 import { resolveRouteStyle, type RouteStyle } from '@/lib/editor-style';
-import { Blur, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
+import { Blur, Circle, Canvas, Fill, Group, Image as SkiaImage, ImageShader, Path, Shadow, Skia, useImage } from '@shopify/react-native-skia';
 import { memo, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-native-svg';
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, cumulativeCanvasDistances, pointAtDistance, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
 import { computeThumbnailFrame } from '@/lib/thumbnail-framing';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
-import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RouteTransform, type StampConfig } from './route-preview';
+import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RoutePreset, type RouteTransform, type StampConfig } from './route-preview';
 
 // FRD: docs/specs/frd/home-and-library.md §2-1 "썸네일: 결과물의 한 장면"
 //
-// 애니메이션 없이 "완성된 순간"만 정지 이미지로. 3개 프리셋 다 완주 시점엔 전체 경로가
-// 따뜻한 흰색으로 밝아지는 게 공통이라 이 하나로 충분하다. route-preview.tsx와 같은
-// Skia 렌더 + 시안 neon 팔레트.
+// 애니메이션 없이 완성된 경로를 표시한다. 구간 점등은 완료한 경계 점도 남긴다.
 
 const GLOW = '#FF5A2B';
 
 type Props = {
   points: Point[];
+  preset?: RoutePreset;
   transform: RouteTransform;
   routeStyle?: RouteStyle;
   size: number; // 정사각형 한 변
@@ -35,6 +35,7 @@ type Props = {
 
 export const RouteThumbnail = memo(function RouteThumbnail({
   points,
+  preset = 'default-drawing',
   transform,
   routeStyle,
   size,
@@ -47,6 +48,13 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   const lineStyle = resolveRouteStyle(routeStyle);
   const rawProjected = useMemo(() => projectPoints(points), [points]);
   const projected = useMemo(() => applySmoothing(rawProjected, smoothOptions), [rawProjected, smoothOptions]);
+  const markers = useMemo(() => {
+    if (preset !== 'segment-lighting' || projected.length < 2) return [];
+    const cumulative = cumulativeCanvasDistances(projected);
+    const canvasLength = cumulative.at(-1) ?? 0;
+    return lightingSegments(lightingDistanceMeters(run?.distanceMeters, points))
+      .map(bound => pointAtDistance(bound.endFraction * canvasLength, projected, cumulative));
+  }, [preset, projected, run?.distanceMeters, points]);
   const path = useMemo(
     () => Skia.Path.MakeFromSVGString(toSvgPath(projected)) ?? Skia.Path.Make(),
     [projected]
@@ -89,6 +97,10 @@ export const RouteThumbnail = memo(function RouteThumbnail({
             color={lineStyle.color}>
             <Shadow dx={0} dy={0} blur={60} color={lineStyle.color === '#FFF3EC' ? GLOW : lineStyle.color} />
           </Path>
+          {markers.map((point, index) => point && <Group key={index}>
+            <Circle cx={point.x} cy={point.y} r={(SEGMENT_DOT_RADIUS + SEGMENT_DOT_BORDER) * lineStyle.widthScale} color={SEGMENT_DOT_OUTLINE} />
+            <Circle cx={point.x} cy={point.y} r={SEGMENT_DOT_RADIUS * lineStyle.widthScale} color={lineStyle.color} />
+          </Group>)}
         </Group>
       </Canvas>
 

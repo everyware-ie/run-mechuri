@@ -150,6 +150,7 @@ export default function HomeScreen() {
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
                 <RouteThumbnail
                   points={hero.track.coordinates}
+                  preset={hero.preset}
                   routeStyle={hero.routeStyle}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
@@ -193,6 +194,7 @@ export default function HomeScreen() {
             <View style={styles.gridThumb}>
               <RouteThumbnail
                 points={item.track.coordinates}
+                preset={item.preset}
                 routeStyle={item.routeStyle}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}

@@ -745,6 +745,7 @@ public class RouteRendererModule: Module {
     cumulativeDistances: [Double],
     totalDistance: Double,
     progressFraction: Double,
+    lightingBounds: [(start: Double, end: Double)],
     stamp: RenderClipOptionsInput,
     renderer: UIGraphicsImageRenderer
   ) -> UIImage {
@@ -793,40 +794,30 @@ public class RouteRendererModule: Module {
         self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10 * widthScale)
         guard totalDistance > 0 else { return }
 
-        let unit = self.segmentUnitMeters(totalDistance)
-        let segmentCount = Int(ceil(totalDistance / unit))
-        for s in 0..<segmentCount {
-          let segStartDist = Double(s) * unit
-          let segEndDist = min(totalDistance, Double(s + 1) * unit)
-          let segStartFraction = segStartDist / totalDistance
-          let segEndFraction = segEndDist / totalDistance
-          if progressFraction <= segStartFraction { break } // 아직 도달 안 함 — 이후 구간도 마찬가지
+        var completedMarkers: [CGPoint] = []
+        for bound in lightingBounds {
+          let segStartDist = bound.start * totalDistance
+          let segEndDist = bound.end * totalDistance
+          if progressFraction <= bound.start { break }
 
-          let done = progressFraction >= segEndFraction
-          let endDistance = done ? segEndDist : progressFraction * totalDistance
+          let done = progressFraction >= bound.end
+          let endDistance = min(segEndDist, progressFraction * totalDistance)
           let segPoints = self.pointsUpTo(distance: endDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let before = self.pointsUpTo(distance: segStartDist, projected: projectedPoints, cumulative: cumulativeDistances)
-          let slice = Array(segPoints.dropFirst(max(0, before.count - 1)))
-
-          // 방금 완료된 구간일수록 반짝임이 강하다(감쇠 계수는 목업 근사치).
-          let justLit = done ? max(0, 1 - (progressFraction - segEndFraction) * 14) : 0
-          let alpha: CGFloat = done ? 0.95 : 0.5
-          self.strokePath(
-            slice,
-            color: routeColor.withAlphaComponent(alpha),
+          // 경계가 원래 꼭짓점 사이에 있어도 이전 꼭짓점으로 되돌아가지 않는다.
+          var slice = Array(segPoints.dropFirst(before.count - 1))
+          if let start = before.last { slice.insert(start, at: 0) }
+          let justLit = done ? max(0, 1 - (progressFraction - bound.end) * 14) : 0
+          self.strokePath(slice, color: routeColor.withAlphaComponent(done ? 0.95 : 0.5),
             width: (10 + CGFloat(justLit) * 4) * widthScale,
-            glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0,
-            glowColor: routeGlow
-          )
-          if done, let boundary = self.pointsUpTo(distance: segEndDist, projected: projectedPoints, cumulative: cumulativeDistances).last {
-            self.fillDot(
-              at: boundary,
-              radius: (4 + CGFloat(justLit) * 3) * widthScale,
-              color: routeColor,
-              glowRadius: 16 + CGFloat(justLit) * 24,
-              glowColor: routeGlow
-            )
-          }
+            glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0, glowColor: routeGlow)
+          if done, let boundary = segPoints.last { completedMarkers.append(boundary) }
+        }
+        // 선을 모두 그린 뒤 표시해 다음 구간이 경계 점을 덮지 않게 한다.
+        for boundary in completedMarkers {
+          self.fillDot(at: boundary, radius: 16 * widthScale,
+            color: UIColor(red: 11 / 255, green: 13 / 255, blue: 16 / 255, alpha: 0.85))
+          self.fillDot(at: boundary, radius: 12 * widthScale, color: routeColor)
         }
       }
 
@@ -1527,6 +1518,15 @@ public class RouteRendererModule: Module {
     to outputURL: URL,
     job: RenderJob
   ) throws {
+    // 실제 미터로 구간을 나누고 변형된 캔버스에는 비율만 대응한다. 프레임마다 GPS를 계산하지 않는다.
+    let recordedMeters = stamp.distanceMeters
+    let meters = recordedMeters.isFinite && recordedMeters > 0 ? recordedMeters
+      : (self.cumulativeDistances(stamp.points).last ?? 0)
+    let unit = segmentUnitMeters(meters)
+    let count = preset == .segmentLighting && meters.isFinite && meters > 0 ? Int(ceil(meters / unit)) : 0
+    let lightingBounds = (0..<count).map { index in
+      (start: Double(index) * unit / meters, end: min(meters, Double(index + 1) * unit) / meters)
+    }
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try? FileManager.default.removeItem(at: outputURL)
     }
@@ -1624,7 +1624,7 @@ public class RouteRendererModule: Module {
                     preset: preset, background: scenes[lane], projectedPoints: projectedPoints,
                     cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
                     progressFraction: min(1, Double(batchStart + lane) / Double(ClipSpec.drawFrames)),
-                    stamp: stamp, renderer: lanes[lane]
+                    lightingBounds: lightingBounds, stamp: stamp, renderer: lanes[lane]
                   )
                   slots[lane].rasterSeconds = CFAbsoluteTimeGetCurrent() - rasterStart
                   try job.checkCancellation()
