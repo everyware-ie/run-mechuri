@@ -52,7 +52,8 @@ import { isVideoBackground, persistDefaultBackground } from '@/lib/background-st
 import { limitFreeCaptionInput } from '@/lib/caption-layout';
 import { saveDraft } from '@/lib/draft-store';
 import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
-import { pushHistory, type EditSnapshot } from '@/lib/edit-history';
+import type { EditSnapshot } from '@/lib/edit-history';
+import { useEditHistory } from '@/hooks/use-edit-history';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
@@ -258,37 +259,23 @@ export default function EditScreen() {
     resetTransform();
   };
 
-  // §4-3 되돌리기. 초안이 바뀔 때마다(값을 확정할 때마다) 바뀌기 전 모습을 한 단계로 쌓는다.
-  const [history, setHistory] = useState<EditSnapshot[]>([]);
-  const lastSnapshotRef = useRef<EditSnapshot | null>(null);
-  // 되돌리기 자체와 장소 이름 채우기처럼 사용자가 한 편집이 아닌 변화는 쌓지 않는다. 문구는 다 쓰고
-  // 마칠 때 한 번에 들어가므로 한 단계가 된다.
-  const skipHistoryRef = useRef(false);
-  useEffect(() => {
-    const current: EditSnapshot = {
-      backgroundImagePath: draft.backgroundImagePath,
-      backgroundPhoto: draft.backgroundPhoto,
-      preset: draft.preset,
-      transform: draft.transform,
-      smoothOptions: draft.smoothOptions,
-      stampConfig: draft.stampConfig,
-    };
-    const previous = lastSnapshotRef.current;
-    lastSnapshotRef.current = current;
-    if (!previous) return;
-    if (skipHistoryRef.current) {
-      skipHistoryRef.current = false;
-      return;
-    }
-    setHistory((h) => pushHistory(h, previous));
-  }, [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
+  // §4-3: 값이 같은 조작과 자동 장소 채우기는 단계를 만들지 않는다.
+  const editSnapshot = useMemo<EditSnapshot>(() => ({
+    backgroundImagePath: draft.backgroundImagePath,
+    backgroundPhoto: draft.backgroundPhoto,
+    preset: draft.preset,
+    transform: draft.transform,
+    smoothOptions: draft.smoothOptions,
+    stampConfig: draft.stampConfig,
+  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.smoothOptions, draft.stampConfig]);
+  const { history, skipNextChange, popHistory } = useEditHistory(editSnapshot);
 
   // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
   // 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 문구를 프리셋 안으로 되돌린다.
   useEffect(() => {
     // 문구 목록이 이미 있으면 바꿀 것이 없다. 옛 저장분과 개발 중 쓰던 문구 하나짜리 형식만 바꾼다.
     if (draft.stampConfig.captions) return;
-    skipHistoryRef.current = true;
+    skipNextChange();
     commitStampConfig(stampConfigRef.current);
     // 들어올 때 한 번만.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -307,7 +294,6 @@ export default function EditScreen() {
         const p = res[0];
         const name = p?.district || p?.city || p?.subregion || p?.name || '';
         if (!name) return;
-        skipHistoryRef.current = true;
         commitStamp({ ...stampConfigRef.current, placeName: name });
       })
       .catch(() => {});
@@ -740,8 +726,8 @@ export default function EditScreen() {
     Keyboard.dismiss();
     flushPendingSmooth();
     flushPendingStampConfig();
-    skipHistoryRef.current = true;
-    setHistory((h) => h.slice(0, -1));
+    skipNextChange();
+    popHistory();
     // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
     const placeName = stampConfigRef.current.placeName || previous.stampConfig.placeName;
     const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
