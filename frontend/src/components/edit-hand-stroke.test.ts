@@ -1,6 +1,6 @@
 import { act, createElement } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
-import { PanResponder } from 'react-native';
+import { ActionSheetIOS, PanResponder, Platform } from 'react-native';
 import EditScreen from '../app/edit';
 import { IDENTITY_STAMP, IDENTITY_TRANSFORM } from '@/components/route-preview';
 
@@ -34,10 +34,14 @@ jest.mock('@/components/route-preview', () => {
 });
 jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => {
   const { useState } = jest.requireActual('react');
+  const { IDENTITY_TRANSFORM } = jest.requireActual('@/components/route-preview');
   const [draft, setDraft] = useState(mockInitial);
   return { draft, setHandDrawing: (handDrawing: object[]) => setDraft((previous: object) => ({ ...previous, handDrawing })),
-    setPreset: jest.fn(), setTransform: jest.fn(), setRouteStyle: jest.fn(), setSmoothOptions: jest.fn(),
-    setStampConfig: jest.fn(), setBackground: jest.fn(), loadDraft: setDraft, resetTransform: jest.fn() };
+    setPreset: jest.fn(), setTransform: (transform: object) => setDraft((previous: object) => ({ ...previous, transform })),
+    setRouteStyle: jest.fn(), setSmoothOptions: jest.fn(),
+    setStampConfig: (stampConfig: object) => setDraft((previous: object) => ({ ...previous, stampConfig })),
+    setBackground: jest.fn(), loadDraft: (partial: object) => setDraft((previous: object) => ({ ...previous, routeStyle: undefined, handDrawing: undefined, ...partial })),
+    resetTransform: () => setDraft((previous: object) => ({ ...previous, transform: IDENTITY_TRANSFORM })) };
 } }));
 const mockInitial = {
   selectedRun: { id: 'qa', date: '2026-10-04', distanceMeters: 1000, durationSeconds: 360, averagePaceSecPerKm: 360, hasRoute: true },
@@ -103,4 +107,35 @@ it('그리기 진입·복귀는 기존 미리보기와 크기를 유지하며 �
   expect(preview().activeHandDrawing).toBeUndefined();
   expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
   expect(handlers().pointerEvents).toBe('auto');
+});
+
+it.each([
+  ['경로', '경로 그림 크기', 'transform'],
+  ['러닝 데이터', '러닝 데이터 크기', 'stampConfig'],
+] as const)('%s 배치 복원 메뉴의 취소는 유지하고 실행은 배치만 복원하며 되돌릴 수 있다', async (label, sizeLabel, field) => {
+  const originalOS = Platform.OS;
+  Object.defineProperty(Platform, 'OS', { configurable: true, value: 'ios' });
+  const menu = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+  try {
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: label }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: sizeLabel }).props.onSlidingComplete(150));
+    const before = preview()[field];
+    expect(before.scale).toBe(1.5);
+    const unrelated = field === 'transform' ? preview().stampConfig : preview().transform;
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: `${label} 더 보기` }).props.onPress());
+    expect(preview()[field]).toEqual(before);
+    await act(async () => menu.mock.calls[0][1](1));
+    expect(preview()[field]).toEqual(before);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: `${label} 더 보기` }).props.onPress());
+    await act(async () => menu.mock.calls[1][1](0));
+    expect(preview()[field].scale).toBe(1);
+    if (field === 'stampConfig') expect(preview().stampConfig).toEqual({ ...before, position: { x: 0, y: 0 }, scale: 1 });
+    else expect(preview().transform).toEqual(IDENTITY_TRANSFORM);
+    expect(field === 'transform' ? preview().stampConfig : preview().transform).toEqual(unrelated);
+    expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: `${label} 편집 되돌리기` }).props.onPress());
+    expect(preview()[field]).toEqual(before);
+  } finally {
+    Object.defineProperty(Platform, 'OS', { configurable: true, value: originalOS });
+  }
 });

@@ -12,6 +12,7 @@ import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
+  ActionSheetIOS,
   Alert,
   Animated,
   Image,
@@ -285,13 +286,26 @@ export default function EditScreen() {
     rememberStampLayout(layout);
     commitStamp({ ...stampConfigRef.current, layout });
   };
-  // §4-3 초기화: 되돌리는 단위는 그 도구의 대상뿐이다. 켠 항목·프리셋·문구는 그대로 둔다.
+  // §4-3 배치 복원: 그 도구의 배치만 돌린다. 켠 항목·프리셋·문구는 그대로 둔다.
   const handleStampReset = () => {
     commitStamp({ ...stampConfigRef.current, position: { x: 0, y: 0 }, scale: 1 });
   };
   const handleRouteReset = () => {
     updateTransform(IDENTITY_TRANSFORM);
     resetTransform();
+  };
+  const showLayoutMenu = (target: 'route' | 'stamp') => {
+    const title = target === 'route' ? '경로 배치' : '러닝 데이터 배치';
+    const message = target === 'route'
+      ? '위치·크기·회전을 기본 배치로 돌려요. 프리셋과 선 스타일은 유지돼요.'
+      : '위치·크기를 기본 배치로 돌려요. 항목과 글자 스타일은 유지돼요.';
+    const restore = target === 'route' ? handleRouteReset : handleStampReset;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({ title, message, options: ['배치 복원', '취소'],
+        cancelButtonIndex: 1, userInterfaceStyle: 'dark' }, index => { if (index === 0) restore(); });
+    } else {
+      Alert.alert(title, message, [{ text: '취소', style: 'cancel' }, { text: '배치 복원', onPress: restore }]);
+    }
   };
 
   // §4-3: 값이 같은 조작과 자동 장소 채우기는 단계를 만들지 않는다.
@@ -919,17 +933,6 @@ export default function EditScreen() {
   const sizeLabel = inkToolOpen ? '손그림 크기' : sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
   const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
   const dropZone = dragging ? dropZoneFor(dragging) : null;
-  const resetChip = (label: string, onPress: () => void) => (
-    <Pressable onPress={onPress} style={styles.resetButton} accessibilityRole="button" accessibilityLabel={label}>
-      {({ pressed }) => (
-        <View style={[styles.resetChip, pressed && styles.resetChipPressed]}>
-          <SymbolView name="arrow.counterclockwise" size={11} tintColor={Colors.textMuted} />
-          <Text style={styles.resetText}>초기화</Text>
-        </View>
-      )}
-    </Pressable>
-  );
-
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -982,7 +985,7 @@ export default function EditScreen() {
               {showChrome && inkToolOpen && selectedInk && <View style={styles.inkHeader}>
                 <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
                   accessibilityRole="button" accessibilityLabel="손그림 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
-                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
                 </Pressable>
                 <HandStrokeBrushes brush={selectedInk.brush} onChange={brush => patchInk({ brush })} />
                 <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="손그림 편집 완료">
@@ -992,7 +995,7 @@ export default function EditScreen() {
               {showChrome && tool === 'route' && <View style={styles.inkHeader} testID="route-preset-toolbar">
                 <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
                   accessibilityRole="button" accessibilityLabel="경로 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
-                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
                 </Pressable>
                 <View style={styles.routePresetRow}>
                   {PRESETS.map(p => {
@@ -1012,7 +1015,7 @@ export default function EditScreen() {
               {showChrome && tool === 'stamp' && <View style={[styles.inkHeader, styles.stampHeader]}>
                 <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
                   accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
-                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
                 </Pressable>
                 <StampPresetSelector value={stampConfig.layout ?? 'row'} onChange={handleLayoutSelect} />
                 <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 완료">
@@ -1026,7 +1029,7 @@ export default function EditScreen() {
                 <Pressable onPress={handleUndo} disabled={history.length === 0}
                   style={[styles.roundButton, history.length === 0 && styles.disabled]}
                   accessibilityRole="button" accessibilityLabel="되돌리기" accessibilityState={{ disabled: history.length === 0 }}>
-                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
                 </Pressable>
               </View>}
 
@@ -1079,8 +1082,12 @@ export default function EditScreen() {
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>{tool === 'ink' ? '손그림' : TOOLS.find((t) => t.id === tool)?.label}</Text>
           <View style={styles.sheetHeaderRight}>
-            {tool === 'route' && resetChip('경로 초기화', handleRouteReset)}
-            {tool === 'stamp' && resetChip('러닝 데이터 초기화', handleStampReset)}
+            {(tool === 'route' || tool === 'stamp') && <Pressable onPress={() => showLayoutMenu(tool)}
+              style={({ pressed }) => [styles.moreButton, pressed && styles.moreButtonPressed]}
+              accessibilityRole="button" accessibilityLabel={`${tool === 'route' ? '경로' : '러닝 데이터'} 더 보기`}
+              accessibilityHint="배치 복원 메뉴를 열어요">
+              <SymbolView name="ellipsis" size={18} tintColor={Colors.textMuted} />
+            </Pressable>}
             {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
               accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
             tool !== 'route' && tool !== 'stamp' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
@@ -1252,10 +1259,8 @@ const styles = StyleSheet.create({
   sheetDone: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.accent },
   hint: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16, color: Colors.textMuted },
   note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
-  resetButton: { minHeight: 44, justifyContent: 'center' },
-  resetChip: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, borderWidth: 1, borderColor: Colors.borderStrong },
-  resetChipPressed: { backgroundColor: Colors.border },
-  resetText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
+  moreButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  moreButtonPressed: { backgroundColor: Colors.border },
   routePresetRow: { flexDirection: 'row', gap: 8 },
   routePreset: { width: 44, minHeight: 44, paddingVertical: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: OVERLAY_BG },
   routePresetLabel: { fontFamily: Fonts.sans, fontSize: 9, color: Colors.text },

@@ -94,7 +94,7 @@ export function HandDrawingEditor({ initial, canvasSize, onPreviewChange, onChan
     <View style={styles.header}>
       <Pressable onPress={undo} disabled={!history.length} style={[styles.button, !history.length && styles.disabled]}
         accessibilityRole="button" accessibilityLabel="손그림 되돌리기" accessibilityState={{ disabled: !history.length }}>
-        <SymbolView name="arrow.uturn.backward" size={17} tintColor={Colors.text} />
+        <SymbolView name="arrow.counterclockwise" size={17} tintColor={Colors.text} />
       </Pressable>
       <View style={styles.brushRow}>{BRUSHES.map(b => <Pressable key={b.id} onPress={() => setBrush(b.id)}
         style={[styles.button, brush === b.id && styles.selected]} accessibilityRole="button" accessibilityLabel={b.label} accessibilityState={{ selected: brush === b.id }}>
