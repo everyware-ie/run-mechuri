@@ -40,7 +40,6 @@ import {
   IDENTITY_TRANSFORM,
   migrateLegacyCaption,
   RoutePreview,
-  STAMP_LAYOUTS,
   type CanvasRect,
   type CaptionItem,
   type RoutePreset,
@@ -51,6 +50,7 @@ import {
 } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { Slider } from '@/components/slider';
+import { StampPresetSelector } from '@/components/stamp-preset-selector';
 import { ThemedButton } from '@/components/ui';
 import { VerticalSlider } from '@/components/vertical-slider';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
@@ -167,7 +167,7 @@ export default function EditScreen() {
   };
   const [applyingStyle, setApplyingStyle] = useState(false);
   const styleOperation = useRef(0);
-  const [stampTab, setStampTab] = useState<'layout' | 'items' | 'style'>('layout');
+  const [stampTab, setStampTab] = useState<'items' | 'style'>('items');
   const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
   const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
   const routeStyleRef = useRef(routeStyle);
@@ -1009,7 +1009,17 @@ export default function EditScreen() {
                   <Text style={styles.inkDoneText}>완료</Text>
                 </Pressable>
               </View>}
-              {showChrome && !inkToolOpen && tool !== 'route' && <View style={styles.topLeft} pointerEvents="box-none">
+              {showChrome && tool === 'stamp' && <View style={[styles.inkHeader, styles.stampHeader]}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.uturn.backward" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <StampPresetSelector value={stampConfig.layout ?? 'row'} onChange={handleLayoutSelect} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.topLeft} pointerEvents="box-none">
                 <Pressable onPress={handleClose} style={styles.roundButton} accessibilityRole="button" accessibilityLabel="편집 나가기">
                   <SymbolView name="xmark" size={15} tintColor={Colors.text} />
                 </Pressable>
@@ -1020,7 +1030,7 @@ export default function EditScreen() {
                 </Pressable>
               </View>}
 
-              {showChrome && !inkToolOpen && tool !== 'route' && <View style={styles.toolRail} pointerEvents="box-none">
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.toolRail} pointerEvents="box-none">
                 {TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
@@ -1073,7 +1083,7 @@ export default function EditScreen() {
             {tool === 'stamp' && resetChip('러닝 데이터 초기화', handleStampReset)}
             {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
               accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
-            tool !== 'route' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
+            tool !== 'route' && tool !== 'stamp' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
               <Text style={styles.sheetDone}>완료</Text>
             </Pressable>}
           </View>
@@ -1143,7 +1153,7 @@ export default function EditScreen() {
 
         {tool === 'stamp' && <>
           <View style={styles.tabs}>
-            {([{ id: 'layout', label: '프리셋' }, { id: 'items', label: '항목' }, { id: 'style', label: '스타일' }] as const).map((tab) => (
+            {([{ id: 'items', label: '항목' }, { id: 'style', label: '글자 스타일' }] as const).map((tab) => (
               <Pressable key={tab.id} onPress={() => setStampTab(tab.id)} style={styles.tab}
                 accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}>
                 <Text style={stampTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
@@ -1151,20 +1161,7 @@ export default function EditScreen() {
             ))}
           </View>
           {stampTab === 'style' ? <TextStyleControls value={stampConfig}
-            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : stampTab === 'layout' ? (
-            <View style={styles.layoutChipRow}>
-              {STAMP_LAYOUTS.map((l) => {
-                const on = (stampConfig.layout ?? 'row') === l.id;
-                return (
-                  <Pressable key={l.id} onPress={() => handleLayoutSelect(l.id)}
-                    accessibilityRole="button" accessibilityState={{ selected: on }}
-                    style={[styles.layoutChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
+            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : (
             <View style={styles.chipRowWrap}>
               {stampItems.map((item) => {
                 const on = stampConfig.enabled?.[item] ?? false;
@@ -1207,6 +1204,7 @@ const OVERLAY_BG = 'rgba(11,13,16,0.55)';
 
 const styles = StyleSheet.create({
   inkHeader: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stampHeader: { gap: 8 },
   inkDone: { height: 40, paddingHorizontal: 13, borderRadius: 20, backgroundColor: Colors.text, justifyContent: 'center' },
   inkDoneText: { color: Colors.bg, fontFamily: Fonts.sansBold, fontSize: 12 },
   root: { flex: 1, backgroundColor: Colors.bg },
@@ -1262,7 +1260,6 @@ const styles = StyleSheet.create({
   routePreset: { width: 44, minHeight: 44, paddingVertical: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: OVERLAY_BG },
   routePresetLabel: { fontFamily: Fonts.sans, fontSize: 9, color: Colors.text },
   presetChipOn: { backgroundColor: Colors.accent },
-  presetChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   presetChipTextOn: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accentText },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 36 },
   sliderLabel: { width: 30, fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
@@ -1272,8 +1269,6 @@ const styles = StyleSheet.create({
   tab: { minHeight: 32, justifyContent: 'center' },
   tabText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   tabTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
-  layoutChipRow: { flexDirection: 'row', columnGap: '2%', rowGap: 6, flexWrap: 'wrap' },
-  layoutChip: { width: '32%', minHeight: 40, paddingHorizontal: 4, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.border },
   chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   itemChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.chip, borderWidth: 1, borderColor: Colors.borderStrong },
   itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
