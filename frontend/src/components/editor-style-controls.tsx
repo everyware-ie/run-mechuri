@@ -1,15 +1,23 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { RouteColorPicker } from './route-color-picker';
 import { Colors, Fonts } from '@/constants/theme';
 import { LINE_WIDTH_MAX, LINE_WIDTH_MIN, ROUTE_COLORS, STAMP_FONTS, resolveRouteStyle, resolveStampFont, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
 import { Slider } from './slider';
 
-export function RouteStyleControls({ value, onChange, onSlidingStart, onSlidingComplete }: {
+export function RouteStyleControls({ value, onChange, onSlidingStart, onSlidingComplete, onColorPreview, onColorSelectionEnd, active = true }: {
   value?: RouteStyle;
+  active?: boolean;
   onChange: (value: RouteStyle) => void;
   onSlidingStart: () => void;
   onSlidingComplete: (value: RouteStyle) => void;
+  onColorPreview?: (color: string | null) => void;
+  onColorSelectionEnd?: () => void;
 }) {
   const resolved = resolveRouteStyle(value);
+  const [pickerColor, setPickerColor] = useState<string | null>(null);
+  const custom = !ROUTE_COLORS.some(c => c.hex === resolved.color);
   return <View style={styles.content}>
     <View style={styles.colors}>
       {ROUTE_COLORS.map(color => {
@@ -20,6 +28,17 @@ export function RouteStyleControls({ value, onChange, onSlidingStart, onSlidingC
           <View style={[styles.swatch, { backgroundColor: color.hex }]} />
         </Pressable>;
       })}
+      {Platform.OS === 'ios' && <Pressable style={[styles.colorHit, custom && styles.colorSelected]}
+        accessibilityRole="button" accessibilityLabel="더 많은 색" accessibilityState={{ selected: custom }}
+        onPress={() => { onSlidingStart(); setPickerColor(resolved.color); }}>
+        <Svg width={28} height={28} viewBox="0 0 28 28">
+          <Defs><LinearGradient id="route-rainbow" x1="0%" y1="0%" x2="100%" y2="100%">
+            {['#FF5656', '#FFD84D', '#55E5AB', '#509CFF', '#BD6AFF'].map((color, i) => <Stop key={color} offset={`${i * 25}%`} stopColor={color} />)}
+          </LinearGradient></Defs>
+          <Circle cx={14} cy={14} r={14} fill="url(#route-rainbow)" />
+          {custom && <Circle cx={14} cy={14} r={9} fill={resolved.color} stroke={Colors.bgCard} strokeWidth={2} />}
+        </Svg>
+      </Pressable>}
     </View>
     <View style={styles.sliderRow}>
       <Text style={styles.label}>두께</Text>
@@ -29,6 +48,13 @@ export function RouteStyleControls({ value, onChange, onSlidingStart, onSlidingC
         onSlidingComplete={width => onSlidingComplete({ ...value, widthScale: width / 100 })} /></View>
       <Text style={styles.value}>{Math.round(resolved.widthScale * 100)}%</Text>
     </View>
+    {active && pickerColor !== null && <RouteColorPicker color={pickerColor} onPreview={color => onColorPreview?.(color)}
+      onFinish={color => {
+        onColorPreview?.(null);
+        if (color !== null) onSlidingComplete({ ...value, color: color as `#${string}` });
+        onColorSelectionEnd?.();
+        setPickerColor(null);
+      }} />}
   </View>;
 }
 
@@ -60,8 +86,8 @@ export function TextStyleControls({ value, onChange }: { value: TextStyleChoice;
 
 const styles = StyleSheet.create({
   content: { gap: 12 },
-  colors: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 },
-  colorHit: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+  colors: { flexDirection: 'row', justifyContent: 'space-between' },
+  colorHit: { width: 44, flexShrink: 1, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
   colorSelected: { borderColor: Colors.accent },
   swatch: { width: 28, height: 28, borderRadius: 14 },
   sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 },

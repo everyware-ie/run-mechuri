@@ -171,6 +171,7 @@ export default function EditScreen() {
   const [stampTab, setStampTab] = useState<'items' | 'style'>('items');
   const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
   const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
+  const [routeColorPreview, setRouteColorPreview] = useState<string | null>(null);
   const routeStyleRef = useRef(routeStyle);
   const updateRouteStyle = (value: RouteStyle) => {
     const next = normalizeRouteStyle(value);
@@ -949,7 +950,7 @@ export default function EditScreen() {
                     points={draft.track.coordinates}
                     preset={draft.preset}
                     transform={transform}
-                    routeStyle={routeStyle}
+                    routeStyle={routeColorPreview === null ? routeStyle : { ...routeStyle, color: routeColorPreview as `#${string}` }}
                     handDrawing={drawing && drawingPreview ? drawingPreview.strokes : inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
                     activeHandDrawing={drawing ? drawingPreview?.active : undefined}
                     selectedHandStrokeId={dragging?.kind === 'ink' ? dragging.id : selectedInkId}
@@ -1138,8 +1139,9 @@ export default function EditScreen() {
                 <Text style={routeTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
               </Pressable>)}
           </View>
-          {routeTab === 'style' ? <RouteStyleControls value={routeStyle} onChange={updateRouteStyle}
-            onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit} /> : <>
+          {routeTab === 'style' ? <RouteStyleControls active={isFocused} value={routeStyle} onChange={updateRouteStyle}
+            onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit}
+            onColorPreview={setRouteColorPreview} onColorSelectionEnd={() => setIsInteracting(false)} /> : <>
           <Text style={styles.hint}>경로를 끌어서 옮기고, 두 손가락으로 키우거나 돌려요.</Text>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>직선</Text>

@@ -336,6 +336,10 @@ public class RouteRendererModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
     Events("onRenderProgress")
+    View(RouteColorPickerView.self) {
+      Events("onColorChange")
+      Prop("color") { (view: RouteColorPickerView, color: String) in view.setColor(color) }
+    }
 
     Function("cancelRender") {
       self.jobLock.lock(); let job = self.activeJob; self.jobLock.unlock()
@@ -662,12 +666,9 @@ public class RouteRendererModule: Module {
   // (docs/ideation/JiEung2/2026-08-04-route-overlay-mockup.html)의 캔버스 드로잉 로직을
   // 그대로 옮긴 것이다 — 미리보기(route-preview.tsx)도 같은 값을 쓴다.
 
-  // JS editor-style.ts의 팔레트·범위와 같다. 임의 문자열·비정상 수치는 기본값으로 되돌린다.
+  // JS editor-style.ts와 같이 6자리 HEX를 검증하고 잘못된 문자열은 기본색으로 읽는다.
   private func selectedRouteColor(_ value: String) -> UIColor {
-    let allowed = ["#FFF3EC", "#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"]
-    guard allowed.contains(value), let rgb = UInt32(value.dropFirst(), radix: 16) else { return lineWarm }
-    return UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255,
-      blue: CGFloat(rgb & 255) / 255, alpha: 1)
+    return routeHexColor(value) ?? lineWarm
   }
 
   // JS runnerLightColors와 같은 RGB 계산. 파스텔 본선과 주변 빛의 대비를 보존한다.
@@ -859,7 +860,7 @@ public class RouteRendererModule: Module {
         self.strokePath(visible, color: routeColor, width: 10 * widthScale, glowRadius: 6, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
 
       case .lightRunner:
-        let coloredLight = ["#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"].contains(stamp.routeColor)
+        let coloredLight = !stamp.routeColor.isEmpty && stamp.routeColor.uppercased() != "#FFF3EC"
         let light = self.runnerLightColors(routeColor)
         let runnerGlow = coloredLight ? light.glow : routeGlow
         // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
@@ -1816,5 +1817,67 @@ public class RouteRendererModule: Module {
     context.draw(cgImage, in: CGRect(x: 0, y: 0, width: ClipSpec.width, height: ClipSpec.height))
 
     return pixelBuffer
+  }
+}
+
+// 자유 색상은 불투명 sRGB 6자리만 허용한다. 기존 팔레트도 같은 경로로 읽는다.
+private func routeHexColor(_ value: String) -> UIColor? {
+  guard value.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil,
+    let rgb = UInt32(value.dropFirst(), radix: 16) else { return nil }
+  return UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+    green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+}
+
+// 시스템 선택 UI를 앱의 완료·취소 시트 안에 둔다.
+final class RouteColorPickerView: ExpoView, UIColorPickerViewControllerDelegate {
+  let onColorChange = EventDispatcher()
+  private let picker = UIColorPickerViewController()
+  private var hasInitialColor = false
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+    picker.supportsAlpha = false
+    if #available(iOS 26.0, *) { picker.maximumLinearExposure = 0 }
+    picker.overrideUserInterfaceStyle = .dark
+    clipsToBounds = true
+    addSubview(picker.view)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil, picker.parent == nil {
+      var owner: UIResponder? = self.next
+      while owner != nil, !(owner is UIViewController) { owner = owner?.next }
+      if let parent = owner as? UIViewController {
+        parent.addChild(picker)
+        picker.didMove(toParent: parent)
+      }
+    } else if window == nil, picker.parent != nil {
+      picker.willMove(toParent: nil)
+      picker.removeFromParent()
+    }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    picker.view.frame = bounds
+  }
+
+  func setColor(_ hex: String) {
+    guard let color = routeHexColor(hex) else { return }
+    // 뷰 생성과 초기 색 설정은 사용자의 선택으로 전달하지 않는다.
+    picker.delegate = nil
+    picker.selectedColor = color
+    hasInitialColor = true
+    picker.delegate = self
+  }
+
+  func colorPickerViewControllerDidSelectColor(_ viewController: UIColorPickerViewController) {
+    guard hasInitialColor, window != nil,
+      let space = CGColorSpace(name: CGColorSpace.sRGB),
+      let converted = viewController.selectedColor.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
+      let components = converted.components, components.count >= 3 else { return }
+    let rgb = components.prefix(3).map { Int((max(0, min(1, $0)) * 255).rounded()) }
+    onColorChange(["color": String(format: "#%02X%02X%02X", rgb[0], rgb[1], rgb[2])])
   }
 }

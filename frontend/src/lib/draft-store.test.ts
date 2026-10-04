@@ -122,3 +122,9 @@ it('손그림 획과 좌표를 보관하고 오래된 초안은 빈 손그림으
   await saveDraft({ ...draft, handDrawing });
   expect((await getDraft())?.handDrawing).toEqual(handDrawing);
 });
+
+
+it('직접 고른 경로 색과 두께를 초안 저장·다시 열기에 유지한다', async () => {
+  await saveDraft({ ...draft, routeStyle: { color: '#13ac72', widthScale: 1.4 } });
+  expect((await getDraft())?.routeStyle).toEqual({ color: '#13AC72', widthScale: 1.4 });
+});

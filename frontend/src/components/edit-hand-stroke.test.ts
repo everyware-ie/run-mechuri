@@ -18,6 +18,10 @@ jest.mock('@/components/hand-drawing-editor', () => {
   const { createElement: element } = jest.requireActual('react');
   return { HandDrawingEditor: (props: object) => element('drawing-controls', props) };
 });
+jest.mock('@/components/route-color-picker', () => {
+  const { createElement: element } = jest.requireActual('react');
+  return { RouteColorPicker: (props: object) => element('route-color-picker', props) };
+});
 jest.mock('@/components/background-video', () => ({ CroppedBackgroundVideo: () => null }));
 jest.mock('@/components/my-style-sheet', () => ({ MyStyleSheet: () => null }));
 jest.mock('@shopify/react-native-skia', () => ({}));
@@ -38,7 +42,7 @@ jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => {
   const [draft, setDraft] = useState(mockInitial);
   return { draft, setHandDrawing: (handDrawing: object[]) => setDraft((previous: object) => ({ ...previous, handDrawing })),
     setPreset: jest.fn(), setTransform: (transform: object) => setDraft((previous: object) => ({ ...previous, transform })),
-    setRouteStyle: jest.fn(), setSmoothOptions: jest.fn(),
+    setRouteStyle: (routeStyle: object) => setDraft((previous: object) => ({ ...previous, routeStyle })), setSmoothOptions: jest.fn(),
     setStampConfig: (stampConfig: object) => setDraft((previous: object) => ({ ...previous, stampConfig })),
     setBackground: jest.fn(), loadDraft: (partial: object) => setDraft((previous: object) => ({ ...previous, routeStyle: undefined, handDrawing: undefined, ...partial })),
     resetTransform: () => setDraft((previous: object) => ({ ...previous, transform: IDENTITY_TRANSFORM })) };
@@ -138,4 +142,27 @@ it.each([
   } finally {
     Object.defineProperty(Platform, 'OS', { configurable: true, value: originalOS });
   }
+});
+
+
+it('자유 색상 후보는 편집 이력을 만들지 않고 완료한 색만 한 번 되돌린다', async () => {
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '경로' }).props.onPress());
+  await act(async () => renderer.root.find(n => n.props.accessibilityRole === 'tab' && typeof n.props.onPress === 'function' && n.findAll(t => t.props.children === '선 스타일').length > 0).props.onPress());
+  const open = async () => act(async () => renderer.root.findByProps({ accessibilityLabel: '더 많은 색' }).props.onPress());
+  await open();
+  let picker = renderer.root.findByType('route-color-picker' as never);
+  await act(async () => { picker.props.onPreview('#0088CC'); picker.props.onPreview('#13AC72'); });
+  expect(preview().routeStyle.color).toBe('#13AC72');
+  expect(renderer.root.findByProps({ accessibilityLabel: '경로 편집 되돌리기' }).props.disabled).toBe(true);
+  await act(async () => picker.props.onFinish(null));
+  expect(preview().routeStyle.color).toBeUndefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: '경로 편집 되돌리기' }).props.disabled).toBe(true);
+  await open();
+  picker = renderer.root.findByType('route-color-picker' as never);
+  await act(async () => { picker.props.onPreview('#13AC72'); picker.props.onFinish('#13AC72'); });
+  expect(preview().routeStyle.color).toBe('#13AC72');
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '경로 편집 되돌리기' }).props.onPress());
+  expect(preview().routeStyle.color).toBeUndefined();
+  expect(renderer.root.findByProps({ accessibilityLabel: '경로 편집 되돌리기' }).props.disabled).toBe(true);
+  expect(preview().handDrawing).toEqual(mockInitial.handDrawing);
 });
