@@ -2,7 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
@@ -13,8 +13,7 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
 import { useCreationFlow } from '@/state/creation-flow';
 import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
-
-import InstagramStoryShare from '../../../modules/instagram-story-share/src/InstagramStoryShareModule';
+import { useInstagramShare } from '@/hooks/use-instagram-share';
 
 // FRD: docs/specs/frd/home-and-library.md §2-2
 // "보기 / 공유 / 다시 편집 / 같은 기록으로 새로 만들기 / 삭제"
@@ -27,6 +26,11 @@ export default function ResultDetailScreen() {
   const { loadDraft, setSelectedRun } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
+  const { sharing, share: handleShareToInstagram } = useInstagramShare({
+    outputPath: result?.outputPath,
+    backgroundImagePath: result?.backgroundImagePath,
+    onUnavailable: () => setShowMissingSheet(true),
+  });
   const { saving, saveStatus, saveToPhotos: handleSaveToPhotos } = useSaveToPhotos(result?.outputPath);
 
   useEffect(() => {
@@ -78,37 +82,6 @@ export default function ResultDetailScreen() {
       stampConfig: result.stampConfig,
     });
     router.push('/edit');
-  };
-
-  const handleShareToInstagram = async () => {
-    if (!result) return;
-    // 배경 이미지와 같은 이유로 outputPath도 재설치 등으로 사라졌을 수 있다
-    // (background-selection.md "다시 편집이 결과물을 못 만들던 문제" 참고). mp4는
-    // 배경 사진과 달리 "다시 고르기"로 복구가 안 되니(재인코딩해야 함), 여기선
-    // 다시 편집/새로 만들기로 안내한다.
-    const info = await FileSystem.getInfoAsync(result.outputPath);
-    if (!info.exists) {
-      Alert.alert(
-        '영상을 더 이상 찾을 수 없어요',
-        '이 결과물의 영상 파일이 사라졌어요. "다시 편집"이나 "같은 기록으로 새로 만들기"로 다시 만들어주세요.'
-      );
-      return;
-    }
-    // export-and-share FRD §3-2: 인스타그램이 없으면 저장으로 안내한다. 여기선
-    // "보관함으로 돌아가기"가 곧 "저장된 채 유지"라 별도 저장 버튼 없이 안내만 한다.
-    const canOpen = await Linking.canOpenURL('instagram-stories://share');
-    if (!canOpen) {
-      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다. 이 화면은
-      // 이미 보관함에 저장된 결과물이라 별도 저장 동작 없이 닫기만 준다.
-      setShowMissingSheet(true);
-      return;
-    }
-    try {
-      await InstagramStoryShare.shareToStory(result.outputPath, result.backgroundImagePath);
-    } catch (error) {
-      console.warn('InstagramStoryShare.shareToStory failed', error);
-      Alert.alert('인스타그램으로 보내지 못했어요', '이 결과물은 보관함에 그대로 남아있어요.');
-    }
   };
 
   const handleMakeAnother = async () => {
@@ -169,7 +142,14 @@ export default function ResultDetailScreen() {
           {/* share.tsx S8b와 같은 구성(2026-09-08): 주 버튼(인스타그램 공유) + 저장
               아이콘 버튼 한 줄. */}
           <View style={styles.primaryRow}>
-            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
+            <ThemedButton
+              title="인스타그램 스토리로 공유"
+              onPress={handleShareToInstagram}
+              disabled={sharing}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: sharing, busy: sharing }}
+              style={styles.shareButton}
+            />
             <Pressable
               onPress={handleSaveToPhotos}
               disabled={saving}
