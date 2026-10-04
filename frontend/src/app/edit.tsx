@@ -49,7 +49,7 @@ import { VerticalSlider } from '@/components/vertical-slider';
 import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
-import { limitFreeCaptionInput } from '@/lib/caption-layout';
+import { useCaptionEditing } from '@/hooks/use-caption-editing';
 import { EditDropGesture } from '@/lib/edit-drop-gesture';
 import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
 import type { EditSnapshot } from '@/lib/edit-history';
@@ -59,7 +59,7 @@ import { useDraftAutosave } from '@/hooks/use-draft-autosave';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
-import { captionItems, newCaptionId } from '@/lib/stamp-caption';
+import { captionItems } from '@/lib/stamp-caption';
 import {
   formatDistanceKm,
   formatDuration,
@@ -223,38 +223,21 @@ export default function EditScreen() {
   };
   // §7 문구: 인스타처럼 화면에서 바로 쓰고 여러 개다(components/caption-editor.tsx). 새 문구는 화면
   // 가운데에 놓인다. 다 지우고 마치면 그 문구는 빠진다.
-  type EditingCaption = { id: string; text: string; scale: number; isNew: boolean; limited: boolean };
-  const [editingCaption, setEditingCaption] = useState<EditingCaption | null>(null);
+  const captionEditing = useCaptionEditing(stampConfig, commitStamp, draft.stampConfig);
+  const editingCaption = captionEditing.editing;
   const updateCaptions = (update: (items: CaptionItem[]) => CaptionItem[]) =>
     commitStamp({ ...stampConfigRef.current, captions: update(captionItems(stampConfigRef.current)) });
   const startNewCaption = () => {
     closeTool();
-    setEditingCaption({ id: newCaptionId(), text: '', scale: 1, isNew: true, limited: false });
+    captionEditing.startNew();
   };
   const startEditCaption = (id: string) => {
-    const item = captionItems(stampConfigRef.current).find((c) => c.id === id);
-    if (!item) return;
     closeTool();
-    setEditingCaption({ id, text: item.text, scale: item.scale, isNew: false, limited: false });
+    captionEditing.startEdit(id);
   };
-  const handleEditingText = (text: string) => setEditingCaption((prev) => {
-    if (!prev) return prev;
-    const constrained = limitFreeCaptionInput(text, prev.text, prev.scale);
-    return { ...prev, text: constrained.text, limited: constrained.limited };
-  });
-  const handleEditingScale = (scale: number) => setEditingCaption((prev) => prev ? { ...prev, scale } : prev);
   const finishEditingCaption = () => {
     Keyboard.dismiss();
-    const editing = editingCaption;
-    setEditingCaption(null);
-    if (!editing) return;
-    const { id, text, scale, isNew } = editing;
-    const empty = !text.trim();
-    if (isNew) {
-      if (!empty) updateCaptions((items) => [...items, { id, text, offset: { x: 0, y: 0 }, scale }]);
-    } else {
-      updateCaptions((items) => empty ? items.filter((c) => c.id !== id) : items.map((c) => c.id === id ? { ...c, text, scale } : c));
-    }
+    captionEditing.finish();
   };
   const handleLayoutSelect = (layout: StampLayout) => {
     rememberStampLayout(layout);
@@ -697,7 +680,7 @@ export default function EditScreen() {
       preset: draft.preset,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
-      stampConfig: draft.stampConfig,
+      stampConfig: captionEditing.stampForSave,
     };
   }, [
     draft.selectedRun,
@@ -707,12 +690,13 @@ export default function EditScreen() {
     draft.preset,
     draft.transform,
     draft.smoothOptions,
-    draft.stampConfig,
+    captionEditing.stampForSave,
   ]);
   const persistDraft = useDraftAutosave(persistedDraft, isFocused);
 
   const commitAll = () => {
     Keyboard.dismiss();
+    captionEditing.finish();
     flushPendingSmooth();
     flushPendingStampConfig();
     commitTransform(transformRef.current);
@@ -1028,7 +1012,7 @@ export default function EditScreen() {
 
       {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
         fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
-        limited={editingCaption.limited} onChangeText={handleEditingText} onScaleChange={handleEditingScale}
+        limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
         onDone={finishEditingCaption} />}
     </View>
   );
