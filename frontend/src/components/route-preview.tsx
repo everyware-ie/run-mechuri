@@ -1,4 +1,5 @@
-import { lightingDistanceMeters, lightingSegments, SEGMENT_DOT_RADIUS, SEGMENT_DOT_BORDER, SEGMENT_DOT_OUTLINE } from '@/lib/segment-lighting';
+import { SegmentGlowMarker } from './segment-glow-marker';
+import { lightingDistanceMeters, lightingSegments, segmentMarkerSize } from '@/lib/segment-lighting';
 import { resolveRouteStyle, resolveStampFont, resolveStampColor, textContrastColor, type RouteStyle, type TextStyleChoice } from '@/lib/editor-style';
 import { buildPaceTimeline, paceAtProgress } from '@/lib/pace-timeline';
 import { captionLines, captionMetrics, freeCaptionLines, freeCaptionMetrics, normalizeCaption } from '@/lib/caption-layout';
@@ -828,10 +829,21 @@ const SegmentBoundary = memo(function SegmentBoundary({ progress, finish, point,
   progress: SharedValue<number>; finish: number; point: CanvasPoint;
   lineStyle: ReturnType<typeof resolveRouteStyle>;
 }) {
+  const size = segmentMarkerSize(lineStyle.widthScale);
   const opacity = useDerivedValue(() => progress.value >= finish ? 1 : 0, [finish]);
+  // 도달 순간만 은은하게 빛나고 부드럽게 가라앉는다. 완료 표식은 사라지지 않는다.
+  const flash = useDerivedValue(() => {
+    if (progress.value < finish) return 0;
+    const remaining = Math.max(0, 1 - (progress.value - finish) * 14);
+    return remaining * remaining;
+  }, [finish]);
+  const radius = useDerivedValue(() => size.radius * (1 + flash.value * 0.12), [size.radius]);
+  const coreRadius = useDerivedValue(() => size.coreRadius * (1 + flash.value * 0.12), [size.coreRadius]);
+  const haloRadius = useDerivedValue(() => size.haloRadius * (1 + flash.value * 0.25), [size.haloRadius]);
+  const haloOpacity = useDerivedValue(() => 0.24 + flash.value * 0.18);
   return <Group opacity={opacity}>
-    <Circle cx={point.x} cy={point.y} r={(SEGMENT_DOT_RADIUS + SEGMENT_DOT_BORDER) * lineStyle.widthScale} color={SEGMENT_DOT_OUTLINE} />
-    <Circle cx={point.x} cy={point.y} r={SEGMENT_DOT_RADIUS * lineStyle.widthScale} color={lineStyle.color} />
+    <SegmentGlowMarker point={point} color={lineStyle.color} radius={radius} coreRadius={coreRadius}
+      haloRadius={haloRadius} haloOpacity={haloOpacity} />
   </Group>;
 });
 
