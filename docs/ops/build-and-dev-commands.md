@@ -306,3 +306,28 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 - IPA SHA-256: `f732b7054ab25e5b5e8db4715f8ff1231e871670c869b9c33eb90efb2de0b63e`.
 - [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c59f0d9e-d8c5-4d71-a338-be7088e6d1fa): `FINISHED`, 2026-10-04 12:49 KST Apple 업로드 완료. 2026-10-04 Apple 조회에서 빌드 `27`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크는 빌드 25다.
 - 내부 테스터용 배포다. 공개 링크 변경은 기존처럼 지민에게 인계하며 이번 작업에서 바꾸지 않는다. 다음 작업은 편집 2단계(선 색·두께, 폰트·글자 색)다.
+
+## 2026-10-04: 편집 2단계·구간 점등 배포 1.0.0(29)
+
+### 소스와 변경
+
+사용자가 배포를 요청해 최신 main `5b40441b42511f12df6928d7ea0eba010174f93f`의 깨끗한 별도 체크아웃으로 production 빌드를 완료했다. 개인 설정 `.claude/launch.json`은 포함하지 않는다.
+
+- [PR #92](https://github.com/everyware-ie/run-mechuri/pull/92): 경로 그림의 색·두께와 러닝 데이터·문구의 폰트·글자 색 선택. 초안·다시 편집·되돌리기·미리보기·영상에 같은 값을 연결한다.
+- [PR #93](https://github.com/everyware-ie/run-mechuri/pull/93): 화면상의 선 길이가 아니라 실제 기록 거리로 구간을 나눈다. 거리 경계와 완주 끝점을 표시한다.
+- [PR #95](https://github.com/everyware-ie/run-mechuri/pull/95): 큰 검정 테두리 대신 경로색의 작은 발광 표식을 사용한다. 구간 도달 순간 짧게 밝아지며 미리보기·썸네일·새 영상에 같은 표현을 적용한다.
+
+### 검증과 남은 범위
+
+최신 코드의 CI(타입·린트·테스트·문서)는 통과했다. 구현 단계에서 테스트 222개/26개 묶음, 린트 오류 0개(기존 경고 32개), iOS Debug 빌드와 iPhone 11 Pro의 미리보기·새 영상 검증을 완료했다. 민트색 새 영상은 1080×1920·30fps·12초·360프레임 전체 디코딩을 확인했다. 상세 범위는 [편집 2단계](../product/features/story-editor-stage2.md), [구간 거리 표시](../product/features/segment-lighting-markers.md), [발광 표식](../product/features/segment-lighting-glow.md)에 있다.
+
+다른 화면 크기·큰 글자 설정·모든 사진/영상 배경 조합·실제 인스타그램 공유·복귀는 이번 검증 범위에 포함하지 않았다. 기존 백그라운드 인코딩 안내 배너의 글자 대비는 [QA 기록](qa-log.md)의 후속 항목이다. 기존 MP4는 바뀌지 않고 새로 생성한 영상부터 수정 사항이 들어간다.
+
+### 빌드와 제출
+
+첫 시도는 Expo 인증서 준비 단계의 일시적인 `Service Unavailable`로 종료됐다. 원격 번호 28만 소모됐고 빌드·Apple 업로드는 생성되지 않았다. 재시도에서 번호 29를 배정받았다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/be1c4b50-7acd-41c1-9af5-a5ed03d357a3): `FINISHED`. 버전 `1.0.0`, 빌드 `29`, 소스 커밋 `5b40441` 확인. IPA의 표시 이름·번들 ID·processing 모드·백그라운드 식별자·JS 번들과 앱·프레임워크 서명 검증 통과.
+- IPA SHA-256: `bc42c969e6b8a5ccbc44827388e91a598d2be8facd9ba1a85c5c5664ddffc0c5`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c2af5c11-d310-4172-b1d5-c43ec435c43b): `FINISHED`, 2026-10-04 17:51 KST Apple 업로드 완료. 2026-10-04 17:54 KST Apple 조회에서 빌드 `29`가 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- 내부 테스터용 배포다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.

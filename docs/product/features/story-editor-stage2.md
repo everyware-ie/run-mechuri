@@ -4,7 +4,7 @@
 - 렌더링: [경로 렌더링 FRD](../../specs/frd/route-rendering.md) §7 러닝 데이터와 문구
 - 제품 근거: [러닝 드로잉 MVP PRD](../../specs/prd/running-drawing-mvp.md) §7 결과물의 형태
 - 확인: 2026-10-04 사용자가 1단계 내부 TestFlight 배포 후 다음 2차 진행을 요청했다. 위 FRD 범위를 안내하고 착수한다.
-- 상태: 구현과 자동 검사·iOS 개발 빌드, 핵심 실기기 QA 완료. TestFlight 배포는 별도 요청 시 진행한다.
+- 상태: 구현·핵심 실기기 검증 완료. 2026-10-04 TestFlight `1.0.0(29)` 내부 배포 완료 ([배포 기록](../../ops/build-and-dev-commands.md#2026-10-04-편집-2단계구간-점등-배포-10029)).
 
 ## 이번 작업
 
