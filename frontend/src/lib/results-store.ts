@@ -40,7 +40,16 @@ export type SavedResult = {
 
 const STORAGE_KEY = 'mechuri.results.v2';
 
-export async function listResults(): Promise<SavedResult[]> {
+// 목록 읽기부터 쓰기 완료까지 순서를 보장해 서로의 변경을 덮어쓰지 않게 한다.
+let storageTail: Promise<void> = Promise.resolve();
+function inStorageOrder<T>(operation: () => Promise<T>): Promise<T> {
+  const result = storageTail.then(operation);
+  storageTail = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+// 대기열 내부에서 부르는 읽기. 공개 listResults를 다시 호출하면 자기 완료를 기다리게 된다.
+async function readResults(): Promise<SavedResult[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return [];
   const results: SavedResult[] = JSON.parse(raw);
@@ -61,16 +70,26 @@ export async function listResults(): Promise<SavedResult[]> {
   });
 }
 
+export async function listResults(): Promise<SavedResult[]> {
+  return inStorageOrder(readResults);
+}
+
 export async function addResult(result: SavedResult): Promise<void> {
-  const existing = await listResults();
-  const updated = [result, ...existing];
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  // 대기 중 호출자가 객체를 변경해도 요청한 시점의 편집값을 보관한다.
+  const serialized = JSON.stringify(result);
+  await inStorageOrder(async () => {
+    const existing = await readResults();
+    const updated = [JSON.parse(serialized) as SavedResult, ...existing];
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  });
 }
 
 export async function deleteResult(id: string): Promise<void> {
-  const existing = await listResults();
-  const updated = existing.filter((r) => r.id !== id);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await inStorageOrder(async () => {
+    const existing = await readResults();
+    const updated = existing.filter((r) => r.id !== id);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  });
 }
 
 export async function getResult(id: string): Promise<SavedResult | null> {
