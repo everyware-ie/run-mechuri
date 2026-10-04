@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useIsFocused } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
@@ -50,12 +50,12 @@ import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
 import { limitFreeCaptionInput } from '@/lib/caption-layout';
-import { saveDraft } from '@/lib/draft-store';
 import { EditDropGesture } from '@/lib/edit-drop-gesture';
 import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
 import type { EditSnapshot } from '@/lib/edit-history';
 import { useEditHistory } from '@/hooks/use-edit-history';
 import { useBackgroundApply } from '@/hooks/use-background-apply';
+import { useDraftAutosave } from '@/hooks/use-draft-autosave';
 import { fitPortraitPreview } from '@/lib/preview-layout';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
@@ -134,6 +134,7 @@ export default function EditScreen() {
   } = useCreationFlow();
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
+  const isFocused = useIsFocused();
 
   const [tool, setTool] = useState<Tool | null>(null);
   const toolRef = useRef<Tool | null>(null);
@@ -686,9 +687,9 @@ export default function EditScreen() {
 
   // 홈과 보관함 FRD §3-1: "이어서 만들기"에 올라오는 건 마지막으로 편집한 것. 값이 바뀔 때마다
   // 초안을 저장한다. 완성되면 share.tsx에서 지운다. 그래서 나가기는 확인 없이 홈으로 간다(§1).
-  useEffect(() => {
-    if (!draft.selectedRun || !draft.track || !draft.backgroundImagePath) return;
-    saveDraft({
+  const persistedDraft = useMemo(() => {
+    if (!draft.selectedRun || !draft.track || !draft.backgroundImagePath) return null;
+    return {
       run: draft.selectedRun,
       track: draft.track,
       backgroundImagePath: draft.backgroundImagePath,
@@ -697,7 +698,7 @@ export default function EditScreen() {
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
       stampConfig: draft.stampConfig,
-    });
+    };
   }, [
     draft.selectedRun,
     draft.track,
@@ -708,6 +709,7 @@ export default function EditScreen() {
     draft.smoothOptions,
     draft.stampConfig,
   ]);
+  const persistDraft = useDraftAutosave(persistedDraft, isFocused);
 
   const commitAll = () => {
     Keyboard.dismiss();
@@ -716,6 +718,12 @@ export default function EditScreen() {
     commitTransform(transformRef.current);
     commitSmoothOptions(smoothOptionsRef.current);
     commitStampConfig(stampConfigRef.current);
+    if (persistedDraft) persistDraft({
+      ...persistedDraft,
+      transform: transformRef.current,
+      smoothOptions: smoothOptionsRef.current,
+      stampConfig: stampConfigRef.current,
+    });
   };
   const handleDone = () => {
     if (isBackgroundPending()) return;
