@@ -20,8 +20,8 @@ const base: StampConfig = {
 let api: ReturnType<typeof useCaptionEditing>;
 let renderer: ReactTestRenderer;
 const commit = jest.fn();
-function Harness({ config = base, committedConfig = config, focused = true }: { config?: StampConfig; committedConfig?: StampConfig; focused?: boolean }) {
-  const editing = useCaptionEditing(config, commit, committedConfig);
+function Harness({ config = base, committedConfig = config, focused = true, onCommit = commit }: { config?: StampConfig; committedConfig?: StampConfig; focused?: boolean; onCommit?: (config: StampConfig) => void }) {
+  const editing = useCaptionEditing(config, onCommit, committedConfig);
   useEffect(() => { api = editing; });
   useDraftAutosave({ stampConfig: editing.stampForSave } as Omit<Draft, 'lastEditedAt'>, focused);
   return null;
@@ -33,6 +33,35 @@ beforeEach(async () => {
   await act(async () => { renderer = create(createElement(Harness)); });
 });
 afterEach(async () => { await act(async () => renderer.unmount()); });
+
+it('처음 만든 터치 핸들러도 나중에 추가한 문구를 다시 연다', async () => {
+  const tap = api.startEdit;
+  const added = { id: 'added', text: '새 문구', scale: 1.3, offset: { x: 30, y: 60 } };
+  await act(async () => renderer.update(createElement(Harness, { config: { ...base, captions: [...base.captions!, added] } })));
+  await act(async () => tap('added'));
+  expect(api.editing).toMatchObject({ id: 'added', text: '새 문구', scale: 1.3, isNew: false });
+});
+
+it('처음 만든 터치 핸들러로 다시 열어도 수정·핀치 후 최신 내용과 크기를 쓴다', async () => {
+  const tap = api.startEdit;
+  const changed = { ...base.captions![0], text: '수정한 문구', scale: 1.8 };
+  await act(async () => renderer.update(createElement(Harness, { config: { ...base, captions: [changed, base.captions![1]] } })));
+  await act(async () => tap('first'));
+  expect(api.editing).toMatchObject({ text: '수정한 문구', scale: 1.8 });
+});
+
+it('오래된 완료 핸들러도 최신 위치·추가 문구·장소를 보존하고 현재 확정 함수를 호출한다', async () => {
+  const finish = api.finish;
+  await act(async () => api.startEdit('first'));
+  await act(async () => api.changeText('새 내용'));
+  const added = { id: 'added', text: '다른 문구', scale: 0.8, offset: { x: 0, y: 100 } };
+  const current = { ...base, placeName: '새 장소', captions: [{ ...base.captions![0], offset: { x: 200, y: 300 } }, base.captions![1], added] };
+  const nextCommit = jest.fn();
+  await act(async () => renderer.update(createElement(Harness, { config: current, onCommit: nextCommit })));
+  await act(async () => finish());
+  expect(commit).not.toHaveBeenCalled();
+  expect(nextCommit).toHaveBeenCalledWith({ ...current, captions: [{ ...current.captions[0], text: '새 내용' }, base.captions![1], added] });
+});
 
 it('완료 전 새 문구와 크기를 초안에 저장하되 확정값과 기록은 바꾸지 않는다', async () => {
   await act(async () => api.startNew());

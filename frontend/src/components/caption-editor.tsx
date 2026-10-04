@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { VerticalSlider } from '@/components/vertical-slider';
@@ -27,6 +27,7 @@ type Props = {
   limited: boolean;
   onChangeText: (text: string) => void;
   onScaleChange: (scale: number) => void;
+  onInteractionChange: (interacting: boolean) => void;
   onDone: () => void;
 };
 
@@ -35,10 +36,12 @@ const SIZE_MAX = 300;
 /** 입력 칸의 글자는 이 배율로 그리고 화면에서는 줄인다. */
 const BASE_SCALE = SIZE_MAX / 100;
 
-export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset, limited, onChangeText, onScaleChange, onDone }: Props) {
+export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset, limited, onChangeText, onScaleChange, onInteractionChange, onDone }: Props) {
   const [area, setArea] = useState({ width: 0, height: 0 });
   // 입력 칸이 잰 높이는 그 너비에서만 믿는다.
   const [content, setContent] = useState({ height: 0, width: 0 });
+  // FRD §2-1: 입력을 닫거나 조작이 중단돼도 미리보기를 멈춘 채로 남기지 않는다.
+  useEffect(() => () => onInteractionChange(false), [onInteractionChange]);
 
   const shrink = scale / BASE_SCALE;
   const fontSize = FREE_CAPTION_SIZE * BASE_SCALE * fitScale;
@@ -86,7 +89,11 @@ export function CaptionEditor({ text, scale, fitScale, keyboardHeight, topInset,
       </View>
       <View style={[styles.slider, { top: topInset + 96, bottom: keyboardHeight + 48 }]}>
         <VerticalSlider value={Math.round(scale * 100)} minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
-          accessibilityLabel="문구 크기" onChange={(v) => onScaleChange(v / 100)} onSlidingComplete={(v) => onScaleChange(v / 100)} />
+          accessibilityLabel="문구 크기" onSlidingStart={() => onInteractionChange(true)}
+          onChange={(v) => onScaleChange(v / 100)} onSlidingComplete={(v) => {
+            onScaleChange(v / 100);
+            onInteractionChange(false);
+          }} />
       </View>
     </View>
   );
