@@ -355,3 +355,36 @@ EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. 
 - [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/0cf511c5-39d6-4ebe-8ad9-9a09d9e17e6d): 빌드 번호 `30`, 버전 `1.0.0`, 커밋 `52513c8`를 확인했고 `FINISHED`다.
 - [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c55aca58-72bf-45e2-9449-64afc576217e): Apple 업로드 완료. 2026-10-04 22:24 KST 업로드된 빌드 `30`이 Apple 조회에서 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
 - 내부 테스터용 배포다. 이번 작업에서 외부 공개 설정은 바꾸지 않았다. 같은 조회에서 빌드 `29`의 외부 상태는 `IN_BETA_TESTING`이었다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.
+
+## 2026-10-05: 색상 선택과 자체 러닝 측정 내부 배포
+
+### 소스와 변경
+
+사용자가 PR 머지 후 TestFlight 제출까지 요청했다. 배포 소스는 `544dfa86b83004449fd2c068bf7a3aa1f680506b`(main)다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 `internal-tracking` 프로필로 클라우드 빌드를 요청했다. 개인 설정 `.claude/launch.json`은 포함하지 않는다.
+
+- [PR #104](https://github.com/everyware-ie/run-mechuri/pull/104): 경로 자유 색상 선택, HEX 입력과 저장 연결, 색상 선택·되돌리기·내 스타일 적용과 영상 보관 안정성 개선.
+- [PR #105](https://github.com/everyware-ie/run-mechuri/pull/105): 자체 러닝 측정, Apple 지도, 선택적 워치 운동 세션·심박·제어, 내부 기록 저장·복구와 권한 화면. 상태 조회·GPS 준비·저장 실패·워치 연결의 안정성 보완을 함께 포함한다.
+
+`internal-tracking`은 `RUNARY_INTERNAL_TRACKING=1`을 적용해 자체 측정 진입·위치 백그라운드 모드·워치 앱을 포함한다. 일반 `production`에는 자체 측정 진입이 없다. 이 빌드는 팀 내부 테스트용이며 공개 링크·외부 베타 그룹 배포 대상이 아니다.
+
+### 서명 준비
+
+첫 시도는 EAS의 워치 HealthKit 자동 등록에서 Apple API 요청 형식 오류로 종료됐다. [Apple 공식 capability 생성 API](https://developer.apple.com/documentation/appstoreconnectapi/bundleidcapabilitycreaterequest/data-data.dictionary/attributes-data.dictionary)를 사용해 새 `com.mechuri.runmechuri.watch` 식별자의 HealthKit을 등록했다. 이어서 유효한 기존 아이폰 배포 인증서를 재사용하고, 별도 워치 App Store 배포 프로파일을 생성해 EAS에 연결했다. 새 배포 인증서를 만들거나 기존 인증서를 폐기하지 않았다.
+
+준비 중 번호 `31`~`33`을 소모했지만 클라우드 빌드·Apple 업로드는 생성되지 않았다. `34`부터 실제 클라우드 빌드를 실행했다. 워치 **배포** 프로파일 준비와 이전에 막혔던 **개발** 프로파일·워치 실기기 QA 완료는 서로 다르다.
+
+### 검증과 남은 범위
+
+배포 소스의 두 PR CI에서 타입·린트·테스트·문서 검사가 통과했다. 구현 단계의 앱 테스트 39개 묶음·299개, Swift 합성 검사 44개, 공개/내부 설정 검사와 아이폰·워치 전체 무서명 Debug 컴파일을 통과했다. 린트는 오류 0개·기존 경고 30개다. 실기기에서 지도 탐색·위치 복귀·일시정지·종료 저장·기록 재진입을 확인했다.
+
+실제 워치 설치·심박 전달과 야외 GPS 정확도·이동 중 잠금/백그라운드 수신·배터리 소모는 아직 확인하지 않았다. 내부 측정 기록을 기존 결과물 편집으로 연결하는 기능도 이번 범위 밖이다. 세부 확인 범위는 [자체 측정 구현 노트](../product/features/internal-run-tracking.md)와 [내부 측정 QA](internal-run-tracking-qa.md)에 있다.
+
+### 빌드와 제출
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/43203e2d-5365-4553-a4f4-b1a4c3d9fb58): `FINISHED`. 버전 `1.0.0`, 빌드 `34`, 소스 `544dfa8`, 프로필·채널 `internal-tracking`을 확인했다.
+- IPA에서 아이폰 `com.mechuri.runmechuri`와 동봉 워치 `com.mechuri.runmechuri.watch`의 버전·빌드 번호 `1.0.0(34)` 일치, 내부 측정 플래그·위치/processing 모드·워치 workout-processing 모드·JS 번들을 확인했다. 워치 프로파일의 팀 `BT2KSYYPDF`와 HealthKit 권한, 배포용 `get-task-allow=false`도 확인했다. 아이폰·워치 `codesign --verify --deep --strict` 검사가 통과했다.
+- IPA SHA-256: `25e871c0a4004deb559a7678922afb96d3cc67efb581a7cbf75e6ad8fdd84932`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/7130d14e-040d-4338-9140-61850cb77183)은 대기열에서 시작되지 않아 `CANCELED`를 확인한 뒤 직접 업로드로 전환했다. EAS 제출 완료로 기록하지 않는다.
+- [Apple 공식 업로드 도구](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)인 Xcode `altool`의 사전 검증이 `VERIFY SUCCEEDED`로 통과했다. 같은 IPA·배포 API 인증으로 업로드를 진행하며 임시 인증 파일은 사용 후 제거한다. 2026-10-05 22:49 KST `UPLOAD SUCCEEDED`를 확인했다. Delivery UUID는 `22de49b0-d120-4de0-b1a3-2924cb1a5779`다. 임시 인증 파일도 제거됐다. 2026-10-05 22:55 KST Apple 조회에서 빌드 `34`의 `VALID` / `IN_BETA_TESTING`, 미만료 상태를 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.
+- 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다. 이번 작업에서 공개 링크·외부 그룹 배정은 변경하지 않았다. 자체 측정 빌드는 팀 내부 테스트로 제한한다.
+- EAS의 상태 조회가 빌드 번호로 연결한 제출 ID는 취소된 요청에도 표시될 수 있다. 이번 실제 업로드 증거는 위 Apple Delivery UUID와 Apple 빌드 처리 상태이며 EAS 제출의 `FINISHED`를 뜻하지 않는다.
