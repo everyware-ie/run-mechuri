@@ -1,3 +1,4 @@
+import { trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
 import { SymbolView } from 'expo-symbols';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -72,7 +73,7 @@ export default function BackgroundSelectionScreen() {
   function permissionNotice(camera: boolean) {
     Alert.alert(camera ? '카메라 접근이 필요해요' : '사진 저장 권한이 필요해요',
       camera ? '설정에서 카메라를 허용하거나, 갤러리 또는 기본 이미지로 계속할 수 있어요.' : '설정에서 사진 추가를 허용하면 저장할 수 있어요. 저장하지 않고 배경으로 사용해도 괜찮아요.',
-      [{ text: '닫기', style: 'cancel' }, { text: '설정 열기', onPress: () => { void Linking.openSettings(); } }]);
+      [{ text: '닫기', style: 'cancel' }, { text: trackingEnabled ? '앱 권한 확인' : '설정 열기', onPress: () => { if (trackingEnabled) router.push('/app-permissions'); else void Linking.openSettings(); } }]);
   }
 
   function pickPhoto(origin: 'gallery' | 'camera') {

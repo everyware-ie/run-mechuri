@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { ScreenHeader } from '@/components/screen-header';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { formatDistanceKm, formatDuration, formatHeartRate, formatPace } from '@/lib/stamp-format';
@@ -125,7 +126,8 @@ export default function RecordSelectionScreen() {
         {header}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>건강 데이터 접근이 필요해요</Text>
-          <Text style={styles.emptyBody}>설정에서 권한을 허용한 뒤 다시 열어주세요.</Text>
+          <Text style={styles.emptyBody}>설정에서 권한을 확인한 뒤 다시 열어주세요.</Text>
+          <AppPermissionsLink />
         </View>
       </SafeAreaView>
     );

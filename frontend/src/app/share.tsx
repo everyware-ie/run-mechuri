@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
@@ -360,6 +361,7 @@ export default function ShareScreen() {
             </Pressable>
           </View>
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
+          {saveStatus?.includes('권한') && <AppPermissionsLink />}
           <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
           <Text style={styles.notice}>공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.</Text>
         </View>

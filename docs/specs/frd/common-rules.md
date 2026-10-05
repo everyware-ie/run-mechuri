@@ -3,7 +3,7 @@ title: 공통 규칙 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-09-16
+updated: 2026-10-05
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§6 사용자 플로우, §9 기록 열람 정책, §12 리스크와 폴백"
 related:
@@ -91,7 +91,9 @@ iOS 14부터 `PHPickerViewController`가 사진 선택 화면을 앱 바깥에�
 
 #### iOS 설정 앱으로 보낸다. 우리 설정 화면이 아니다
 
-**우리 앱에는 설정 화면이 없다.** 이번 MVP 범위에서 뺐다([PRD §5 제외](../prd/running-drawing-mvp.md)). 여기서 말하는 "설정"은 **iOS 설정 앱**이고, 화면을 만드는 것이 아니라 딥링크로 보내는 것이다.
+**공개 MVP에는 설정 화면이 없다.** 이번 MVP 범위에서 뺐다([PRD §5 제외](../prd/running-drawing-mvp.md)). 여기서 말하는 "설정"은 **iOS 설정 앱**이고, 화면을 만드는 것이 아니라 딥링크로 보내는 것이다.
+
+2026-10-05 사용자는 내부 측정과 함께 서비스의 권한을 모아 확인하는 별도 화면을 요청했다. [내부 측정 FRD](internal-run-tracking.md) §2-1 앱 권한 화면은 2026-10-05 사용자 착수 확인으로 승인된 내부 추가 범위다. 공개 MVP의 위 규칙은 유지한다. 이 문서의 `approved` 상태를 새 화면의 착수 승인으로 사용하지 않는다.
 
 **우리 앱에서 권한을 다시 물을 수도 없다.** HealthKit은 한 번 물어본 항목에 대해 권한 시트를 다시 띄우지 않는다. 코드를 다시 호출해도 시트 없이 즉시 완료로 돌아온다. **화면에는 아무 변화가 없어서 버튼이 고장 난 것처럼 보인다.** 그래서 iOS 설정 앱으로 보내는 길이 유일하다.
 

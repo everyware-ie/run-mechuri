@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
@@ -169,6 +170,7 @@ export default function ResultDetailScreen() {
             </Pressable>
           </View>
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
+          {saveStatus?.includes('권한') && <AppPermissionsLink />}
           <ThemedButton title="다시 편집" variant="outline" onPress={handleReEdit} />
           <ThemedButton title="같은 기록으로 새로 만들기" variant="outline" onPress={handleMakeAnother} />
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
