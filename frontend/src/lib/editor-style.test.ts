@@ -34,3 +34,18 @@ it('선택한 폰트는 기존 라벨·값 굵기를 유지하고 색을 독립�
   expect(resolveStampColor('black')).toBe('#111111');
   expect(resolveStampColor('white')).toBe('#FFFFFF');
 });
+
+
+it('자유 색은 불투명 6자리 HEX로 정규화하고 기존 팔레트와 호환된다', () => {
+  expect(resolveRouteStyle({ color: '#13ac72', widthScale: 1.4 })).toEqual({ color: '#13AC72', widthScale: 1.4 });
+  expect(normalizeRouteStyle({ color: '#8ef0ce' })).toEqual(normalizeRouteStyle({ color: 'mint' }));
+  expect(normalizeRouteStyle({ color: '#fff3ec' })).toEqual(normalizeRouteStyle());
+  for (const color of ['#123', '#12345678', 'red', '#GG0011', '#123456x']) {
+    expect(resolveRouteStyle({ color: color as never }).color).toBe('#FFF3EC');
+  }
+  for (const color of ['#000000', '#FFFFFF', '#808080', '#13AC72']) {
+    const light = runnerLightColors(color);
+    expect(light.glow).toMatch(/^#[0-9A-F]{6}$/);
+    expect(light.core).toMatch(/^#[0-9A-F]{6}$/);
+  }
+});

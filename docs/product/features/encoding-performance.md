@@ -82,3 +82,15 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc -O \
 - JS 연결은 완료 뒤 끊어졌지만 파일·보관함 저장이 이미 끝난 것이 확인됐다. 디버거 연결 유무만으로 실패를 판단하지 않는다.
 
 검증 범위: iOS 26 실기기 앱 전환·화면 잠금·완료·보관함 저장, 최신 요청 대체, 동일 영상 픽셀 비교, TypeScript/변경 파일 lint/Swift Debug 빌드/문서 검사. 이전 OS의 유한한 background task 만료, 저전력·열 제한·저장 공간 부족은 실기기 조건별 추가 QA가 필요하다. iOS의 실행 허가와 강제 종료 뒤 작업 지속은 보장하지 않는다.
+
+## 시스템 진행 안내 글자 대비 조사 (2026-10-04)
+
+[#91](https://github.com/everyware-ie/run-mechuri/issues/91)은 iPhone 11 Pro / iOS 26.6.2 미러링에서 시스템 작업 안내의 글자가 어두운 배경 위에 검게 보인다는 제보다. 러닝 데이터의 검정 글자 설정과 구분한다.
+
+[Apple BGContinuedProcessingTask](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask)와 [요청 API](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest), 현재 Xcode의 `BGTask.h`·`BGTaskRequest.h`를 확인했다. 공개 API에서 앱이 바꾸는 것은 제목·부제·진행률·작업 상태이며 배너의 글자색·배경색을 지정하는 항목은 없다. 배너는 시스템이 그린다.
+
+앱은 어두운 화면을 자체 색으로 그리지만 `app.json`과 생성된 `Info.plist`의 외관은 `automatic`이다. 이 설정과 시스템 배너의 외관 불일치가 원인인지는 아직 확인하지 못했다. 앱 전체 외관을 강제로 바꾸면 사진 선택·권한 안내 등 다른 시스템 화면도 바뀔 수 있으므로, 원인 검증 없이 이를 수정하지 않는다. 안내를 없애려고 작업을 완료 처리하는 방법도 백그라운드 생성 유지와 충돌한다.
+
+2026-10-05 자유 색상 QA 영상 생성 중에도 같은 기기의 미러링 화면에서 검정 제목·부제가 어두운 시스템 배너 위에 표시되는 것을 확인했다. 영상 생성·보관함 저장은 정상 완료됐다.
+
+[확인 필요] 동일 영상에서 일반 실행/미러링과 시스템 밝은/어두운 외관을 비교한다. 재현되면 OS 버전과 설정·화면 증거를 모아 Apple에 보고할 근거를 마련한다. 이번 조사는 공개 API 범위 확인이며 글자 대비가 해결됐다는 의미는 아니다.

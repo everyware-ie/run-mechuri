@@ -8,7 +8,7 @@ export const ROUTE_COLORS = [
   { id: 'pink', label: '분홍', hex: '#FFADD5' },
   { id: 'violet', label: '보라', hex: '#C5AEFF' },
 ] as const;
-export type RouteColor = typeof ROUTE_COLORS[number]['id'];
+export type RouteColor = typeof ROUTE_COLORS[number]['id'] | `#${string}`;
 export type RouteStyle = { color?: RouteColor; widthScale?: number };
 export const LINE_WIDTH_MIN = 50;
 export const LINE_WIDTH_MAX = 200;
@@ -21,8 +21,15 @@ export type StampFont = typeof STAMP_FONTS[number]['id'];
 export type StampTextColor = 'white' | 'black';
 export type TextStyleChoice = { font?: StampFont; textColor?: StampTextColor };
 
+export function normalizeRouteColor(value: unknown): RouteColor | undefined {
+  if (typeof value !== 'string') return undefined;
+  const preset = ROUTE_COLORS.find(c => c.id === value || c.hex === value.toUpperCase());
+  if (preset) return preset.id === 'warm' ? undefined : preset.id;
+  return /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() as RouteColor : undefined;
+}
+
 export function normalizeRouteStyle(style?: RouteStyle): RouteStyle {
-  const color = ROUTE_COLORS.some(c => c.id === style?.color) ? style?.color : undefined;
+  const color = normalizeRouteColor(style?.color);
   const widthScale = typeof style?.widthScale === 'number' && Number.isFinite(style.widthScale)
     ? Math.min(LINE_WIDTH_MAX / 100, Math.max(LINE_WIDTH_MIN / 100, style.widthScale)) : 1;
   return { color: color === 'warm' ? undefined : color, widthScale: widthScale === 1 ? undefined : widthScale };
@@ -30,7 +37,7 @@ export function normalizeRouteStyle(style?: RouteStyle): RouteStyle {
 
 export function resolveRouteStyle(style?: RouteStyle) {
   const normalized = normalizeRouteStyle(style);
-  const color = ROUTE_COLORS.find(c => c.id === normalized.color)?.hex ?? ROUTE_COLORS[0].hex;
+  const color = normalized.color?.startsWith('#') ? normalized.color : ROUTE_COLORS.find(c => c.id === normalized.color)?.hex ?? ROUTE_COLORS[0].hex;
   return { color, widthScale: normalized.widthScale ?? 1 };
 }
 

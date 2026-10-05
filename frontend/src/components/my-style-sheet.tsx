@@ -59,7 +59,7 @@ export function MyStyleSheet({ snapshot, onApply }: { snapshot: EditSnapshot; on
                 <Text style={{ color: line.color, fontSize: 24 }}>⌁</Text>
               </View>
               <View style={ui.info}><Text style={ui.name} numberOfLines={1}>{style.name}</Text>
-                <Text style={ui.detail}>{bg?.label ?? '현재 배경 유지'} · {ROUTE_COLORS.find(c => c.id === (style.routeStyle.color ?? 'warm'))?.label} · {Math.round(line.widthScale * 100)}%</Text>
+                <Text style={ui.detail}>{bg?.label ?? '현재 배경 유지'} · {ROUTE_COLORS.find(c => c.id === (style.routeStyle.color ?? 'warm'))?.label ?? '직접 고른 색'} · {Math.round(line.widthScale * 100)}%</Text>
                 <Text style={ui.detail}>다듬기 {style.smoothOptions.smooth}/{style.smoothOptions.corner}</Text>
               </View>
             </Pressable>

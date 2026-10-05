@@ -6,6 +6,10 @@ jest.mock('./slider', () => {
   const { createElement: element } = jest.requireActual<typeof import('react')>('react');
   return { Slider: (props: object) => element('line-width-slider', props) };
 });
+jest.mock('./route-color-picker', () => {
+  const { createElement: element } = jest.requireActual<typeof import('react')>('react');
+  return { RouteColorPicker: (props: object) => element('route-color-picker', props) };
+});
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer;
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); });
@@ -43,4 +47,25 @@ it('폰트·글자 색을 따로 바꿔도 다른 선택을 지우지 않는다'
   expect(onChange).toHaveBeenLastCalledWith({ font: 'noto', textColor: 'black' });
   await act(async () => renderer.root.findByProps({ accessibilityLabel: '글자 색 흰색' }).props.onPress());
   expect(onChange).toHaveBeenLastCalledWith({ font: 'pretendard', textColor: 'white' });
+});
+
+
+it.each([null, '#13AC72'])('상세 선택은 후보를 저장하지 않고 완료만 한 번 확정한다: %s', async result => {
+  const onChange = jest.fn(), onSlidingComplete = jest.fn(), onColorPreview = jest.fn(), onColorSelectionEnd = jest.fn();
+  await act(async () => { renderer = create(createElement(RouteStyleControls, {
+    value: { color: 'mint', widthScale: 1.4 }, onChange, onSlidingStart: jest.fn(), onSlidingComplete, onColorPreview, onColorSelectionEnd,
+  })); });
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '더 많은 색' }).props.onPress());
+  const picker = renderer.root.findByType('route-color-picker' as never);
+  expect(picker.props.color).toBe('#8EF0CE');
+  await act(async () => { picker.props.onPreview('#0088CC'); picker.props.onPreview('#13AC72'); });
+  expect(onChange).not.toHaveBeenCalled();
+  expect(onSlidingComplete).not.toHaveBeenCalled();
+  expect(onColorPreview).toHaveBeenLastCalledWith('#13AC72');
+  await act(async () => picker.props.onFinish(result));
+  expect(onColorPreview).toHaveBeenLastCalledWith(null);
+  expect(onColorSelectionEnd).toHaveBeenCalledTimes(1);
+  if (result) expect(onSlidingComplete).toHaveBeenCalledWith({ color: result, widthScale: 1.4 });
+  else expect(onSlidingComplete).not.toHaveBeenCalled();
+  expect(renderer.root.findAllByType('route-color-picker' as never)).toHaveLength(0);
 });

@@ -53,3 +53,12 @@ it('깨진 저장값은 오류로 알려 기존 데이터를 덮어쓰지 않는
   await expect(saveMyStyle(captureMyStyle(snapshot, '새 값'))).rejects.toThrow();
   expect(stored).toBe('{'); expect(AsyncStorage.setItem).not.toHaveBeenCalled();
 });
+
+
+it('자유 색상을 내 스타일 저장·읽기·적용에서도 유지한다', async () => {
+  const custom = { ...snapshot, routeStyle: { color: '#13ac72' as const, widthScale: 1.4 } };
+  await saveMyStyle(captureMyStyle(custom, '초록'));
+  const style = (await listMyStyles())[0];
+  expect(style.routeStyle).toEqual({ color: '#13AC72', widthScale: 1.4 });
+  expect(applyMyStyle(snapshot, style).routeStyle).toEqual(style.routeStyle);
+});
