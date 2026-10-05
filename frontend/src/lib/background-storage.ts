@@ -61,11 +61,27 @@ export function persistDefaultBackground(background: DefaultBackground): Promise
   return preparation;
 }
 
-export async function persistBackground(sourceUri: string, name: string): Promise<string> {
-  await FileSystem.makeDirectoryAsync(BACKGROUNDS_DIR, { intermediates: true });
+const preparingCopies = new Map<string, Promise<string>>();
+export function persistBackground(sourceUri: string, name: string): Promise<string> {
   const destination = BACKGROUNDS_DIR + name;
-  if (!(await FileSystem.getInfoAsync(destination)).exists) {
-    await FileSystem.copyAsync({ from: sourceUri, to: destination });
-  }
-  return destination;
+  const existing = preparingCopies.get(destination);
+  if (existing) return existing;
+  const preparation = (async () => {
+    await FileSystem.makeDirectoryAsync(BACKGROUNDS_DIR, { intermediates: true });
+    const file = await FileSystem.getInfoAsync(destination);
+    if (file.exists && !file.isDirectory && file.size > 0) return destination;
+    if (file.exists && file.isDirectory) throw new Error('배경 파일을 준비할 수 없어요.');
+    // A failed copy may leave bytes behind. Never publish that partial file at
+    // the path reused by the draft, thumbnails and native encoder.
+    const temporary = `${destination}.pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    try {
+      await FileSystem.copyAsync({ from: sourceUri, to: temporary });
+      const copied = await FileSystem.getInfoAsync(temporary);
+      if (!copied.exists || copied.isDirectory || copied.size <= 0) throw new Error('배경 파일 복사가 완료되지 않았어요.');
+      await FileSystem.moveAsync({ from: temporary, to: destination });
+      return destination;
+    } finally { await FileSystem.deleteAsync(temporary, { idempotent: true }).catch(() => {}); }
+  })().finally(() => { preparingCopies.delete(destination); });
+  preparingCopies.set(destination, preparation);
+  return preparation;
 }

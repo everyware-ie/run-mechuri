@@ -5,6 +5,7 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { InternalRunEntry } from '@/components/internal-run-entry';
 import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
@@ -128,7 +129,7 @@ export default function HomeScreen() {
         columnWrapperStyle={rest.length > 0 ? styles.row : undefined}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={PrivacyPolicyLink}
+        ListFooterComponent={<View><InternalRunEntry /><PrivacyPolicyLink /></View>}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
             <View style={styles.titleRow}>
