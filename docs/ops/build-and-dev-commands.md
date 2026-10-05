@@ -384,4 +384,7 @@ EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. 
 - [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/43203e2d-5365-4553-a4f4-b1a4c3d9fb58): `FINISHED`. 버전 `1.0.0`, 빌드 `34`, 소스 `544dfa8`, 프로필·채널 `internal-tracking`을 확인했다.
 - IPA에서 아이폰 `com.mechuri.runmechuri`와 동봉 워치 `com.mechuri.runmechuri.watch`의 버전·빌드 번호 `1.0.0(34)` 일치, 내부 측정 플래그·위치/processing 모드·워치 workout-processing 모드·JS 번들을 확인했다. 워치 프로파일의 팀 `BT2KSYYPDF`와 HealthKit 권한, 배포용 `get-task-allow=false`도 확인했다. 아이폰·워치 `codesign --verify --deep --strict` 검사가 통과했다.
 - IPA SHA-256: `25e871c0a4004deb559a7678922afb96d3cc67efb581a7cbf75e6ad8fdd84932`.
-- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/7130d14e-040d-4338-9140-61850cb77183): 업로드 대기 중. 제출·Apple 처리 결과는 완료 후 기록한다.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/7130d14e-040d-4338-9140-61850cb77183)은 대기열에서 시작되지 않아 `CANCELED`를 확인한 뒤 직접 업로드로 전환했다. EAS 제출 완료로 기록하지 않는다.
+- [Apple 공식 업로드 도구](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)인 Xcode `altool`의 사전 검증이 `VERIFY SUCCEEDED`로 통과했다. 같은 IPA·배포 API 인증으로 업로드를 진행하며 임시 인증 파일은 사용 후 제거한다. 2026-10-05 22:49 KST `UPLOAD SUCCEEDED`를 확인했다. Delivery UUID는 `22de49b0-d120-4de0-b1a3-2924cb1a5779`다. 임시 인증 파일도 제거됐다. 2026-10-05 22:55 KST Apple 조회에서 빌드 `34`의 `VALID` / `IN_BETA_TESTING`, 미만료 상태를 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.
+- 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다. 이번 작업에서 공개 링크·외부 그룹 배정은 변경하지 않았다. 자체 측정 빌드는 팀 내부 테스트로 제한한다.
+- EAS의 상태 조회가 빌드 번호로 연결한 제출 ID는 취소된 요청에도 표시될 수 있다. 이번 실제 업로드 증거는 위 Apple Delivery UUID와 Apple 빌드 처리 상태이며 EAS 제출의 `FINISHED`를 뜻하지 않는다.
