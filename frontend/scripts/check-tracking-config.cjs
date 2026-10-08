@@ -11,7 +11,7 @@ try {
   assert.ok(internal.ios.infoPlist.UIBackgroundModes.includes('location'));
   assert.equal(internal.extra.eas.build.experimental.ios.appExtensions[0].targetName, 'RunaryWatch');
   assert.deepEqual(internal.extra.eas.build.experimental.ios.appExtensions[0].entitlements, { 'com.apple.developer.healthkit': true });
-  assert.equal(internal.ios.infoPlist.NSHealthUpdateUsageDescription, undefined);
+  assert.ok(internal.ios.infoPlist.NSHealthUpdateUsageDescription.includes('새 기록을 쓰거나 기존 기록을 수정하지 않습니다'));
   delete process.env.RUNARY_INTERNAL_TRACKING;
   const publicConfig = configure();
   assert.equal(publicConfig.ios.infoPlist.RunaryInternalTracking, false);

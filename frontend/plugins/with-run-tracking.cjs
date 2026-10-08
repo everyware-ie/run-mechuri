@@ -21,6 +21,7 @@ function withRunTracking(config) {
       WKCompanionAppBundleIdentifier: config.ios.bundleIdentifier,
       WKRunsIndependentlyOfCompanionApp: false,
       NSHealthShareUsageDescription: '워치 건강 저장소의 심박을 읽어 같은 아이폰 러닝 기록에 전달합니다.',
+      NSHealthUpdateUsageDescription: '러닝 중 심박 확인을 위한 건강 데이터 연동에 사용합니다. 건강 데이터에 새 기록을 쓰거나 기존 기록을 수정하지 않습니다.',
     }));
     fs.writeFileSync(path.join(directory, 'RunaryWatch.entitlements'), plist.build({ 'com.apple.developer.healthkit': true }));
     const assets = path.join(directory, 'Assets.xcassets');
