@@ -430,3 +430,22 @@ EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. 
 실기기 QA에는 같은 아이폰 수신 코드와 최대 3분 운동 실험 워치를 묶은 `1.0.0(8)`을 사용한다. 임시 QA 코드는 `/private/tmp`에만 보관하며 생성 워치 소스·Info.plist는 제품 기준으로 복원한다. 러닝 종료·잠금 확인 뒤 22:46 KST 아이폰 업데이트 설치를 완료하고 실제 앱 버전 8번·개발 서버 연결·보관함 유지를 확인했다.
 
 첫 테스트에서 워치에는 6번이 남아 있어 직접 전달 검증은 통과하지 않았다. QA 종료 후 23:04 KST 새 워치 8번의 직접 업데이트 설치가 성공했고, 후속 조회에서 실제 버전 8번·직접 실행을 확인했다. 최신 8번의 전달 검증은 설치 확인 뒤 별도 수행한다. 새 인증서·기기 등록·기록 삭제·TestFlight 제출은 없다. [실제 QA 범위](internal-run-tracking-qa.md#건강-심박-직접-전달-구현과-개발-앱-8번).
+
+## 2026-10-08~09: 건강 심박·권한 보완 내부 TestFlight 제출
+
+사용자가 현재 구현으로 TestFlight 제출 후 작업을 마무리하고 미진한 부분은 다음에 이어가도록 요청했다. Swift 123개·Jest 310개·타입·설정·문서·아이폰/워치 빌드와 실제 심박 직접 전달을 확인한 소스를 커밋 `859320c`로 확정했다. 개인 `.claude/launch.json`과 임시 운동 실험 코드는 제외했다. GitHub 푸시는 자동 승인 검토가 저장소·브랜치로의 명시적인 코드 푸시 승인 부족을 이유로 거절했다. 원격 푸시·PR·머지는 수행하지 않고 로컬 확정 커밋의 깨끗한 배포 사본에서 진행한다. 원격 반영은 후속 작업이다.
+
+- 빌드 35: [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/095ebce5-d771-42fa-b006-025338ba2441), `internal-tracking` 프로필·STORE 배포·소스 `859320c15aaa3ad4e4f8f25b279799f5697bd388`, 빌드 완료. 아이폰·워치 `1.0.0(35)` 일치·내부 플래그·실험 UI/운동 배경 모드 제외·깊은 서명 검증 확인. IPA SHA-256 `e0fe15c595070a446333e2b5b45ef378219bf001a97c2cbadfad975dd0b7e239`.
+- [35번 EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/df70dcdf-d93f-44ee-8ed1-b4d7f9fbe0d7)의 `FINISHED`를 확인했지만 Apple 내부 테스트 가능 상태는 아직 확인되지 않았다. Apple 공식 `altool` 사전 검증은 아이폰·워치의 `NSHealthUpdateUsageDescription` 누락(90683)을 보고했다. 직접 업로드 대안은 이 검증 실패로 실행하지 않았고 임시 Apple 키 파일은 제거했다.
+- 기능과 권한 요청은 바꾸지 않고 건강 데이터 연동의 실제 용도·새 기록 쓰기/수정 비사용 설명을 두 번들 설정에 추가했다. 설정·문서·diff 검사를 통과하고 커밋 `adec8410f7e0a0cd3e34390c7ccb464ab19bb41d`로 확정했다.
+- 빌드 36: [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/29b0df22-4994-4d08-b023-bb7743d99265), 같은 내부 프로필·소스 `adec841`, 2026-10-09 자동 제출 요청. [제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/10dc9d27-ff9c-4d21-a921-eed502c21eda). 완료·Apple 처리 결과는 아래에 이어 기록한다. 외부 공개 링크·베타 그룹 배정·정식 심사 제출은 변경하지 않는다.
+
+지역 개발 앱은 실험 UI 없는 9번 사본으로 아이폰 업데이트를 완료했다. 워치 9번 직접 업데이트는 다시 개발 연결 준비 시간 초과로 실패했다. 마지막 실제 워치 개발 설치 확인은 QA 8번이며 진행 중인 두 QA 기록은 모두 종료·저장됐다. TestFlight 배포에는 제품 원본만 포함한다.
+
+### 최종 제출: 1.0.0(36)
+
+빌드 36은 `FINISHED`이며 아이폰·워치 버전 `1.0.0(36)` 일치·내부 측정 플래그·두 건강 API 설명 키·실험 UI/운동 배경 모드 제외를 확인했다. 깊은 서명 검증도 통과했다. IPA SHA-256은 `ad2ec8d862570165a7473baea1b712472b273cc4ea84c305c39db5839ab28eb8`이다.
+
+2026-10-09 Apple 공식 `altool` 검증의 `VERIFY SUCCEEDED with no errors`를 확인했다. 36번 EAS 자동 제출은 빌드 완료 뒤에도 `IN_QUEUE`·로그 0건이어서 같은 IPA의 직접 Apple 업로드로 전환했다. 원래 제출의 `CANCELED`를 확인한 뒤 업로드했으며 EAS 제출 완료로 기록하지 않는다. 00:31:58 KST `UPLOAD SUCCEEDED with no errors`, Delivery UUID `de2be86f-c180-47ca-9181-06ab4ed770fe`를 확인했다. 기존 EAS Apple API 키를 재사용했고 임시 키 파일은 제거했다.
+
+마지막 App Store Connect 조회에는 새 36번이 아직 목록에 반영되지 않았다. Apple 업로드 완료와 내부 테스터 설치 가능 상태를 구분하며 `VALID / IN_BETA_TESTING`은 아직 확인되지 않았다. Apple 처리·목록 반영은 대기 중이다. 사용자 요청대로 추가 개선을 멈추고 제출 기록과 미진한 항목을 남긴다. 후속 확인은 이 빌드 번호로 이어간다.
