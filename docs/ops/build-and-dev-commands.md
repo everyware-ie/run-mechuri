@@ -449,3 +449,5 @@ EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. 
 2026-10-09 Apple 공식 `altool` 검증의 `VERIFY SUCCEEDED with no errors`를 확인했다. 36번 EAS 자동 제출은 빌드 완료 뒤에도 `IN_QUEUE`·로그 0건이어서 같은 IPA의 직접 Apple 업로드로 전환했다. 원래 제출의 `CANCELED`를 확인한 뒤 업로드했으며 EAS 제출 완료로 기록하지 않는다. 00:31:58 KST `UPLOAD SUCCEEDED with no errors`, Delivery UUID `de2be86f-c180-47ca-9181-06ab4ed770fe`를 확인했다. 기존 EAS Apple API 키를 재사용했고 임시 키 파일은 제거했다.
 
 마지막 App Store Connect 조회에는 새 36번이 아직 목록에 반영되지 않았다. Apple 업로드 완료와 내부 테스터 설치 가능 상태를 구분하며 `VALID / IN_BETA_TESTING`은 아직 확인되지 않았다. Apple 처리·목록 반영은 대기 중이다. 사용자 요청대로 추가 개선을 멈추고 제출 기록과 미진한 항목을 남긴다. 후속 확인은 이 빌드 번호로 이어간다.
+
+마무리 전 후속 Apple 조회에서 빌드 `1.0.0(36)`의 `VALID / IN_BETA_TESTING`·미만료를 확인했다. 위 목록 반영 대기 상태는 이 확인으로 갱신한다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 이번 작업에서 외부 공개·베타 심사·공개 링크 설정은 변경하지 않았다.
