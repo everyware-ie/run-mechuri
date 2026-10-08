@@ -1,8 +1,10 @@
 import { requireOptionalNativeModule } from 'expo';
 
+export type HeartSource = "off" | "health" | "watch";
 export type RunSummary = {
   id: string; started: number; status: 'running' | 'paused' | 'interrupted' | 'saving' | 'completed';
   duration: number; elapsed: number; distance: number; pace?: number | null; averagePace?: number | null;
+  heartSource?: HeartSource;
   heartRate?: number | null; averageHeartRate?: number | null; maxHeartRate?: number | null;
   steps: number; cadence?: number | null; averageCadence?: number | null;
   lastLocation?: number | null; lastHeart?: number | null; lastMotion?: number | null; lastSaved?: number | null;
@@ -18,15 +20,18 @@ export type RunMapPage = {
 };
 export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
-  watchState: string; storageError: boolean; unsavedEvents: number;
+  watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
+  watchStartPending?: boolean;
   locationPermission: number; preciseLocation: boolean; motionPermission: number; motionSupported: boolean;
   watchPaired: boolean; watchInstalled: boolean;
 };
 type Module = {
-  enabled: boolean;
+  enabled: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
   appVersion: string; buildVersion: string;
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;
+  startWithHeartSource?(source: HeartSource): Promise<TrackingState>;
+  reconnectHealthHeart?(): Promise<void>; refreshHealthHeart?(id: string): Promise<boolean>;
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;
   retrySave(): Promise<void>; keepSaved(): Promise<void>; recover(id: string): Promise<void>;
   records(): Promise<{ records: RunSummary[]; damaged: string[] }>;

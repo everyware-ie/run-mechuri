@@ -5,6 +5,8 @@ public final class RunTrackingModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RunTracking")
     Constant("enabled") { TrackingManager.enabled }
+    Constant("watchDisplayOnly") { true }
+    Constant("watchAutoSync") { true }
     Constant("appVersion") { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
     Constant("buildVersion") { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
     AsyncFunction("copySummary") { (text: String) throws in
@@ -20,7 +22,18 @@ public final class RunTrackingModule: Module {
     }.runOnQueue(.main)
     AsyncFunction("cancelPreparation") { TrackingManager.shared.cancelPreparation() }.runOnQueue(.main)
     AsyncFunction("start") { (watch: Bool) throws -> [String: Any] in
-      try TrackingManager.shared.start(watch: watch); return TrackingManager.shared.snapshot()
+      try TrackingManager.shared.start(); return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("startWithHeartSource") { (source: String) throws -> [String: Any] in
+      guard source == "health" else { throw NSError(domain: "RunaryTracking", code: 1) }
+      try TrackingManager.shared.start()
+      return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("reconnectHealthHeart") { () throws in try TrackingManager.shared.reconnectHealthHeart() }.runOnQueue(.main)
+    AsyncFunction("refreshHealthHeart") { (id: String, promise: Promise) in
+      TrackingManager.shared.refreshHealthHeart(id) { result in
+        switch result { case .success(let value): promise.resolve(value); case .failure(let error): promise.reject(error) }
+      }
     }.runOnQueue(.main)
     AsyncFunction("pause") { () throws in try TrackingManager.shared.pause() }.runOnQueue(.main)
     AsyncFunction("resume") { () throws in try TrackingManager.shared.resume() }.runOnQueue(.main)

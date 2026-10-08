@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppPermissionsLink } from '@/components/internal-run-entry';
@@ -13,7 +13,7 @@ import HealthKitBridge from '../../modules/health-kit-bridge/src/HealthKitBridge
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
 // FRD: docs/specs/frd/run-record-selection.md
-// §3: 목록을 열 때 권한을 묻는다. §2-2: 좌표 없는 기록도 보여주되 고를 수 없다고 알린다(숨기지 않음).
+// §3: 응답하지 않은 권한만 요청한다. §2-2: 좌표 없는 기록은 목록에서 빼고 집계로 알린다.
 // §4: 기록이 하나도 없을 때 빈 상태. §5: 좌표는 고른 다음에만 가져온다.
 // 디자인: "3안" 시안 S3 — 날짜 제목 + 메타 한 줄, 좌표 없음/불러오기 실패는 점선으로 구분.
 // 시안엔 경로 썸네일이 있지만 §5(좌표는 고른 뒤 조회) 때문에 목록에선 안 그린다 — 자리표시 아이콘만.
@@ -29,56 +29,48 @@ function formatRunTitle(iso: string): string {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 (${wd}) ${period}`;
 }
 
-type LoadState = 'loading' | 'denied' | 'error' | 'ready';
+type LoadState = 'loading' | 'error' | 'ready';
 
 export default function RecordSelectionScreen() {
   const [state, setState] = useState<LoadState>('loading');
+  const [settingsError, setSettingsError] = useState('');
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loadingRouteFor, setLoadingRouteFor] = useState<string | null>(null);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const { setSelectedRun } = useCreationFlow();
 
-  const refresh = useCallback(async () => {
-    setState('loading');
-    try {
-      const granted = await HealthKitBridge.requestAuthorization();
-      if (!granted) {
-        setState('denied');
-        return;
-      }
-      const outdoorRuns = await HealthKitBridge.getOutdoorRuns();
-      setRuns(outdoorRuns);
-      setFailedIds(new Set());
-      setState('ready');
-    } catch {
-      setState('error');
-    }
-  }, []);
-
-  // 최초 로드 — 인라인 IIFE(원래 패턴). refresh와 로직이 겹치지만 이 형태여야
-  // "effect 안에서 동기 setState" 린트가 안 걸린다.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
+  const reload = useRef<(() => Promise<void>) | null>(null);
+  const refresh = () => { void reload.current?.(); };
+  useFocusEffect(useCallback(() => {
+    let alive = true, request = 0, loading = false, retryAfterLoad = false;
+    const load = async (requestPermission = false) => {
+      if (loading) { retryAfterLoad = true; return; }
+      if (!alive || AppState.currentState !== 'active') return;
+      loading = true;
+      const current = ++request;
+      const valid = () => alive && current === request && AppState.currentState === 'active';
+      setState('loading');
       try {
-        const granted = await HealthKitBridge.requestAuthorization();
-        if (cancelled) return;
-        if (!granted) {
-          setState('denied');
-          return;
-        }
+        // The native API asks only for unanswered types. A settings return is
+        // always a data-only refresh and cannot trigger another permission sheet.
+        if (requestPermission && !await HealthKitBridge.requestAuthorization()) throw new Error('Authorization request failed');
+        if (!valid()) return;
         const outdoorRuns = await HealthKitBridge.getOutdoorRuns();
-        if (cancelled) return;
-        setRuns(outdoorRuns);
-        setState('ready');
-      } catch {
-        if (!cancelled) setState('error');
+        if (!valid()) return;
+        setRuns(outdoorRuns); setFailedIds(new Set()); setState('ready');
+      } catch { if (valid()) setState('error'); }
+      finally {
+        loading = false;
+        if (retryAfterLoad && alive) { retryAfterLoad = false; void load(); }
       }
-    })();
-    return () => {
-      cancelled = true;
     };
-  }, []);
+    reload.current = () => load(true);
+    void load(true);
+    const subscription = AppState.addEventListener('change', status => {
+      if (status === 'active') void load(); else request++;
+    });
+    return () => { alive = false; request++; reload.current = null; subscription.remove(); };
+  }, []));
 
   const handleSelect = async (run: RunRecord) => {
     if (!run.hasRoute || loadingRouteFor) return;
@@ -120,25 +112,13 @@ export default function RecordSelectionScreen() {
     );
   }
 
-  if (state === 'denied') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        {header}
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>건강 데이터 접근이 필요해요</Text>
-          <Text style={styles.emptyBody}>설정에서 권한을 확인한 뒤 다시 열어주세요.</Text>
-          <AppPermissionsLink />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   if (state === 'error') {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
+          <AppPermissionsLink />
           <Pressable onPress={refresh} style={styles.retryBtn}>
             <Text style={styles.retryBtnText}>다시 시도</Text>
           </Pressable>
@@ -157,6 +137,9 @@ export default function RecordSelectionScreen() {
             아직 기록이 없거나 건강 데이터 접근이 허용되지 않았을 수 있어요. 한 번 뛰고 오시거나
             설정에서 권한을 확인해주세요.
           </Text>
+          <Pressable accessibilityRole="button" onPress={() => { setSettingsError(''); void Linking.openSettings().catch(() => setSettingsError('설정을 열지 못했어요. 아이폰 설정 → 앱 → Runary에서 건강 데이터 접근을 확인해 주세요.')); }} style={styles.retryBtn}><Text style={styles.retryBtnText}>설정에서 권한 확인</Text></Pressable>
+          {settingsError ? <Text style={styles.emptyBody}>{settingsError}</Text> : null}
+          <AppPermissionsLink />
         </View>
       </SafeAreaView>
     );

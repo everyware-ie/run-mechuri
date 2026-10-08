@@ -17,7 +17,7 @@ export async function readAppPermissions(queries: [Promise<TrackingState>, Promi
   const items: PermissionItem[] = [
     { title: '위치', status: location, reason: '러닝 위치·시각을 저장해 경로와 거리를 측정합니다.' },
     { title: '동작 및 피트니스', status: motion, reason: '걸음 수·케이던스에 사용합니다. 없어도 GPS 러닝은 가능합니다.' },
-    { title: '건강 기록·워치 심박', status: '건강 앱에서 권한 확인', reason: '읽기 허용 여부를 앱이 확정할 수 없습니다. 건강 앱의 Runary 데이터 접근과 워치의 심박 설정을 확인해 주세요.' },
+    { title: '건강 기록·워치 심박', status: '건강 앱에서 권한 확인', reason: '읽기 허용 여부를 앱이 확정할 수 없습니다. 아이폰 건강 앱에서 Runary의 심박 읽기 권한을 확인해 주세요. 워치는 지표 표시·제어만 하므로 건강 데이터 권한이 필요하지 않습니다.' },
     { title: '카메라', status: permission(camera), reason: '직접 찍은 사진을 배경으로 사용할 때 필요합니다.' },
     { title: '사진 저장', status: permission(photos), reason: '완성한 영상·촬영 소재를 사진 앱에 저장할 때 필요합니다.' },
     { title: '갤러리 가져오기', status: '시스템 사진 선택 사용', reason: '선택한 사진만 가져오는 방식으로 별도 사진 읽기 권한을 요구하지 않습니다.' },

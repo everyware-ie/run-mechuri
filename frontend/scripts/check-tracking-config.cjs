@@ -10,6 +10,8 @@ try {
   assert.equal(internal.ios.infoPlist.RunaryInternalTracking, true);
   assert.ok(internal.ios.infoPlist.UIBackgroundModes.includes('location'));
   assert.equal(internal.extra.eas.build.experimental.ios.appExtensions[0].targetName, 'RunaryWatch');
+  assert.deepEqual(internal.extra.eas.build.experimental.ios.appExtensions[0].entitlements, { 'com.apple.developer.healthkit': true });
+  assert.equal(internal.ios.infoPlist.NSHealthUpdateUsageDescription, undefined);
   delete process.env.RUNARY_INTERNAL_TRACKING;
   const publicConfig = configure();
   assert.equal(publicConfig.ios.infoPlist.RunaryInternalTracking, false);
@@ -29,6 +31,9 @@ try {
   addWatchTarget(project, internal);
   const [targetID, target] = watchTargets()[0];
   assert.equal(watchTargets().length, 1);
+  assert.ok(project.hasFile('RunaryWatch/TrackingWatchDisplay.swift'));
+  assert.ok(project.hasFile('RunaryWatch/TrackingWatchHealth.swift'));
+  assert.ok(project.hasFile('RunaryWatch/WatchHealthReader.swift'));
   assert.ok(project.getFirstTarget().firstTarget.dependencies.some(dependency => objects.PBXTargetDependency[dependency.value].target === targetID));
   const group = Object.values(objects.PBXGroup).filter(value => typeof value === 'object' && value.name === 'RunaryWatch').at(-1);
   assert.ok(group && !Object.hasOwn(group, 'path'));
