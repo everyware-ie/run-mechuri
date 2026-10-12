@@ -12,6 +12,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
+import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
 import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
 import { useInstagramShare } from '@/hooks/use-instagram-share';
@@ -143,7 +144,7 @@ export default function ResultDetailScreen() {
           />
         </View>
         <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
-        <Text style={styles.meta}>{result.runDate.slice(0, 10)}</Text>
+        <Text style={styles.meta}>{isSampleRun(result.run) ? '샘플 기록 · ' : ''}{result.runDate.slice(0, 10)}</Text>
 
         <View style={styles.actionColumn}>
           {/* share.tsx S8b와 같은 구성(2026-09-08): 주 버튼(인스타그램 공유) + 저장

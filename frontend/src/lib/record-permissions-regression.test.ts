@@ -5,6 +5,9 @@ import RecordScreen from '../app/record-selection';
 import HealthKit from '../../modules/health-kit-bridge/src/HealthKitBridgeModule';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('expo-router', () => ({ useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { push: jest.fn() } }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
 jest.mock('@/components/internal-run-entry', () => ({ AppPermissionsLink: () => null }));

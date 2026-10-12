@@ -50,6 +50,7 @@ import {
   type StampLayout,
 } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
+import { isSampleRun, SAMPLE_PLACE_NAME } from '@/lib/sample-run';
 import { Slider } from '@/components/slider';
 import { StampPresetSelector } from '@/components/stamp-preset-selector';
 import { ThemedButton } from '@/components/ui';
@@ -343,6 +344,11 @@ export default function EditScreen() {
 
   // '장소' 러닝 데이터 값 — 트랙 좌표(가운데 점)를 역지오코딩해 한 번 채운다. 실패하면 비워 둔다.
   useEffect(() => {
+    // 샘플은 실제 장소가 아니다. 초안 복구·스타일 적용에도 외부 조회하지 않는다.
+    if (isSampleRun(draft.selectedRun)) {
+      if (!(stampConfigRef.current.placeName ?? '').length) commitStamp({ ...stampConfigRef.current, placeName: SAMPLE_PLACE_NAME });
+      return;
+    }
     if ((stampConfigRef.current.placeName ?? '').length > 0) return;
     const coords = draft.track?.coordinates;
     if (!coords || coords.length === 0) return;
@@ -362,7 +368,7 @@ export default function EditScreen() {
     };
     // 트랙이 바뀔 때만 한 번 — commit/update는 안정적이지 않아 넣으면 매 편집마다 재지오코딩된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.track]);
+  }, [draft.track, draft.selectedRun?.id]);
 
   const [isInteracting, setIsInteracting] = useState(false);
   // 끄는 중인 대상. 손가락이 실제로 움직였을 때만 정한다. 탭할 때 점선이 깜빡이지 않게 한다.
@@ -1065,6 +1071,7 @@ export default function EditScreen() {
           )}
         </View>
         <View style={styles.bottomBar}>
+          {isSampleRun(run) && <Text style={{ color: Colors.textMuted, fontFamily: Fonts.sans, fontSize: 12, marginRight: 'auto' }}>샘플 기록</Text>}
           {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
           {dragging === null && !drawing && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
             style={[styles.doneButton, (applyingBackground || applyingStyle) && styles.doneButtonDisabled]}

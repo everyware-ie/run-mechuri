@@ -3,7 +3,7 @@ title: 홈과 보관함 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-09-20
+updated: 2026-10-12
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 재방문 검증, §6 무엇을 만들어주는지 먼저 보여준다, §6 내보낸 다음"
 related:
@@ -68,6 +68,8 @@ related:
 [공개 처리방침](https://phs00.notion.site/privacy)을 기본 브라우저에서 연다. 앱에서 열기 요청이 실패하면 안내와 다시 시도를 제공한다. 이 링크에 동의 체크나 권한 요청을 묶지 않는다. 공개 문서의 본문을 앱에 복제하지 않아 최신 문서로 연결한다.
 
 ## 2. 결과물
+
+2026-10-12 사용자 확인으로 홈에 샘플 체험 진입을 제공한다. 샘플 초안·결과물은 같은 보관함을 사용하되 샘플임을 표시한다. 세부 규칙은 [샘플 기록 체험 FRD](sample-record-experience.md)를 따른다.
 
 > 만든 것을 목록에서 어떻게 보여주고 무엇을 할 수 있게 할지 정한다.
 

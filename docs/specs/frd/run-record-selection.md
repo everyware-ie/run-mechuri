@@ -3,7 +3,7 @@ title: 러닝 기록 선택 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-10-07
+updated: 2026-10-12
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 1번, §6 첫 진입, §6 데이터 진입"
 related:
@@ -30,7 +30,9 @@ related:
 
 ## 1. 출처
 
-**MVP는 HealthKit 읽기 하나다.** GPX 임포트는 2026-08-25에 제외 확정됐다(PRD §6).
+**실제 러닝 기록의 출처는 HealthKit 읽기 하나다.** GPX 임포트는 2026-08-25에 제외 확정됐다(PRD §6).
+
+2026-10-12 사용자 확인으로 하트 샘플 체험을 추가한다. 건강 기록 목록에 샘플을 섞지 않고 별도 진입을 제공하며, 로딩·오류·빈 상태에서도 사용할 수 있다. 실제 데이터와의 구분·권한·장소 조회·보관 규칙은 [샘플 기록 체험 FRD](sample-record-experience.md)를 따른다.
 
 **목록은 "내 러닝 기록 목록"이지 "HealthKit 워크아웃 목록"이 아니다.** 출처는 기록의 속성 하나일 뿐이다. 두 번째 출처가 붙으면 같은 목록에 섞이고, "가져오기" 하나가 추가되는 것으로 끝나야 한다(PRD §6).
 

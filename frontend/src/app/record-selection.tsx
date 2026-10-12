@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { ScreenHeader } from '@/components/screen-header';
+import { SampleRunEntry } from '@/components/sample-run-entry';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { formatDistanceKm, formatDuration, formatHeartRate, formatPace } from '@/lib/stamp-format';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -105,6 +106,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
+        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>
@@ -116,6 +118,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
+        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
           <AppPermissionsLink />
@@ -131,6 +134,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
+        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>실외 러닝 기록이 없어요</Text>
           <Text style={styles.emptyBody}>
@@ -155,6 +159,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
+        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>좌표가 있는 기록이 없어요</Text>
           <Text style={styles.emptyBody}>
@@ -169,6 +174,7 @@ export default function RecordSelectionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       {header}
+      <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
       <Text style={styles.sourceLabel}>APPLE 건강 · 실외 러닝</Text>
       <FlatList
         data={visibleRuns}
@@ -225,6 +231,7 @@ export default function RecordSelectionScreen() {
 }
 
 const styles = StyleSheet.create({
+  sampleEntry: { paddingHorizontal: 24, paddingBottom: 16 },
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   center: {
     flex: 1,
