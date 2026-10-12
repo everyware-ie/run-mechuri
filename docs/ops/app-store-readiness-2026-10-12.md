@@ -1,6 +1,16 @@
 # Runary 1차 App Store 심사 준비
 
-확인일: 2026-10-12. 지응이 정리한 [제출 체크리스트](https://app.notion.com/p/phs00/appstore-submission-checklist-3f240e8014f980cdbb5ffe7035f9cfc1?source=copy_link)를 현재 코드, 배포 기록, App Store Connect와 대조했다. 이 문서는 준비 작업을 정리한 것으로, 제출이나 공개 설정을 변경하지 않았다.
+확인일: 2026-10-12. 지응이 정리한 [제출 체크리스트](https://app.notion.com/p/phs00/appstore-submission-checklist-3f240e8014f980cdbb5ffe7035f9cfc1?source=copy_link)를 코드, 배포 기록, App Store Connect와 대조했다. 최초 조회 결과와 이후 준비 작업을 함께 기록한다. 정식 심사 요청과 외부 공개 설정은 변경하지 않았다.
+
+## 10월 12일 후속 작업
+
+하트 샘플 체험을 구현하고, 개인정보 처리방침과 FAQ, 공지, 안내 허브를 정식 제출 준비 범위로 정리했다. 현재 방침 주소는 유지했으며 로그인 없이 본문을 확인했다. 이전 본문은 날짜별 변경 이력에 보관한다. 아래의 최초 조회 결과와 당시 남은 항목은 이 후속 결과와 구분해서 읽는다.
+
+사용자는 이 소스로 정식 심사 준비용 일반 빌드를 TestFlight에 등록하고 팀 공유 메시지를 작성하도록 요청했다. 소스 `29caba1770f066ae778f2493e439fe7251a818a0`의 깨끗한 배포 사본에서 `production` 빌드 `1.0.0(37)`을 만들었다. 측정 기능이 꺼져 있고 워치 앱이 없는 것, 하트 샘플 포함과 서명을 바이너리에서 확인했다. Apple 사전 검증도 오류 없이 통과했다. 업로드와 TestFlight 처리 결과는 [배포 기록](build-and-dev-commands.md)에 남긴다.
+
+`1.0.0(37)`을 업로드하고 Apple의 `VALID / IN_BETA_TESTING` 상태를 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.
+
+App Store 정식 심사 요청, 외부 공개 링크 변경, 스토어 자료와 App Privacy 설문 검토는 별도 후속 작업이다. 실제 영상 저장을 포함한 팀의 최종 사용 확인과 스토어 자료 검토는 이 빌드로 진행한다.
 
 ## 이번에 제출할 범위
 
@@ -69,7 +79,7 @@ App Store Connect를 읽기 전용으로 확인했다. 앱 ID는 `6807295594`, �
 
 현재 앱에는 로그인과 자체 서버 업로드 기능이 없지만, 이것만으로 ‘데이터 수집 없음’을 선택할 수는 없다. `expo-updates`가 설정되어 있고, Expo의 현재 배포 안내는 이를 사용하는 앱에 App Privacy의 Crash Data 신고를 안내한다. 실제 제출 빌드의 SDK와 전송 동작을 확인해 설문에 반영한다. Apple은 기기 밖으로 전송되어 개발자나 제3자가 일정 기간 접근하는 데이터를 수집 범위로 설명한다. [Expo App Store 배포 안내](https://docs.expo.dev/distribution/app-stores/), [Apple App Privacy](https://developer.apple.com/app-store/app-privacy-details/)
 
-앱 내 개인정보 링크는 첫 화면과 홈에 있으며 주소는 `https://phs00.notion.site/privacy`다. 현재 정책은 건강 기록·로컬 캐시·위치 이름 조회·Instagram 공유·Expo 업데이트·삭제 범위를 설명하지만 적용 범위 문구는 베타 버전이다. 정식 제출 범위에 맞춰 문구를 검토한다. 정책 URL은 쿠키 없는 요청에서 HTTP 200을 반환했으나 Notion의 자바스크립트 화면만 받아 본문 공개 여부까지 확인하지 못했다. **[확인 필요] 시크릿 브라우저에서 로그인 없이 정책 본문이 보이는지 확인한다.**
+앱 내 개인정보 링크는 첫 화면과 홈에 있으며 주소는 `https://phs00.notion.site/privacy`다. 최초 조회 때는 적용 범위가 베타 버전으로 적혀 있었고, HTTP 200 응답만으로 본문 공개 여부를 확인하지 못했다. 이후 사용자 요청으로 일반 배포 앱과 샘플의 적용 범위, 외부 서비스 통신, 보관과 삭제 조건을 반영했다. 현재 공개 주소에서 로그인 없이 본문이 표시되는 것도 확인했다. 변경 전후 본문과 검증은 [공개 문서 기록](public-docs-log.md)에 남겼다.
 
 36번 내부 앱에는 개인정보 매니페스트 파일들이 있다. 이것은 일반 제출 빌드의 모든 SDK 요구사항 충족을 보장하지 않는다. 최종 바이너리의 매니페스트·Required Reason API·대상 SDK를 다시 확인한다. 오픈소스 라이선스 고지와 이미지·폰트 사용 권리는 별도로 점검한다. [Apple 타사 SDK 요구사항](https://developer.apple.com/support/third-party-SDK-requirements/)
 

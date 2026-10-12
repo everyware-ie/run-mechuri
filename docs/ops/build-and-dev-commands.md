@@ -461,3 +461,33 @@ EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. 
 Debug 빌드와 `codesign --verify --deep --strict`가 통과했다. IPA 배포 빌드가 아닌 `1.0.0(1)` 개발 앱을 연결된 아이폰에 기존 앱 위로 설치했다. Metro는 `env -u RUNARY_INTERNAL_TRACKING node_modules/.bin/expo start --dev-client --lan --port 8081`로 실행하며 현재 LAN 주소는 `192.168.0.7:8081`이다. 앱 실행과 홈→샘플→배경 선택을 미러링에서 확인했다.
 
 사용자 확인을 위해 현재 하트 샘플의 배경 선택을 열어 뒀다. 타입·문서·관련 회귀 41개가 통과했고 린트는 오류 0개·기존 경고 30개다. 영상 생성·기기 저장·초안 복구는 사용자 확인 전이다. TestFlight 업로드·공개 링크 변경·정식 심사 제출을 실행하지 않았다. 상세 내용은 [샘플 구현 노트](../product/features/sample-record-experience.md)에 있다.
+
+## 2026-10-12: 정식 심사 준비용 하트 샘플 TestFlight 빌드 37
+
+문서 정리 후 사용자가 정식 심사 준비용 빌드를 TestFlight에 등록하도록 요청했다. 로컬 심사 보관 브랜치의 확정 소스를 별도 깨끗한 체크아웃으로 복사하고 기존 잠금 파일로 의존성을 설치했다. 개인 `.claude/launch.json`과 개발 앱의 생성 iOS 프로젝트는 배포에 포함하지 않았다.
+
+| 항목 | 값 |
+|---|---|
+| 버전과 빌드 | `1.0.0(37)` |
+| 소스 | `29caba1770f066ae778f2493e439fe7251a818a0` |
+| 로컬 심사 보관 브랜치 | `phs00/feature/app-store-v1` |
+| 프로필과 채널 | `production` |
+| [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/145421fb-23b6-46ea-ada6-6c8b562c3ba3) | `FINISHED` |
+| Apple Delivery UUID | `f88f615b-85ee-4267-a06b-c89680e12c32` |
+| IPA SHA-256 | `74453448cfb2e07f114e006d3afa1e0abea1df27fc2c1fe23ca9662806e2179e` |
+
+### 확인
+
+타입 검사와 전체 Jest 43개 묶음의 320개 테스트가 통과했다. 린트는 오류 0개와 기존 경고 30개다. 생성 iOS 프로젝트를 준비한 뒤 일반/내부 설정과 워치 타깃 생성 검사도 통과했다. 문서 검사와 공백 검사도 수행했다.
+
+배포 IPA에서 하트 샘플 표식, `RunaryInternalTracking=false`, `processing` 배경 모드, 워치 앱 없음, `production` 업데이트 채널과 `1.0.0(37)` 일치를 확인했다. 개인정보 매니페스트 12개와 선언된 Required Reason API 사유가 있으며, iPhone 기기군이다. 이것만으로 App Privacy 설문이나 정식 심사 준비 전체가 완료됐다고 간주하지 않는다.
+
+배포 서명의 깊은 검증이 통과했다. App Store 배포 프로파일과 Mach-O 서명에 포함된 XML 권한에서 팀 `BT2KSYYPDF`, HealthKit 권한과 `get-task-allow=false`를 확인했다. 로컬 `codesign`의 권한 출력에서는 경고가 나와 출력만으로 판단하지 않고 실제 서명 영역을 읽었다. Apple 사전 검증도 오류 없이 통과했다.
+
+### 업로드
+
+기존 Apple API 자격을 재사용해 Xcode `altool`로 사전 검증과 직접 업로드를 수행했다. `VERIFY SUCCEEDED with no errors`와 `UPLOAD SUCCEEDED with no errors`를 확인했다. 임시 Apple 키 파일은 사용 후 삭제됐다. EAS Submit 요청을 별도로 만들지 않았으며, 중복 업로드도 하지 않았다.
+
+2026-10-12 Apple 조회에서 `1.0.0(37)`의 `VALID / IN_BETA_TESTING`, 미만료 상태와 비면제 암호화 미사용을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+
+외부 공개 그룹과 공개 초대 링크, 정식 심사 요청은 변경하지 않았다. [팀 카톡 공유 문구](testflight-37-team-message.md)는 작성만 했으며 직접 발송하지 않았다.
