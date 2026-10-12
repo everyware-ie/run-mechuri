@@ -10,6 +10,7 @@ jest.mock('@react-native-async-storage/async-storage', () => require('@react-nat
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('expo-router', () => ({ useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { push: jest.fn() } }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
+jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('@/components/internal-run-entry', () => ({ AppPermissionsLink: () => null }));
 jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => ({ setSelectedRun: jest.fn() }) }));
 jest.mock('../../modules/health-kit-bridge/src/HealthKitBridgeModule', () => ({ __esModule: true, default: { requestAuthorization: jest.fn(), getOutdoorRuns: jest.fn() } }));

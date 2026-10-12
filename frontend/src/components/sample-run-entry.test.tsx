@@ -8,11 +8,12 @@ import { SAMPLE_HEART_ID } from '@/lib/sample-run';
 
 const mockSelect = jest.fn();
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => ({ setSelectedRun: mockSelect }) }));
 jest.mock('@/lib/connection-store', () => ({ markConnectedOnce: jest.fn() }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let renderer: ReactTestRenderer;
-const button = () => renderer.root.findByProps({ title: '샘플 기록으로 만들어 보기' });
+const button = () => renderer.root.findAll(node => node.props.testID === 'sample-run-entry' && typeof node.props.onPress === 'function')[0];
 beforeEach(() => { jest.clearAllMocks(); mockSelect.mockResolvedValue(undefined); });
 afterEach(async () => { await act(async () => renderer?.unmount()); });
 

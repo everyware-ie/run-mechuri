@@ -294,7 +294,7 @@ export default function ShareScreen() {
 
           <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
           <Text style={styles.notice}>
-            다른 앱을 보거나 화면을 잠가도 계속 만들어요. 시스템이 중단하면 편집 내용을 유지해요.
+            {'다른 앱을 보거나 화면을 잠가도 계속 만들어요.\n시스템이 중단하면 편집 내용을 유지해요.'}
           </Text>
         </View>
       </SafeAreaView>
