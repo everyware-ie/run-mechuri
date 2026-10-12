@@ -15,3 +15,7 @@ date: 2026-10-12
 [10/6 정식 등재 결정](2026-10-06-second-sprint-app-store.md)의 1차 측정 제외 범위는 유지한다. 로컬 확인 뒤 새 일반 빌드를 TestFlight에 업로드하고 검증한 빌드로 정식 심사를 준비한다. 이번 선택으로 심사 제출이나 자동 출시 설정 변경을 실행하지 않는다.
 
 근거 문서: [샘플 PRD](../specs/prd/sample-record-experience.md), [샘플 FRD](../specs/frd/sample-record-experience.md), [구현 노트](../product/features/sample-record-experience.md).
+
+## 같은 날 동선 보완
+
+사용자가 대시보드의 샘플 퀵 링크는 없애고 `새로 만들기 → 샘플 선택해서 만들기`로 정리하도록 요청했다. 홈은 기록 선택으로만 연결하고, 첫 실행 안내와 기록 선택에서 샘플 체험을 제공한다. 샘플의 공개 범위와 건강 기록 구분 규칙은 유지한다.

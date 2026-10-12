@@ -7,7 +7,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { InternalRunEntry } from '@/components/internal-run-entry';
 import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
-import { SampleRunEntry } from '@/components/sample-run-entry';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
@@ -186,7 +185,6 @@ export default function HomeScreen() {
             )}
 
             <ThemedButton title="새로 만들기" onPress={() => router.push('/record-selection')} />
-            <SampleRunEntry />
 
             {rest.length > 0 && (
               <View style={styles.sectionRow}>
