@@ -41,7 +41,8 @@ jobs:
         run: npm run typecheck
 
       - name: Unit tests
-        run: npm test -- --ci
+        # 화면 첫 렌더의 지연 로딩이 제한된 러너 자원을 서로 차지하지 않도록 직렬 실행한다.
+        run: npm test -- --ci --runInBand
 
   docs:
     name: Docs consistency (check-docs.py)

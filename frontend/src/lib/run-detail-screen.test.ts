@@ -5,6 +5,9 @@ import RunDetail from '../app/internal-run/[id]';
 import { Tracking } from '../../modules/run-tracking/src/RunTracking';
 import { ThemedButton } from '@/components/ui';
 
+// Match the cold RN screen initialization budget used by run-screen-state.
+jest.setTimeout(15_000);
+
 let mockId = 'a';
 // Jest hoists module factories before imports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,8 +31,6 @@ beforeEach(() => {
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => { listener = callback; return { remove: jest.fn() }; });
 });
 afterEach(async () => { await act(async () => renderer?.unmount()); jest.restoreAllMocks(); });
-// First RN screen mount can exceed five seconds on a shared CI runner. Keep
-// the pending-load assertions intact; allow initialization time explicitly.
 test('a different record never shows the previous record or its actions while loading', async () => {
   detail.mockResolvedValue(record('a'));
   await act(async () => { renderer = create(createElement(RunDetail)); });
@@ -38,7 +39,7 @@ test('a different record never shows the previous record or its actions while lo
   await act(async () => { renderer.update(createElement(RunDetail)); });
   expect(text()).not.toContain('오늘도 달렸어요.');
   expect(renderer.root.findAllByType(ThemedButton).some(node => node.props.title === '기록 삭제')).toBe(false);
-}, 15_000);
+});
 test('a failed read can retry without showing another record or retaining the error', async () => {
   detail.mockRejectedValueOnce(new Error('temporary')).mockResolvedValue(record('a'));
   await act(async () => { renderer = create(createElement(RunDetail)); });
