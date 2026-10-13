@@ -3,7 +3,7 @@ title: 홈과 보관함 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-10-12
+updated: 2026-10-13
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 재방문 검증, §6 무엇을 만들어주는지 먼저 보여준다, §6 내보낸 다음"
 related:
@@ -120,6 +120,8 @@ related:
 > **원본 러닝 기록이 건강 앱에서 삭제돼도 결과물을 다시 편집하고 새로 만들 수 있다.** 그릴 재료를 우리가 갖고 있기 때문이다.
 
 사진 배경은 편집용 사본과 구도 조정값을 앱에 보관한다 (2026-09-11, [배경 선택 §4-1 편집용 사진 보관](background-selection.md)). 보관한 파일이 사라지면 배경만 다시 고르고 나머지는 유지한다([공통 규칙](common-rules.md) §4-1).
+
+건강 기록을 담는 초안·결과물 정보와 앱 보관 영상은 자동 기기 백업에서 제외한다. 앱 안의 영상은 임시 캐시로 옮기지 않으며, 기존 보관 영상에도 제외 속성을 적용한다. 사진 앱에 사용자가 저장하거나 외부 서비스에 공유한 사본은 해당 서비스에서 관리한다. 이는 2026-10-13 최종 리뷰에서 확인한 건강 정보 보호 보완이며, [Apple 심사 지침 5.1.3(ii)](https://developer.apple.com/app-store/review/guidelines/#health-and-health-research)를 따른다.
 
 ## 3. 만들다 만 것
 

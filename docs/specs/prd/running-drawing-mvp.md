@@ -3,7 +3,7 @@ title: 러닝 드로잉 MVP 제품 요구 문서 (PRD)
 product: running
 type: prd
 status: draft
-updated: 2026-10-12
+updated: 2026-10-13
 related: [../../decisions/2026-08-18-native-ios-and-mvp-scope.md, ../../decisions/2026-08-25-react-native-expo-stack.md, ../../decisions/2026-09-01-frd-over-mockup.md]
 code_repo: https://github.com/everyware-ie/run-mechuri
 ---
@@ -167,6 +167,8 @@ code_repo: https://github.com/everyware-ie/run-mechuri
 #### MVP에서는 기기에만 저장한다
 
 **서버에 두지 않는다.** (2026-08-23 결정) 서버 저장을 검토했으나 MVP에는 맞지 않는다.
+
+건강 정보가 앱의 자동 기기 백업에 포함되지 않도록 초안·결과물 정보와 앱 보관 영상을 백업에서 제외한다(2026-10-13 최종 리뷰 보완). 기기 안에서는 계속 보관하며, 사용자가 사진 앱에 저장하거나 공유한 사본은 별도로 관리한다. 세부 기준은 [홈과 보관함 FRD](../frd/home-and-library.md) §2-3 무엇이 남나를 따른다.
 
 | 걸리는 것 | |
 |---|---|

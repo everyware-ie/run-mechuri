@@ -1,5 +1,7 @@
 # Runary 1차 App Store 심사 준비
 
+최신 검토는 [2026-10-13 최종 심사 검토](app-store-final-review-2026-10-13.md)에 있다. 영상 보관의 백업 제외 보완으로 정식 제출 전 새 일반 빌드가 필요하며, 37번은 그 수정 이전 빌드다. 지민이 자료는 PR #109에 준비되어 있으나 App Store Connect 입력은 아직 남아 있다.
+
 확인일: 2026-10-12. 지응이 정리한 [제출 체크리스트](https://app.notion.com/p/phs00/appstore-submission-checklist-3f240e8014f980cdbb5ffe7035f9cfc1?source=copy_link)를 코드, 배포 기록, App Store Connect와 대조했다. 최초 조회 결과와 이후 준비 작업을 함께 기록한다. 정식 심사 요청과 외부 공개 설정은 변경하지 않았다.
 
 ## 10월 12일 후속 작업
