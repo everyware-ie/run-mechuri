@@ -37,6 +37,8 @@ export default function RecordSelectionScreen() {
   const [settingsError, setSettingsError] = useState('');
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loadingRouteFor, setLoadingRouteFor] = useState<string | null>(null);
+  const selectionLock = useRef(false);
+  const [selecting, setSelecting] = useState(false);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const { setSelectedRun } = useCreationFlow();
 
@@ -73,8 +75,15 @@ export default function RecordSelectionScreen() {
     return () => { alive = false; request++; reload.current = null; subscription.remove(); };
   }, []));
 
+  const claimSelection = () => {
+    if (selectionLock.current) return false;
+    selectionLock.current = true; setSelecting(true); return true;
+  };
+  const releaseSelection = () => { selectionLock.current = false; setSelecting(false); };
+  const sampleEntry = <View style={styles.sampleEntry}><SampleRunEntry disabled={selecting}
+    claimSelection={claimSelection} releaseSelection={releaseSelection} /></View>;
   const handleSelect = async (run: RunRecord) => {
-    if (!run.hasRoute || loadingRouteFor) return;
+    if (!run.hasRoute || !claimSelection()) return;
     try {
       setLoadingRouteFor(run.id);
       // §5: 고른 다음에만 실제 좌표를 가져온다.
@@ -86,6 +95,7 @@ export default function RecordSelectionScreen() {
       setFailedIds((prev) => new Set(prev).add(run.id));
     } finally {
       setLoadingRouteFor(null);
+      releaseSelection();
     }
   };
 
@@ -106,7 +116,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
-        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
+        {sampleEntry}
         <View style={styles.center}>
           <ActivityIndicator color={Colors.accent} />
         </View>
@@ -118,7 +128,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
-        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
+        {sampleEntry}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
           <AppPermissionsLink />
@@ -134,7 +144,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
-        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
+        {sampleEntry}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>실외 러닝 기록이 없어요</Text>
           <Text style={styles.emptyBody}>
@@ -159,7 +169,7 @@ export default function RecordSelectionScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         {header}
-        <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
+        {sampleEntry}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>좌표가 있는 기록이 없어요</Text>
           <Text style={styles.emptyBody}>
@@ -174,7 +184,7 @@ export default function RecordSelectionScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       {header}
-      <View style={styles.sampleEntry}><SampleRunEntry disabled={loadingRouteFor !== null} /></View>
+      {sampleEntry}
       <Text style={styles.sourceLabel}>APPLE 건강 · 실외 러닝</Text>
       <FlatList
         data={visibleRuns}
@@ -187,7 +197,7 @@ export default function RecordSelectionScreen() {
           const loading = loadingRouteFor === item.id;
           return (
             <Pressable
-              disabled={!selectable || loadingRouteFor !== null}
+              disabled={!selectable || selecting}
               onPress={() => handleSelect(item)}
               style={[styles.row, !selectable && styles.rowDashed, failed && styles.rowFailed]}>
               <View style={[styles.thumb, failed && styles.thumbFailed]}>

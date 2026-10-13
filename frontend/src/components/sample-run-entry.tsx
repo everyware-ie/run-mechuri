@@ -13,13 +13,16 @@ import { useCreationFlow } from '@/state/creation-flow';
 const SAMPLE = createSampleRun().run;
 const SAMPLE_META = [formatDistanceKm(SAMPLE.distanceMeters), formatDuration(SAMPLE.durationSeconds), formatPace(SAMPLE.averagePaceSecPerKm)].join(' · ');
 
-export function SampleRunEntry({ fromWelcome = false, disabled = false }: { fromWelcome?: boolean; disabled?: boolean }) {
+export function SampleRunEntry({ fromWelcome = false, disabled = false, claimSelection, releaseSelection }: {
+  fromWelcome?: boolean; disabled?: boolean; claimSelection?: () => boolean; releaseSelection?: () => void;
+}) {
   const { setSelectedRun } = useCreationFlow();
   const lock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const start = async () => {
     if (disabled || lock.current) return;
+    if (claimSelection && !claimSelection()) return;
     lock.current = true; setBusy(true); setError('');
     try {
       const { run, track } = createSampleRun();
@@ -34,6 +37,7 @@ export function SampleRunEntry({ fromWelcome = false, disabled = false }: { from
       setError('샘플을 준비하지 못했어요. 다시 눌러 주세요.');
     } finally {
       lock.current = false; setBusy(false);
+      releaseSelection?.();
     }
   };
   return (
