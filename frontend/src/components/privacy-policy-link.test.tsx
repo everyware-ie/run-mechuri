@@ -15,7 +15,7 @@ afterEach(async () => { await act(async () => renderer?.unmount()); jest.restore
 it('공개 처리방침을 앱 내 브라우저로 열고 닫은 뒤 다시 열 수 있다', async () => {
   await act(async () => { renderer = create(createElement(PrivacyPolicyLink)); });
   await act(async () => { button().props.onPress(); });
-  expect(open).toHaveBeenCalledWith('https://phs00.notion.site/privacy', { dismissButtonStyle: 'close' });
+  expect(open).toHaveBeenCalledWith('https://runary.notion.site/privacy', { dismissButtonStyle: 'close' });
   expect(button().props.disabled).toBe(false);
   await act(async () => { button().props.onPress(); });
   expect(open).toHaveBeenCalledTimes(2);

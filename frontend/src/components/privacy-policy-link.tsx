@@ -4,7 +4,7 @@ import { Alert, Pressable, StyleSheet, Text } from 'react-native';
 
 import { Colors, Fonts } from '@/constants/theme';
 
-const PRIVACY_POLICY_URL = 'https://phs00.notion.site/privacy';
+const PRIVACY_POLICY_URL = 'https://runary.notion.site/privacy';
 
 export function PrivacyPolicyLink() {
   const opening = useRef(false);
