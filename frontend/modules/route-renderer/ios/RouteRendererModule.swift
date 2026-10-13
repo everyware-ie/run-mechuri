@@ -336,6 +336,15 @@ public class RouteRendererModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
     Events("onRenderProgress")
+    OnCreate {
+      // Apply the same exclusion to clips made by an older app version.
+      do {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        _ = try LocalClipStorage.prepare(in: documents, create: false)
+      } catch {
+        NSLog("Runary: stored video backup exclusion could not be applied")
+      }
+    }
     View(RouteColorPickerView.self) {
       Events("onColorChange")
       Prop("color") { (view: RouteColorPickerView, color: String) in view.setColor(color) }
@@ -1594,9 +1603,8 @@ public class RouteRendererModule: Module {
 
   private func outputURL(named name: String) throws -> URL {
     // 홈과 보관함 FRD §2-3: 완성 파일은 임시 공간 정리로 사라지면 안 된다.
-    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("clips", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let directory = try LocalClipStorage.prepare(in: documents)
     return directory.appendingPathComponent("\(name).mp4")
   }
 

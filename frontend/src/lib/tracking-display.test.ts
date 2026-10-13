@@ -1,10 +1,21 @@
-import { diagnosticSummary, runPaths, runPace, runTime } from './tracking-display';
+import { diagnosticSummary, heartImportNotice, runPaths, runPace, runTime, runNumber } from './tracking-display';
 import type { RunSummary } from '../../modules/run-tracking/src/RunTracking';
 
 it('페이스 초 올림과 시간 표시가 분 경계를 넘을 때 올바르다', () => {
   expect(runPace(359.8)).toBe('6′00″');
-  expect(runPace(null)).toBe('—');
+  expect(runPace(null)).toBe('-');
+  expect(runNumber(null)).toBe('-');
+  expect(runNumber(NaN)).toBe('-');
   expect(runTime(125.8)).toBe('2:05');
+});
+it('늦게 불러온 건강 심박은 평균과 실제 측정 시각으로 알리고 현재값으로 바꾸지 않는다', () => {
+  const lastHeart = new Date(2026, 9, 7, 22, 58).getTime() / 1000;
+  const run = { heartSource: 'health', averageHeartRate: 66, lastHeart, heartRate: null } as RunSummary;
+  expect(heartImportNotice(run)).toBe('건강 앱에서 불러온 평균 심박 66 bpm · 마지막 측정 22:58');
+  expect(run.heartRate).toBeNull();
+  expect(heartImportNotice({ ...run, lastHeart: null })).toBeNull();
+  expect(heartImportNotice({ ...run, lastHeart: NaN })).toBeNull();
+  expect(heartImportNotice({ ...run, heartSource: 'watch' })).toBeNull();
 });
 it('복구·GPS 누락으로 나뉜 구간은 직선으로 이어 그리지 않는다', () => {
   const paths = runPaths([

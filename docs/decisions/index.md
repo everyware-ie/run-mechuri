@@ -2,7 +2,7 @@
 title: running Decisions Index
 product: running
 type: decision
-updated: 2026-10-04
+updated: 2026-10-12
 ---
 
 # 의사결정 목록
@@ -23,5 +23,7 @@ updated: 2026-10-04
 | 2026-09-29 | [매주 셋의 기록을 합쳐 스레드에 올린다, 반응은 레포에 모은다](2026-09-29-weekly-content-and-reactions.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
 | 2026-10-04 | [편집 화면을 인스타 스토리 편집처럼 바꾼다 (단계별 QA·1단계 선행 내부 배포 개정)](2026-10-04-story-style-editor.md) | decided | 회의 없음. [지민 시안](../ideation/jminkkk/2026-10-03-change-editing-page.html)을 보고 정했다 |
 | 2026-10-06 | [2차 스프린트는 정식 등재부터, 측정은 안정성 먼저](2026-10-06-second-sprint-app-store.md) | decided | [2026-10-06](../meetings/2026-10-06/synthesis.md) |
+
+| 2026-10-12 | [하트 샘플로 편집·영상 생성 체험 제공](2026-10-12-heart-sample-experience.md) | decided | 사용자 FRD 확인·경로 선택·로컬 미러링 요청 |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)

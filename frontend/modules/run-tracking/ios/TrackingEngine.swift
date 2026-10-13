@@ -2,6 +2,9 @@ import Foundation
 
 // Sensor readiness and live Watch status must not trust a stale delivery.
 enum TrackingSampleRules {
+  static func preparationTimedOut(started: Double?, lastReady: Double?, now: Double) -> Bool {
+    now - (lastReady ?? started ?? now) > 30
+  }
   static func preparedLocation(latitude: Double, longitude: Double, accuracy: Double, time: Double, now: Double) -> Bool {
     latitude.isFinite && longitude.isFinite && abs(latitude) <= 90 && abs(longitude) <= 180 &&
       accuracy.isFinite && accuracy >= 0 && accuracy <= 20 && time.isFinite && now.isFinite &&
@@ -33,6 +36,13 @@ struct TrackingEvent: Codable {
   var intervalStart: Double?
   var sampleID: String?
   var detail: String?
+  var parentSampleID: String?
+
+  static func healthHeart(parentID: String, index: Int? = nil, time: Double, received: Double, bpm: Double, source: String) -> TrackingEvent {
+    TrackingEvent(kind: "heart", time: time, received: received, value: bpm,
+      sampleID: index.map { parentID + ":" + String($0) } ?? parentID,
+      detail: "health:" + source, parentSampleID: parentID)
+  }
 }
 
 struct TrackingPoint: Codable {
@@ -46,6 +56,8 @@ struct TrackingHeart: Codable {
   var time: Double
   var bpm: Double
   var received: Double
+  var source: String?
+  var parentSampleID: String?
 }
 struct TrackingInterval: Codable {
   var start: Double
@@ -90,6 +102,7 @@ struct TrackingSummary: Codable {
   var readyAt: Double?
   var lowPower: Bool
   var metricVersion: Int
+  var heartSource: String?
 }
 
 final class TrackingEngine {
@@ -125,11 +138,14 @@ final class TrackingEngine {
   var batteryEnd: Double?
   var charging = false
   var watchEnabled = false
+  var healthHeartEnabled = false
+  var heartSource: String { healthHeartEnabled ? "health" : watchEnabled ? "watch" : "off" }
   var feedback: String?
   var preparedAt: Double?
   var readyAt: Double?
   var lowPower = false
   private var heartIDs = Set<String>()
+  private var deletedHealthIDs = Set<String>()
   private var breakPending = false
 
   init(id: String, started: Double) {
@@ -164,6 +180,16 @@ final class TrackingEngine {
       if batteryStart == nil { batteryStart = event.value }
       if let value = event.value { batteryEnd = value }; charging = charging || event.detail == "charging"
     case "watch": watchEnabled = event.value == 1
+    case "heartSource": healthHeartEnabled = event.detail == "health"
+    case "heartDeleted":
+      if let id = event.sampleID {
+        deletedHealthIDs.insert(id)
+        removeHealthHeart(parentID: id)
+      }
+    case "heartSeries":
+      // Replace the representative value written by older clients only after
+      // successfully reading the series. Individual entries remain deduplicated.
+      if let id = event.sampleID { removeHealthHeart(parentID: id, representativeOnly: true) }
     case "feedback": feedback = event.detail
     case "error":
       if let detail = event.detail { errors.append(detail); errors = Array(errors.suffix(50)) }
@@ -208,13 +234,24 @@ final class TrackingEngine {
     points.append(next); accuracyTotal += accuracy
   }
   private func addHeart(_ e: TrackingEvent) {
-    guard let value = e.value, value.isFinite, value > 0,
+    guard let value = e.value, TrackingHealthHeartRules.valid(value),
           let sampleID = e.sampleID, !heartIDs.contains(sampleID), e.time.isFinite,
           active(at: e.time) || watchRecoveryIntervals.contains(where: { e.time >= $0.start && e.time <= ($0.end ?? $0.start) }),
           e.time <= (e.received ?? e.time) + 2 else { return }
+    if e.detail?.hasPrefix("health:") == true,
+       deletedHealthIDs.contains(e.parentSampleID ?? sampleID) { return }
     heartIDs.insert(sampleID)
-    hearts.append(TrackingHeart(id: sampleID, time: e.time, bpm: value, received: e.received ?? e.time))
+    hearts.append(TrackingHeart(id: sampleID, time: e.time, bpm: value, received: e.received ?? e.time,
+      source: e.detail, parentSampleID: e.parentSampleID))
   }
+  private func removeHealthHeart(parentID: String, representativeOnly: Bool = false) {
+    let removed = Set(hearts.filter {
+      $0.source?.hasPrefix("health:") == true &&
+        ($0.id == parentID || (!representativeOnly && $0.parentSampleID == parentID))
+    }.map { $0.id })
+    hearts.removeAll { removed.contains($0.id) }; heartIDs.subtract(removed)
+  }
+  func hasDeletedHealthSample(_ id: String) -> Bool { deletedHealthIDs.contains(id) }
   private func addMotion(_ e: TrackingEvent) {
     guard status == "running", let count = e.value, count.isFinite,
           let start = e.intervalStart, let interval = intervals.last,
@@ -250,7 +287,7 @@ final class TrackingEngine {
       maxReceiptGap: maxReceiptGap, meanAccuracy: points.isEmpty ? nil : accuracyTotal / Double(points.count),
       incomplete: incomplete, errors: errors, batteryStart: batteryStart, batteryEnd: batteryEnd,
       charging: charging, watchEnabled: watchEnabled, feedback: feedback,
-      preparedAt: preparedAt, readyAt: readyAt, lowPower: lowPower, metricVersion: 1)
+      preparedAt: preparedAt, readyAt: readyAt, lowPower: lowPower, metricVersion: 1, heartSource: heartSource)
   }
   static func meters(_ a: TrackingPoint, _ b: TrackingPoint) -> Double {
     let rad = Double.pi / 180

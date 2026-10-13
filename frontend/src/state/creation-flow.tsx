@@ -13,6 +13,7 @@ import {
 import type { PhotoBackground } from '@/lib/background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 import { FIRST_STAMP_LAYOUT, getPreferredStampLayout } from '@/lib/stamp-preference';
+import { isSampleRun, SAMPLE_PLACE_NAME } from '@/lib/sample-run';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
@@ -71,7 +72,8 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
       draft,
       setSelectedRun: async (run, track) => {
         const layout = await getPreferredStampLayout();
-        setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout } });
+        setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout,
+          placeName: isSampleRun(run) ? SAMPLE_PLACE_NAME : '' } });
       },
       setBackground: (path, photo) => setDraft((prev) => ({ ...prev, backgroundImagePath: path, backgroundPhoto: photo })),
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
