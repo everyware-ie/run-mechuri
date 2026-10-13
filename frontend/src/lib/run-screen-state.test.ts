@@ -5,6 +5,10 @@ import RunScreen from '../app/internal-run';
 import { RunAction } from '@/components/run-tracking-ui';
 import { Tracking } from '../../modules/run-tracking/src/RunTracking';
 
+// Cold RN screen initialization can exceed the default 5s on a shared runner.
+// The polling assertions still use fake time, rather than real delays.
+jest.setTimeout(15_000);
+
 // Jest hoists module factories before imports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('expo-router', () => ({ useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { push: jest.fn() } }));
