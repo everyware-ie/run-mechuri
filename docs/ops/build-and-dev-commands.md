@@ -462,6 +462,32 @@ Debug 빌드와 `codesign --verify --deep --strict`가 통과했다. IPA 배포 
 
 사용자 확인을 위해 현재 하트 샘플의 배경 선택을 열어 뒀다. 타입·문서·관련 회귀 41개가 통과했고 린트는 오류 0개·기존 경고 30개다. 영상 생성·기기 저장·초안 복구는 사용자 확인 전이다. TestFlight 업로드·공개 링크 변경·정식 심사 제출을 실행하지 않았다. 상세 내용은 [샘플 구현 노트](../product/features/sample-record-experience.md)에 있다.
 
+## 2026-10-13: 새 공개 도메인과 아이콘 제출 빌드
+
+회의 중 요청으로 새 공개 URL `https://runary.notion.site/privacy`와 최종 리뷰의 네이티브 보완을 일반 빌드에 반영했다. [PR #111](https://github.com/everyware-ie/run-mechuri/pull/111)에서 도메인·CI 초기화 검사·공개 문서 개정과 아이콘을 함께 정리한다. 사용자 회의 안건과 개인 launch 파일은 포함하지 않았다.
+
+### 아이콘 변경 전: 1.0.0(38)
+
+- 소스: `2eda0635db3001bdb96a076b5aff2657dae24518`
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/3e8481ac-0e46-4dae-bc35-f9465cff45e9): `FINISHED`, production/STORE, 6분 56초
+- IPA SHA-256: `9b924dc91988b6b03543b05fd4496d57aef15eb2562486cb11c0a4572f7f60e8`
+- Apple Delivery UUID: `323268fb-d00c-4929-8ad9-4e953e602002`
+- Apple 사전 검증·업로드 성공, `VALID / IN_BETA_TESTING` 확인. 임시 키 파일은 제거했다.
+
+### 새 아이콘 최종 후보: 1.0.0(39)
+
+- 소스: `fbb07ad7c5fa6bb76d75e04d10a7cccc49f459ff`
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/37019a4c-ab91-4b1d-a8d5-591a934bb09f): `FINISHED`, production/STORE, 7분 32초
+- IPA SHA-256: `79c7dbef89f887fd68b768f98f1c1802965015a748a23859c0c7391118ffe70f`
+- 제공된 `r-mark 4.png`가 원본과 동일하게 소스에 포함되어 있고, 배포 Assets.car에는 1024×1024 불투명 아이콘이 있다. 실제 배포 아이콘도 시각적으로 확인했다.
+- 새 개인정보 URL·하트 샘플·백업 제외 코드·내부 측정 false·워치 앱 없음·processing 모드·production 채널·12개 개인정보 매니페스트와 서명을 확인했다.
+
+39번의 Apple 사전 검증과 업로드가 오류 없이 통과했다. 업로드 완료는 21:19 KST이고 Delivery UUID는 `6c17a0da-7bee-4967-a6d0-c81bd9d08abf`다. 임시 제출 키 파일은 사용 후 제거했다. 21:26 KST 조회에서 `VALID / IN_BETA_TESTING`, 미만료 상태를 확인했다. 내부 테스터는 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 그룹·링크는 변경하지 않았다.
+
+38번과 제품 파일을 비교하면 아이콘만 다르며, 사용자가 38번에서 샘플 영상 생성·사진 앱 저장·재실행 후 다시 편집이 정상이라고 확인했다. iPad는 Release 빌드·설치·프로세스 실행까지만 확인했고 화면 조작 검증은 연결 지연으로 완료하지 못했다. 정확한 소스는 `runary-appstore-1.0.0-39` 태그로 보존한다.
+
+세부 기록과 심사 메모는 [제출 준비 기록](app-store-release-2026-10-13.md)과 [심사 메모 초안](app-store-review-notes.md)에 있다. 이 등록과 정식 심사 요청을 구분하며 최종 제출 빌드는 39번으로 선택한다.
+
 ## 2026-10-13: 최종 리뷰의 네이티브 보완
 
 앱 보관 영상의 백업 제외와 내부 워치 권한 안내를 수정했다. 일반 iOS 무서명 Debug 빌드와 파일 보존·제외 속성 검사를 통과했다. [최종 검토](app-store-final-review-2026-10-13.md)에 제출 전 남은 작업을 기록했다.

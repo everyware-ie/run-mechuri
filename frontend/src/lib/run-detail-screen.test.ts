@@ -22,10 +22,14 @@ const text = () => renderer.root.findAllByType(Text).map(node => node.props.chil
 const record = (id: string) => ({ summary: { id, started: 1, status: 'completed', duration: 30, distance: 100, segments: 1, steps: 0, maxSampleGap: 0, maxReceiptGap: 0, rejected: {}, errors: [] }, points: [] });
 beforeEach(() => {
   jest.clearAllMocks(); mockId = 'a';
+  detail.mockReset();
+  (Tracking!.refreshHealthHeart as jest.Mock).mockReset();
   Object.defineProperty(AppState, 'currentState', { configurable: true, writable: true, value: 'active' });
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => { listener = callback; return { remove: jest.fn() }; });
 });
 afterEach(async () => { await act(async () => renderer?.unmount()); jest.restoreAllMocks(); });
+// First RN screen mount can exceed five seconds on a shared CI runner. Keep
+// the pending-load assertions intact; allow initialization time explicitly.
 test('a different record never shows the previous record or its actions while loading', async () => {
   detail.mockResolvedValue(record('a'));
   await act(async () => { renderer = create(createElement(RunDetail)); });
@@ -34,7 +38,7 @@ test('a different record never shows the previous record or its actions while lo
   await act(async () => { renderer.update(createElement(RunDetail)); });
   expect(text()).not.toContain('오늘도 달렸어요.');
   expect(renderer.root.findAllByType(ThemedButton).some(node => node.props.title === '기록 삭제')).toBe(false);
-});
+}, 15_000);
 test('a failed read can retry without showing another record or retaining the error', async () => {
   detail.mockRejectedValueOnce(new Error('temporary')).mockResolvedValue(record('a'));
   await act(async () => { renderer = create(createElement(RunDetail)); });

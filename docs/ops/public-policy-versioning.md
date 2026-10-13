@@ -8,7 +8,7 @@ updated: 2026-10-12
 
 # 공개 개인정보 처리방침 개정 방법
 
-현재 방침은 [기존 공개 주소](https://phs00.notion.site/privacy)에서 계속 제공한다. 이 주소는 앱과 App Store Connect에서 사용하므로 개정할 때 페이지를 새로 만들거나 주소를 바꾸지 않는다. 이전 본문은 [변경 이력](https://phs00.notion.site/p/3f740e8014f9813b980ecca4650b3456?pvs=24)에 날짜별로 보관한다.
+현재 방침은 [기존 공개 주소](https://runary.notion.site/privacy)에서 계속 제공한다. 이 주소는 앱과 App Store Connect에서 사용하므로 개정할 때 페이지를 새로 만들거나 주소를 바꾸지 않는다. 이전 본문은 [변경 이력](https://runary.notion.site/p/3f740e8014f9813b980ecca4650b3456?pvs=24)에 날짜별로 보관한다.
 
 ## 개정할 때
 
