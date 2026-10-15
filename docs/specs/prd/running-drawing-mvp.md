@@ -3,7 +3,7 @@ title: 러닝 드로잉 MVP 제품 요구 문서 (PRD)
 product: running
 type: prd
 status: draft
-updated: 2026-10-13
+updated: 2026-10-15
 related: [../../decisions/2026-08-18-native-ios-and-mvp-scope.md, ../../decisions/2026-08-25-react-native-expo-stack.md, ../../decisions/2026-09-01-frd-over-mockup.md]
 code_repo: https://github.com/everyware-ie/run-mechuri
 ---
@@ -496,7 +496,7 @@ MVP에서는 프리셋마다 어울리는 3~5가지를 미리 골라 준다. 옵
 
 | 시점 | 판정 |
 |---|---|
-| ~10/13 | 측정 기능을 뺀 버전으로 정식 등재 준비 |
+| ~10/13 | 측정 기능을 뺀 버전으로 정식 등재 준비. **10/13 정식 심사 제출** ([회의 종합](../../meetings/2026-10-13/synthesis.md)) |
 | 11/3 ~ 11/10 | 측정 기능을 넣어 정식 등재 다시 제출 |
 | ~11/17 | App Store 다운로드 30회, 스레드 팔로워 50명 |
 
