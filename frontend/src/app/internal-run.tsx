@@ -46,7 +46,7 @@ export default function InternalRunScreen() {
         if (!valid()) return;
         setPollError('');
         setState(snapshot); setClock(Date.now() / 1000);
-        if (!Tracking!.startImmediately && first && !snapshot.summary && !snapshot.watchStartPending && [3, 4].includes(snapshot.locationPermission) && snapshot.preciseLocation) {
+        if (first && !snapshot.summary && !snapshot.watchStartPending && !snapshot.phoneStartPending && [3, 4].includes(snapshot.locationPermission) && snapshot.preciseLocation) {
           first = false; await Tracking!.prepare();
         }
         if (!valid()) return;
@@ -72,7 +72,7 @@ export default function InternalRunScreen() {
       finally { fetching = false; }
     };
     void update(); const timer = setInterval(update, 1000);
-    const subscription = AppState.addEventListener('change', status => { epoch++; if (status === 'active') void update(); });
+    const subscription = AppState.addEventListener('change', status => { epoch++; if (status === 'active') { first = true; void update(); } });
     return () => { alive = false; setMapVisible(false); clearInterval(timer); subscription.remove(); void Tracking!.cancelPreparation().catch(() => {}); };
   }, []));
   if (!trackingEnabled) return <Redirect href="/" />;
@@ -89,7 +89,7 @@ export default function InternalRunScreen() {
   ]);
   const immediateStart = !!Tracking!.startImmediately;
   const awaitingPermission = state?.phoneStartPending === true;
-  const preparation = !current && immediateStart && !state?.watchStartPending ? (awaitingPermission ? '위치 권한 확인 중' : '시작하면 GPS를 연결해요') : state?.phase === 'ready' ? 'GPS 준비 완료' : state?.phase === 'preparing' ? 'GPS 준비 중' : 'GPS를 준비해 주세요';
+  const preparation = awaitingPermission ? '위치 권한 확인 중' : state?.phase === 'ready' ? '현재 위치 확인됨' : state?.phase === 'preparing' ? 'GPS 연결 중' : !current && immediateStart ? '러닝 시작 시 위치를 연결해요' : 'GPS를 준비해 주세요';
   const lastLocationAge = current?.lastLocation != null ? clock - current.lastLocation : null;
   const watchLabel: Record<string, string> = { off: '워치에서 Runary 열기', notPaired: '워치 연결 없음', connecting: '워치 상태 자동 확인 중', noResponse: '워치 상태 자동 확인 중', notInstalled: '워치 앱 설치·업데이트 필요', waiting: '워치 상태 자동 확인 중', connected: '워치 연결됨', failed: '워치 상태 자동 확인 중', disconnected: '워치 상태 자동 확인 중' };
   const ready = state?.phase === 'ready';
@@ -170,7 +170,7 @@ export default function InternalRunScreen() {
         <Text style={runUI.footnote}>{running ? '화면을 닫거나 잠가도 러닝을 이어갑니다.' : '일시정지·중단된 시간은 측정에 포함하지 않아요.'}</Text>
       </> : <>
         <View style={runUI.actions}><RunAction title={awaitingPermission ? '위치 권한 확인 중' : immediateStart || ready ? '러닝 시작' : preparing ? 'GPS 준비 중' : 'GPS 준비'} symbol="play.fill" primary disabled={busy || !state || awaitingPermission || (!immediateStart && (preparing || (ready && !Tracking!.startWithHeartSource)))} onPress={() => void act(() => Tracking!.startImmediately ? Tracking!.startImmediately() : ready ? Tracking!.startWithHeartSource!('health') : Tracking!.prepare())} /></View>
-        {preparing || awaitingPermission ? <Pressable accessibilityRole="button" onPress={() => void act(() => Tracking!.cancelPreparation())} style={{ paddingVertical: 4 }}><Text style={runUI.footnote}>시작 취소</Text></Pressable> : <Text style={runUI.footnote}>팀 테스트 · 위치와 기록은 이 기기에만 보관해요.</Text>}
+        {awaitingPermission || (preparing && !immediateStart) ? <Pressable accessibilityRole="button" onPress={() => void act(() => Tracking!.cancelPreparation())} style={{ paddingVertical: 4 }}><Text style={runUI.footnote}>시작 취소</Text></Pressable> : <Text style={runUI.footnote}>{preparing && immediateStart ? 'GPS 연결 중에도 바로 시작할 수 있어요.' : '팀 테스트 · 위치와 기록은 이 기기에만 보관해요.'}</Text>}
       </>}
     </View>
   </SafeAreaView>;
