@@ -525,3 +525,14 @@ Debug 빌드와 `codesign --verify --deep --strict`가 통과했다. IPA 배포 
 2026-10-12 Apple 조회에서 `1.0.0(37)`의 `VALID / IN_BETA_TESTING`, 미만료 상태와 비면제 암호화 미사용을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
 
 외부 공개 그룹과 공개 초대 링크, 정식 심사 요청은 변경하지 않았다. [팀 카톡 공유 문구](testflight-37-team-message.md)는 작성만 했으며 직접 발송하지 않았다.
+
+
+## 2026-10-19: 잠금화면 현황 개발 앱 실기기 설치
+
+`codex/feature/run-live-activity`의 구현 커밋 `87f4509`에서 내부 개발 앱 `1.0.0(1)`을 빌드해 iPhone 11 Pro에 업데이트 설치했다. 아이폰·워치·Live Activity 확장의 전체 iphoneos Debug 빌드와 `codesign --verify --deep --strict`를 통과했다. 동봉한 세 타깃의 버전은 모두 `1.0.0(1)`이며, 아이폰의 실제 앱 조회에서도 설치 버전 1번을 확인했다.
+
+기존 개발 인증서와 등록된 아이폰·워치를 사용했다. Xcode 계정 로그인이 없어 자동 서명은 실패했고, 사용자의 명시적 승인으로 기존 팀 API 키를 일시 재사용해 아이폰·잠금화면 확장의 개발 프로파일을 준비했다. 워치는 기존 `Runary Watch Development QA 2026-10-07` 프로파일을 재사용했다. 잠금화면 확장의 앱 식별자를 등록했으며 새 인증서나 개발 기기는 등록하지 않았다. API 개인키의 임시 사본은 프로파일 준비 후 삭제했다. 생성 iOS 프로젝트의 수동 서명 설정과 프로파일은 저장소에 넣지 않는다.
+
+Metro는 `RUNARY_INTERNAL_TRACKING=1 node_modules/.bin/expo start --dev-client --lan --port 8081`로 실행했다. 이번 LAN 주소는 `192.168.0.27:8081`이며 서버 응답과 iOS 번들 생성을 확인했다. 미러링에서 개발 앱의 홈과 보관함 25개 유지, `frontend://internal-run`의 러닝 준비 화면 진입을 확인했다. 러닝은 시작하지 않았다.
+
+워치 앱 동봉·서명은 확인했지만 실제 워치의 업데이트 반영과 잠금화면 카드 생성·일시정지·즉시 재개·종료 저장은 별도 실기기 확인이 남아 있다. TestFlight 업로드는 하지 않았다.
