@@ -45,14 +45,14 @@ export type SavedResult = {
 
 const STORAGE_KEY = 'mechuri.results.v2';
 
-// 새 영상 보관 경로만 다시 연결한다. 외부 파일과 옛 임시 경로는 그대로 둔다.
+// 새 영상 보관 경로만 다시 연결한다. 이전 샘플·Runary 출처 ID의 콜론도 허용한다. 외부 파일과 옛 임시 경로는 그대로 둔다.
 function resolveOutputPath(path: string): string {
-  const match = /^file:\/\/.*\/Documents\/clips\/(mechuri-[A-Za-z0-9_-]+\.mp4)$/.exec(path);
+  const match = /^file:\/\/.*\/Documents\/clips\/(mechuri-[A-Za-z0-9_:-]+\.mp4)$/.exec(path);
   return match && FileSystem.documentDirectory ? `${FileSystem.documentDirectory}clips/${match[1]}` : path;
 }
 function ownsOutputPath(path: string): boolean {
   return !!FileSystem.documentDirectory && path.startsWith(`${FileSystem.documentDirectory}clips/`)
-    && /^mechuri-[A-Za-z0-9_-]+\.mp4$/.test(path.slice(`${FileSystem.documentDirectory}clips/`.length));
+    && /^mechuri-[A-Za-z0-9_:-]+\.mp4$/.test(path.slice(`${FileSystem.documentDirectory}clips/`.length));
 }
 
 // 목록 읽기부터 쓰기 완료까지 순서를 보장해 서로의 변경을 덮어쓰지 않게 한다.

@@ -4,6 +4,7 @@ import UIKit
 public final class RunTrackingModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RunTracking")
+    Constant("editorRoutes") { true }
     Constant("enabled") { TrackingManager.enabled }
     Constant("watchDisplayOnly") { true }
     Constant("watchAutoSync") { true }

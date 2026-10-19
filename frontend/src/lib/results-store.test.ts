@@ -183,3 +183,23 @@ it('영상 정리 실패는 삭제 결과와 다음 저장을 막지 않는다',
   expect(warn).toHaveBeenCalledTimes(1);
   warn.mockRestore();
 });
+
+it('Runary 사본은 출처와 구간을 보존하고 업데이트 뒤 영상 경로를 복원한다', async () => {
+  const original = result('runary:source-123');
+  original.run = { ...original.run, id: 'runary:source', source: 'runary' };
+  original.track.coordinates = [
+    { latitude: 0, longitude: 0, timestamp: '2026-10-19T00:00:00Z', segment: 0 },
+    { latitude: 0, longitude: 1, timestamp: '2026-10-19T00:05:00Z', segment: 1 },
+  ];
+  original.outputPath = 'file:///old/Documents/clips/mechuri-runary:source-123.mp4';
+  await addResult(original);
+  original.track.coordinates[0].latitude = 5;
+  const restored = (await getResult(original.id))!;
+  expect(restored.run.id).toBe('runary:source');
+  expect(restored.run.source).toBe('runary');
+  expect(restored.track.coordinates.map(p => p.segment)).toEqual([0, 1]);
+  expect(restored.track.coordinates[0].latitude).toBe(0);
+  expect(restored.outputPath).toBe('file:///new/Documents/clips/mechuri-runary:source-123.mp4');
+  await deleteResult(original.id);
+  expect(FileSystem.deleteAsync).toHaveBeenCalledWith(restored.outputPath, { idempotent: true });
+});

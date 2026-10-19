@@ -276,7 +276,8 @@ function skPath(points: CanvasPoint[]) {
   if (points.length === 0) return path;
   path.moveTo(points[0].x, points[0].y);
   for (let i = 1; i < points.length; i++) {
-    path.lineTo(points[i].x, points[i].y);
+    if ((points[i].segment ?? 0) !== (points[i - 1].segment ?? 0)) path.moveTo(points[i].x, points[i].y);
+    else path.lineTo(points[i].x, points[i].y);
   }
   return path;
 }
@@ -1207,7 +1208,7 @@ function stampLayoutPass(
 
   const finalValue = (item: StampItem) => item === 'distance' ? formatDistanceKm(run.distanceMeters)
     : item === 'time' ? formatDuration(run.durationSeconds)
-    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm ?? 0)) : value(item);
   const rawCaption = normalizeCaption(config.caption ?? '');
   const caption = rawCaption.trim() ? rawCaption : '';
   const layout: StampLayout = config.layout ?? 'row';
@@ -1348,7 +1349,7 @@ function stampLayoutPass(
       const widths = statOrder.map(item => {
         const finalValue = item === 'distance' ? formatDistanceKm(run.distanceMeters)
           : item === 'time' ? formatDuration(run.durationSeconds)
-    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm ?? 0)) : value(item);
         return Math.max(estimateStampTextWidth(STAT_LABEL[item], labelFont),
           estimateStampTextWidth(finalValue, (item === 'distance' ? 22 : 18) * u));
       });

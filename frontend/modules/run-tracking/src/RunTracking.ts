@@ -8,7 +8,7 @@ export type RunSummary = {
   heartRate?: number | null; averageHeartRate?: number | null; maxHeartRate?: number | null;
   steps: number; cadence?: number | null; averageCadence?: number | null;
   lastLocation?: number | null; lastHeart?: number | null; lastMotion?: number | null; lastSaved?: number | null;
-  segments: number; rawCount: number; acceptedCount: number; rejected: Record<string, number>;
+  segments: number; rawCount: number; acceptedCount: number; hasDrawableRoute?: boolean; rejected: Record<string, number>;
   backgroundCount: number; foregroundCount: number; maxSampleGap: number; maxReceiptGap: number;
   meanAccuracy?: number | null; incomplete: boolean; errors: string[];
   batteryStart?: number | null; batteryEnd?: number | null; charging: boolean; watchEnabled: boolean; feedback?: string; preparedAt?: number; readyAt?: number; lowPower: boolean; metricVersion: number;
@@ -27,7 +27,7 @@ export type TrackingState = {
   watchPaired: boolean; watchInstalled: boolean;
 };
 type Module = {
-  enabled: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
+  enabled: boolean; editorRoutes?: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
   appVersion: string; buildVersion: string;
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;

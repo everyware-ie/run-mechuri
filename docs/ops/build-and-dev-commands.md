@@ -548,3 +548,9 @@ CoreDevice로 업데이트를 전송하던 중 연결 중단(3002 / IXRemoteErro
 `codex/feature/run-live-activity`에서 기존 개발 앱 `1.0.0(1)`과 8081 Metro를 그대로 사용했다. 시작 전 현재 위치 표시는 기존 네이티브 `prepare`·`mapSnapshot` API를 재사용하는 JavaScript 변경으로 반영했다. 새 네이티브 빌드나 재설치, TestFlight 업로드는 수행하지 않았다.
 
 미러링에서 개발 메뉴의 Reload로 갱신한 뒤 시작 전 실제 위치 표시와 앱 복귀 시 재연결을 확인했다. 러닝은 시작하지 않았으며 GPS가 연결되는 동안에도 시작 버튼은 활성 상태다.
+
+## 2026-10-19: 자체 측정 기록 편집 연결 설치
+
+`codex/feature/runary-record-editing`에서 기존 내부 개발 앱 `1.0.0(1)`에 자체 기록 선택과 경로 구간 렌더링을 추가했다. 새 Swift 소스 반영을 위해 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행하고 기존 DerivedData·개발 프로파일로 아이폰·워치·위젯 전체 iphoneos Debug 빌드를 완료했다. `codesign --verify --deep --strict`를 통과한 앱을 CoreDevice로 iPhone 11 Pro에 업데이트 설치했다. API 키나 새 기기 등록은 사용하지 않았다.
+
+8081 Metro에 연결한 미러링에서 실제 Runary 5.41km 기록 선택, 경로 편집, 영상 생성·사진 저장, 보관함에서 다시 편집을 확인했다. 워치 실제 업데이트 반영은 확인하지 않았으며 자체 기록 선택은 아이폰에서 검증했다. TestFlight 제출과 PR 머지는 수행하지 않았다. 자세한 결과는 [구현 노트](../product/features/runary-record-editing.md)에 둔다.

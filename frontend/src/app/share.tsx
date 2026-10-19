@@ -118,21 +118,24 @@ export default function ShareScreen() {
     };
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
+    // Source identifiers stay intact in saved metadata, while the video file
+    // uses the portable filename format understood by storage/recovery.
+    const outputFileName = `mechuri-${resultId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
     activeShareGeneration += 1;
     const myGeneration = activeShareGeneration;
-    renderFileRef.current = `mechuri-${resultId}`;
+    renderFileRef.current = outputFileName;
 
     // 배경 선택 FRD §5: 영상 배경이면 프레임마다 영상 장면을 깐다. backgroundImagePath는 첫 장면(대체용)이다.
     const backgroundVideo = isVideoBackground(draft.backgroundPhoto) ? draft.backgroundPhoto : undefined;
     RouteRenderer.renderClip({
-      points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
+      points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude, ...(c.segment != null ? { segment: c.segment } : {}) })),
       backgroundImagePath,
       ...(backgroundVideo ? {
         backgroundVideoPath: backgroundVideo.sourceUri,
         backgroundVideoCrop: videoCrop(backgroundVideo),
       } : {}),
-      outputFileName: `mechuri-${resultId}`,
+      outputFileName,
       preset: draft.preset,
       handDrawing: normalizeHandDrawing(draft.handDrawing),
       routeColor: resolveRouteStyle(draft.routeStyle).color,

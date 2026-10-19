@@ -275,7 +275,9 @@ struct TrackingEngineChecks {
     check(immediate.points.isEmpty && immediate.summary(at: 140).lastLocation == nil, "Cached pre-start GPS cannot establish a route")
     immediate.apply(gps(140, 100))
     check(immediate.points.count == 1 && immediate.distance == 0, "First live fix anchors the route without backfilling distance")
+    check(immediate.summary(at: 140).hasDrawableRoute == false, "A single point is not a drawable route")
     immediate.apply(gps(150, 130))
+    check(immediate.summary(at: 150).hasDrawableRoute == true, "A connected segment is drawable")
     let withGPS = immediate.summary(at: 150)
     check(abs(withGPS.distance - 30) < 0.1 && abs((withGPS.averagePace ?? 0) - 50 / 0.03) < 1, "Pace includes acquisition wait and only measured distance")
     let noGPS = TrackingEngine(id: UUID().uuidString, started: 200)
@@ -284,6 +286,7 @@ struct TrackingEngineChecks {
     try save(store, noGPS, stoppedWithoutGPS, at: 245)
     let restoredWithoutGPS = try store.load(noGPS.id)
     let noGPSSummary = restoredWithoutGPS.summary(at: 999)
+    check(noGPSSummary.hasDrawableRoute == false, "A time-only completed run is excluded from drawing")
     check(noGPSSummary.status == "completed" && noGPSSummary.duration == 45, "Time-only run survives finalization and journal replay")
     check(noGPSSummary.distance == 0 && noGPSSummary.averagePace == nil && restoredWithoutGPS.points.isEmpty, "Time-only save never invents route or pace")
 

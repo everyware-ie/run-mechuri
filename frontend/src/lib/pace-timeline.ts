@@ -6,8 +6,8 @@ export const PACE_TIMELINE_STEPS = 270; // 9초 × 30fps, 마지막 완성 값 �
 const WINDOW_METERS = 100;
 const MAX_GAP_SECONDS = 15;
 
-export function buildPaceTimeline(points: TimedPoint[], average: number): number[] {
-  if (!(average > 0) || !Number.isFinite(average) || points.length < 2) return [];
+export function buildPaceTimeline(points: TimedPoint[], average: number | null): number[] {
+  if (average == null || !(average > 0) || !Number.isFinite(average) || points.length < 2) return [];
   if (points.some(p => !Number.isFinite(p.latitude) || !Number.isFinite(p.longitude)
     || Math.abs(p.latitude) > 90 || Math.abs(p.longitude) > 180)) return [];
   const times = points.map(p => p.timestamp ? Date.parse(p.timestamp) / 1000 : NaN);
@@ -19,7 +19,7 @@ export function buildPaceTimeline(points: TimedPoint[], average: number): number
   for (let i = 1; i < points.length; i++) {
     const dt = times[i] - times[i - 1], meters = distances[i] - distances[i - 1];
     // 긴 신호 공백·역행 시각·비현실적인 점프는 구간 페이스의 근거로 쓰지 않는다.
-    const valid = Number.isFinite(dt) && dt > 0 && dt <= MAX_GAP_SECONDS && meters / dt <= 12;
+    const valid = (points[i].segment ?? 0) === (points[i - 1].segment ?? 0) && Number.isFinite(dt) && dt > 0 && dt <= MAX_GAP_SECONDS && meters / dt <= 12;
     elapsed.push(elapsed[i - 1] + (valid ? dt : 0));
     invalid.push(invalid[i - 1] + (valid ? 0 : 1));
     if (valid && meters > 0) validSegments++;
@@ -53,7 +53,8 @@ export function buildPaceTimeline(points: TimedPoint[], average: number): number
   });
 }
 
-export function paceAtProgress(samples: readonly number[], progress: number, average: number): number {
+export function paceAtProgress(samples: readonly number[], progress: number, average: number | null): number {
+  if (average == null) return 0;
   if (samples.length < 2 || !Number.isFinite(progress) || progress >= 1) return average;
   const index = Math.max(0, progress) * (samples.length - 1);
   const lo = Math.floor(index), hi = Math.min(lo + 1, samples.length - 1);
