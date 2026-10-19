@@ -3,7 +3,7 @@ title: 공통 규칙 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-10-07
+updated: 2026-10-19
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§6 사용자 플로우, §9 기록 열람 정책, §12 리스크와 폴백"
 related:
@@ -180,6 +180,8 @@ iOS 14부터 `PHPickerViewController`가 사진 선택 화면을 앱 바깥에�
 ```
 
 **뒤로 가도 앞 단계에서 고른 것은 그대로 있다.** 배경을 바꾸려고 뒤로 갔다가 다시 와도 편집값이 살아 있다.
+
+직접 진입해 이전 화면이 없는 경우에는 뒤로가기에서 홈으로 이동한다. 초안은 그대로 유지한다 (2026-10-19 뒤로가기 오류 보완).
 
 배경은 편집 화면에서 바로 다시 열 수 있으므로 뒤로 갈 일이 적다([결과물 편집](result-editing.md) §1).
 
