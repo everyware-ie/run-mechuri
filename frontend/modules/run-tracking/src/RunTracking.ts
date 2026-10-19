@@ -8,7 +8,7 @@ export type RunSummary = {
   heartRate?: number | null; averageHeartRate?: number | null; maxHeartRate?: number | null;
   steps: number; cadence?: number | null; averageCadence?: number | null;
   lastLocation?: number | null; lastHeart?: number | null; lastMotion?: number | null; lastSaved?: number | null;
-  segments: number; rawCount: number; acceptedCount: number; rejected: Record<string, number>;
+  segments: number; rawCount: number; acceptedCount: number; hasDrawableRoute?: boolean; rejected: Record<string, number>;
   backgroundCount: number; foregroundCount: number; maxSampleGap: number; maxReceiptGap: number;
   meanAccuracy?: number | null; incomplete: boolean; errors: string[];
   batteryStart?: number | null; batteryEnd?: number | null; charging: boolean; watchEnabled: boolean; feedback?: string; preparedAt?: number; readyAt?: number; lowPower: boolean; metricVersion: number;
@@ -21,15 +21,17 @@ export type RunMapPage = {
 export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
   watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
-  watchStartPending?: boolean;
+  watchStartPending?: boolean; phoneStartPending?: boolean;
+  liveActivityState?: 'off' | 'active' | 'disabled' | 'waiting' | 'dismissed' | 'unavailable';
   locationPermission: number; preciseLocation: boolean; motionPermission: number; motionSupported: boolean;
   watchPaired: boolean; watchInstalled: boolean;
 };
 type Module = {
-  enabled: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
+  enabled: boolean; editorRoutes?: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
   appVersion: string; buildVersion: string;
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;
+  startImmediately?(): Promise<TrackingState>;
   startWithHeartSource?(source: HeartSource): Promise<TrackingState>;
   reconnectHealthHeart?(): Promise<void>; refreshHealthHeart?(id: string): Promise<boolean>;
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;

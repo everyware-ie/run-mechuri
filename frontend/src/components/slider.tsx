@@ -20,21 +20,23 @@ type Props = {
   /** 잡는 순간. §2-1: 슬라이더를 잡고 있는 동안 미리보기를 멈추는 데 쓴다. */
   onSlidingStart?: () => void;
   onSlidingComplete?: (value: number) => void;
+  /** 영상 탐색처럼 누른 위치로 바로 이동한다. 편집용 슬라이더의 기존 동작은 유지한다. */
+  tapToSeek?: boolean;
 };
 
-export function Slider({ value, minimumValue = 0, maximumValue = 100, accessibilityLabel, onChange, onSlidingStart, onSlidingComplete }: Props) {
+export function Slider({ value, minimumValue = 0, maximumValue = 100, accessibilityLabel, onChange, onSlidingStart, onSlidingComplete, tapToSeek = false }: Props) {
   const [trackWidth, setTrackWidth] = useState(0);
   // 끄는 동안만 쓰는 값. 손을 떼면 부모의 값(value)으로 돌아간다.
   const [dragValue, setDragValue] = useState<number | null>(null);
   const trackWidthRef = useRef(0);
   const valueRef = useRef(value);
-  const configRef = useRef({ minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete });
+  const configRef = useRef({ minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete, tapToSeek });
   useEffect(() => {
     valueRef.current = value;
   }, [value]);
   useEffect(() => {
-    configRef.current = { minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete };
-  }, [minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete]);
+    configRef.current = { minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete, tapToSeek };
+  }, [minimumValue, maximumValue, onChange, onSlidingStart, onSlidingComplete, tapToSeek]);
 
   const handleLayout = (e: LayoutChangeEvent) => {
     trackWidthRef.current = e.nativeEvent.layout.width;
@@ -60,11 +62,15 @@ export function Slider({ value, minimumValue = 0, maximumValue = 100, accessibil
       onMoveShouldSetPanResponder: () => true,
       // 미리보기의 끌기 제스처가 가로채지 않게 한다.
       onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        const { minimumValue: min, maximumValue: max, onSlidingStart: start } = configRef.current;
+      onPanResponderGrant: event => {
+        const { minimumValue: min, maximumValue: max, onSlidingStart: start, tapToSeek: seek } = configRef.current;
         dragStartFractionRef.current = (valueRef.current - min) / Math.max(1, max - min);
         setDragValue(valueRef.current);
         start?.();
+        if (seek && trackWidthRef.current > 0) {
+          dragStartFractionRef.current = Math.max(0, Math.min(1, event.nativeEvent.locationX / trackWidthRef.current));
+          updateFromFraction(dragStartFractionRef.current);
+        }
       },
       onPanResponderMove: (_evt, gestureState) => {
         const width = trackWidthRef.current;
@@ -99,10 +105,10 @@ export function Slider({ value, minimumValue = 0, maximumValue = 100, accessibil
         setDragValue(null);
         configRef.current.onSlidingComplete?.(valueRef.current);
       }}>
-      <View style={styles.track}>
+      <View style={styles.track} pointerEvents="none">
         <View style={[styles.fill, { width: fillWidth }]} />
       </View>
-      <View style={[styles.thumb, { left: Math.max(0, fillWidth - 10) }]} />
+      <View style={[styles.thumb, { left: Math.max(0, fillWidth - 10) }]} pointerEvents="none" />
     </View>
   );
 }

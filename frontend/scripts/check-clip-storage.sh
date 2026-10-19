@@ -8,3 +8,8 @@ xcrun swiftc -module-cache-path "$task_tmp/cache" \
   "$root/modules/route-renderer/ios/LocalClipStorage.swift" \
   "$root/modules/route-renderer/tests/LocalClipStorageChecks.swift" -o "$task_tmp/checks"
 "$task_tmp/checks" "$storage_tmp"
+
+xcrun swiftc -module-cache-path "$task_tmp/cache" \
+  "$root/modules/route-renderer/ios/SegmentedRoute.swift" \
+  "$root/modules/route-renderer/tests/SegmentedRouteChecks.swift" -o "$task_tmp/segments"
+"$task_tmp/segments"

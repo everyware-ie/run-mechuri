@@ -85,6 +85,7 @@ struct TrackingSummary: Codable {
   var segments: Int
   var rawCount: Int
   var acceptedCount: Int
+  var hasDrawableRoute: Bool?
   var rejected: [String: Int]
   var backgroundCount: Int
   var foregroundCount: Int
@@ -106,6 +107,7 @@ struct TrackingSummary: Codable {
 }
 
 final class TrackingEngine {
+  private var hasDrawableRoute = false
   let id: String
   let started: Double
   var status = "running"
@@ -207,7 +209,8 @@ final class TrackingEngine {
     guard let lat = e.latitude, let lon = e.longitude, let accuracy = e.accuracy,
           lat.isFinite, lon.isFinite, abs(lat) <= 90, abs(lon) <= 180,
           accuracy.isFinite, accuracy >= 0, accuracy <= 35, e.time.isFinite else { reject("accuracyOrCoordinate"); return }
-    guard active(at: e.time), e.time <= (e.received ?? e.time) + 2 else { reject("outsideInterval"); return }
+    guard active(at: e.time), e.time >= (intervals.last?.start ?? started),
+          e.time <= (e.received ?? e.time) + 2 else { reject("outsideInterval"); return }
     // Batch delivery is retained; old start-cache and out-of-order points are not.
     if let previousTime = lastValidLocationTime, e.time <= previousTime { reject("outOfOrder"); return }
     let sampleGap = e.time - (lastValidLocationTime ?? e.time)
@@ -231,6 +234,8 @@ final class TrackingEngine {
       } else { distance += d }
     }
     if breakPending { segment += 1; next.segment = segment; breakPending = false }
+    if let previous = points.last, previous.segment == next.segment,
+       previous.latitude != next.latitude || previous.longitude != next.longitude { hasDrawableRoute = true }
     points.append(next); accuracyTotal += accuracy
   }
   private func addHeart(_ e: TrackingEvent) {
@@ -282,7 +287,7 @@ final class TrackingEngine {
       maxHeartRate: hearts.map(\.bpm).max(), steps: steps, cadence: cadence,
       averageCadence: motionObservedSeconds > 0 ? Double(steps) / (motionObservedSeconds / 60) : nil,
       lastLocation: lastValidLocationTime, lastHeart: newestHeart?.time, lastMotion: lastMotion, lastSaved: lastSaved,
-      segments: segment, rawCount: rawCount, acceptedCount: points.count, rejected: rejected,
+      segments: segment, rawCount: rawCount, acceptedCount: points.count, hasDrawableRoute: hasDrawableRoute, rejected: rejected,
       backgroundCount: backgroundCount, foregroundCount: foregroundCount, maxSampleGap: maxSampleGap,
       maxReceiptGap: maxReceiptGap, meanAccuracy: points.isEmpty ? nil : accuracyTotal / Double(points.count),
       incomplete: incomplete, errors: errors, batteryStart: batteryStart, batteryEnd: batteryEnd,

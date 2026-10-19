@@ -4,6 +4,7 @@ import UIKit
 public final class RunTrackingModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RunTracking")
+    Constant("editorRoutes") { true }
     Constant("enabled") { TrackingManager.enabled }
     Constant("watchDisplayOnly") { true }
     Constant("watchAutoSync") { true }
@@ -23,6 +24,9 @@ public final class RunTrackingModule: Module {
     AsyncFunction("cancelPreparation") { TrackingManager.shared.cancelPreparation() }.runOnQueue(.main)
     AsyncFunction("start") { (watch: Bool) throws -> [String: Any] in
       try TrackingManager.shared.start(); return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("startImmediately") { () throws -> [String: Any] in
+      try TrackingManager.shared.startImmediately(); return TrackingManager.shared.snapshot()
     }.runOnQueue(.main)
     AsyncFunction("startWithHeartSource") { (source: String) throws -> [String: Any] in
       guard source == "health" else { throw NSError(domain: "RunaryTracking", code: 1) }

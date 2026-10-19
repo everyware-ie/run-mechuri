@@ -1,4 +1,5 @@
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { goBackOrHome } from '@/lib/navigation';
 import * as Device from 'expo-device';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, Text, TextInput, View } from 'react-native';
@@ -109,7 +110,7 @@ export default function RunDetail() {
           <Card><Text selectable style={styles.subtitle}>{diagnosticSummary(run, version, device)}</Text></Card>
           <Text style={styles.subtitle}>마지막 저장: {run.lastSaved ? new Date(run.lastSaved * 1000).toLocaleString('ko-KR') : '없음'} · 구간 {run.segments}</Text>
         </RunDisclosure>
-        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); router.back(); }) }])} />
+        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); goBackOrHome(); }) }])} />
       </> : null}
     </ScrollView>
   </SafeAreaView>;

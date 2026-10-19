@@ -11,5 +11,5 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'SWIFT_VERSION' => '5.0' }
   s.source_files = '**/*.swift'
-  s.frameworks = 'CoreLocation', 'CoreMotion', 'HealthKit', 'WatchConnectivity'
+  s.frameworks = 'CoreLocation', 'CoreMotion', 'HealthKit', 'WatchConnectivity', 'ActivityKit'
 end

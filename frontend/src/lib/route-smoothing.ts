@@ -126,11 +126,22 @@ function diagonal(points: CanvasPoint[]): number {
 }
 
 /** 투영된(캔버스 공간) 점들에 다듬기·모서리 라운딩을 적용한다. */
-export function applySmoothing(points: CanvasPoint[], opts: SmoothOptions): CanvasPoint[] {
+function smoothSegment(points: CanvasPoint[], opts: SmoothOptions): CanvasPoint[] {
   if (points.length < 3) return points;
   const window = 3 + Math.round((opts.smooth / 100) * 12) * 2;
   const smoothed = movingAverage(dedupe(points, 4), window);
   const dg = diagonal(smoothed) || 1;
   const simplified = rdpSimplify(smoothed, dg * (0.0008 + (opts.smooth / 100) * 0.011));
   return roundCorners(simplified, opts.corner * (dg / 620));
+}
+
+export function applySmoothing(points: CanvasPoint[], opts: SmoothOptions): CanvasPoint[] {
+  const chunks: CanvasPoint[][] = [];
+  for (const point of points) {
+    const last = chunks.at(-1);
+    if (!last || (last[0].segment ?? 0) !== (point.segment ?? 0)) chunks.push([point]);
+    else last.push(point);
+  }
+  return chunks.flatMap(chunk => smoothSegment(chunk, opts).map(point => chunk[0].segment == null
+    ? point : { ...point, segment: chunk[0].segment }));
 }

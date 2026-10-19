@@ -7,7 +7,7 @@ it('샘플의 거리·페이스·시각이 실제 합성 트랙과 일치한다'
   expect(run.id).toBe(SAMPLE_HEART_ID);
   expect(cumulativeDistances(points).at(-1)).toBeCloseTo(run.distanceMeters, 5);
   expect(run.distanceMeters).toBeCloseTo(5000, 0);
-  expect(run.averagePaceSecPerKm * run.distanceMeters / 1000).toBeCloseTo(run.durationSeconds, 5);
+  expect(run.averagePaceSecPerKm! * run.distanceMeters / 1000).toBeCloseTo(run.durationSeconds, 5);
   expect(points[0].timestamp).toBe(run.date);
   expect(Date.parse(points.at(-1)!.timestamp) - Date.parse(points[0].timestamp)).toBe(run.durationSeconds * 1000);
   expect(points.every((point, index) => index === 0 || point.timestamp >= points[index - 1].timestamp)).toBe(true);

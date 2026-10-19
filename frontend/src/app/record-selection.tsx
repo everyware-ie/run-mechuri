@@ -8,6 +8,8 @@ import { ScreenHeader } from '@/components/screen-header';
 import { SampleRunEntry } from '@/components/sample-run-entry';
 import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { formatDistanceKm, formatDuration, formatHeartRate, formatPace } from '@/lib/stamp-format';
+import { mergeRunRecords, runaryRecord, runaryRecordID, runaryTrack } from '@/lib/runary-records';
+import { Tracking, trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
 import { useCreationFlow } from '@/state/creation-flow';
 
 import HealthKitBridge from '../../modules/health-kit-bridge/src/HealthKitBridgeModule';
@@ -35,9 +37,15 @@ type LoadState = 'loading' | 'error' | 'ready';
 export default function RecordSelectionScreen() {
   const [state, setState] = useState<LoadState>('loading');
   const [settingsError, setSettingsError] = useState('');
+  const ownAvailable = trackingEnabled && Tracking?.editorRoutes === true;
+  const [ownState, setOwnState] = useState<LoadState>(ownAvailable ? 'loading' : 'ready');
+  const [ownRuns, setOwnRuns] = useState<RunRecord[]>([]);
+  const [damagedCount, setDamagedCount] = useState(0);
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loadingRouteFor, setLoadingRouteFor] = useState<string | null>(null);
   const selectionLock = useRef(false);
+  const selectionEpoch = useRef(0);
+  const focused = useRef(false);
   const [selecting, setSelecting] = useState(false);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const { setSelectedRun } = useCreationFlow();
@@ -45,6 +53,12 @@ export default function RecordSelectionScreen() {
   const reload = useRef<(() => Promise<void>) | null>(null);
   const refresh = () => { void reload.current?.(); };
   useFocusEffect(useCallback(() => {
+    focused.current = true;
+    const cancelSelection = () => {
+      selectionEpoch.current++;
+      selectionLock.current = false;
+      setSelecting(false); setLoadingRouteFor(null);
+    };
     let alive = true, request = 0, loading = false, retryAfterLoad = false;
     const load = async (requestPermission = false) => {
       if (loading) { retryAfterLoad = true; return; }
@@ -67,16 +81,31 @@ export default function RecordSelectionScreen() {
         if (retryAfterLoad && alive) { retryAfterLoad = false; void load(); }
       }
     };
-    reload.current = () => load(true);
-    void load(true);
+    let ownRequest = 0;
+    const loadOwn = async () => {
+      if (!ownAvailable || !alive || AppState.currentState !== 'active') return;
+      const token = ++ownRequest;
+      const valid = () => alive && token === ownRequest && AppState.currentState === 'active';
+      setOwnState('loading');
+      try {
+        const result = await Tracking!.records();
+        if (!valid()) return;
+        setOwnRuns(result.records.filter(run => run.status === 'completed').map(runaryRecord));
+        setDamagedCount(result.damaged.length); setOwnState('ready');
+      } catch { if (valid()) setOwnState('error'); }
+    };
+    reload.current = async () => { await Promise.all([load(true), loadOwn()]); };
+    void load(true); void loadOwn();
     const subscription = AppState.addEventListener('change', status => {
-      if (status === 'active') void load(); else request++;
+      if (status === 'active') { void load(); void loadOwn(); }
+      else { request++; ownRequest++; cancelSelection(); }
     });
-    return () => { alive = false; request++; reload.current = null; subscription.remove(); };
-  }, []));
+    return () => { focused.current = false; cancelSelection(); alive = false; request++; reload.current = null; subscription.remove(); };
+  }, [ownAvailable]));
 
   const claimSelection = () => {
-    if (selectionLock.current) return false;
+    if (!focused.current || selectionLock.current) return false;
+    selectionEpoch.current++;
     selectionLock.current = true; setSelecting(true); return true;
   };
   const releaseSelection = () => { selectionLock.current = false; setSelecting(false); };
@@ -84,18 +113,29 @@ export default function RecordSelectionScreen() {
     claimSelection={claimSelection} releaseSelection={releaseSelection} /></View>;
   const handleSelect = async (run: RunRecord) => {
     if (!run.hasRoute || !claimSelection()) return;
+    const token = selectionEpoch.current;
+    const isCurrent = () => focused.current && token === selectionEpoch.current;
     try {
       setLoadingRouteFor(run.id);
       // §5: 고른 다음에만 실제 좌표를 가져온다.
-      const track = await HealthKitBridge.getRoute(run.id);
-      await setSelectedRun(run, track);
-      router.push('/background-selection');
+      const localID = runaryRecordID(run.id);
+      if (localID !== null) {
+        const detail = await Tracking!.detail(localID);
+        if (!isCurrent()) return;
+        if (detail.summary.id !== localID) throw new Error('다른 기록의 경로는 선택할 수 없어요.');
+        const selected = runaryTrack(detail);
+        await setSelectedRun(selected.run, selected.track, isCurrent);
+      } else {
+        const track = await HealthKitBridge.getRoute(run.id);
+        if (!isCurrent()) return;
+        await setSelectedRun(run, track, isCurrent);
+      }
+      if (isCurrent()) router.push('/background-selection');
     } catch {
       // §6: 좌표를 읽다 실패하면 목록에 머무른다. 그 줄에 "다시 시도"를 남긴다.
-      setFailedIds((prev) => new Set(prev).add(run.id));
+      if (isCurrent()) setFailedIds((prev) => new Set(prev).add(run.id));
     } finally {
-      setLoadingRouteFor(null);
-      releaseSelection();
+      if (isCurrent()) { setLoadingRouteFor(null); releaseSelection(); }
     }
   };
 
@@ -112,84 +152,38 @@ export default function RecordSelectionScreen() {
     />
   );
 
-  if (state === 'loading') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        {header}
-        {sampleEntry}
-        <View style={styles.center}>
-          <ActivityIndicator color={Colors.accent} />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (state === 'error') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        {header}
-        {sampleEntry}
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>기록을 불러오지 못했어요</Text>
-          <AppPermissionsLink />
-          <Pressable onPress={refresh} style={styles.retryBtn}>
-            <Text style={styles.retryBtnText}>다시 시도</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (runs.length === 0) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        {header}
-        {sampleEntry}
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>실외 러닝 기록이 없어요</Text>
-          <Text style={styles.emptyBody}>
-            아직 기록이 없거나 건강 데이터 접근이 허용되지 않았을 수 있어요. 한 번 뛰고 오시거나
-            설정에서 권한을 확인해주세요.
-          </Text>
-          <Pressable accessibilityRole="button" onPress={() => { setSettingsError(''); void Linking.openSettings().catch(() => setSettingsError('설정을 열지 못했어요. 아이폰 설정 → 앱 → Runary에서 건강 데이터 접근을 확인해 주세요.')); }} style={styles.retryBtn}><Text style={styles.retryBtnText}>설정에서 권한 확인</Text></Pressable>
-          {settingsError ? <Text style={styles.emptyBody}>{settingsError}</Text> : null}
-          <AppPermissionsLink />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // 2026-09-16 결정 — 경로가 없는 기록을 목록에서 뺀다(예전엔 점선으로 보여주되
-  // 고를 수 없게만 했다). 그 결과 "기록은 있는데 전부 좌표가 없는" 세 번째
-  // 빈 화면이 새로 생긴다 — 위 "기록이 아예 없음"과는 다른 원인이라 걸러낸
-  // 기록 수를 알려주는 별도 문구를 둔다.
-  const visibleRuns = runs.filter((r) => r.hasRoute);
-
-  if (visibleRuns.length === 0) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        {header}
-        {sampleEntry}
-        <View style={styles.center}>
-          <Text style={styles.emptyTitle}>좌표가 있는 기록이 없어요</Text>
-          <Text style={styles.emptyBody}>
-            러닝 {runs.length}건을 찾았지만 좌표가 저장되어 있지 않아 목록에서 걸렀어요. 실외에서
-            GPS로 기록한 러닝인지 확인해주세요.
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const allRuns = mergeRunRecords(runs, ownRuns);
+  const visibleRuns = allRuns.filter(run => run.hasRoute);
+  const loadingSources = state === 'loading' || ownState === 'loading';
+  const empty = <View style={styles.center}>
+    {loadingSources ? <ActivityIndicator color={Colors.accent} /> : <>
+      <Text style={styles.emptyTitle}>{state === 'error' && !ownAvailable ? '기록을 불러오지 못했어요' : allRuns.length ? '좌표가 있는 기록이 없어요' : '실외 러닝 기록이 없어요'}</Text>
+      <Text style={styles.emptyBody}>{allRuns.length
+        ? `러닝 ${allRuns.length}건을 찾았지만 그릴 좌표가 없어 목록에서 걸렀어요.`
+        : '아직 기록이 없거나 건강 데이터 접근이 허용되지 않았을 수 있어요. 한 번 뛰고 오시거나 설정에서 권한을 확인해주세요.'}</Text>
+      {allRuns.length === 0 && <Pressable accessibilityRole="button" onPress={() => { setSettingsError(''); void Linking.openSettings().catch(() => setSettingsError('설정을 열지 못했어요. 아이폰 설정 → 앱 → Runary에서 건강 데이터 접근을 확인해 주세요.')); }} style={styles.retryBtn}><Text style={styles.retryBtnText}>설정에서 권한 확인</Text></Pressable>}
+      {settingsError ? <Text style={styles.emptyBody}>{settingsError}</Text> : null}
+      <AppPermissionsLink />
+    </>}
+  </View>;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       {header}
       {sampleEntry}
-      <Text style={styles.sourceLabel}>APPLE 건강 · 실외 러닝</Text>
+      {(state === 'error' || ownState === 'error') && <View style={styles.sourceNotice}>
+        {state === 'error' && <Text style={styles.emptyBody}>건강 앱 기록을 불러오지 못했어요. 다른 기록은 선택할 수 있어요.</Text>}
+        {ownState === 'error' && <Text style={styles.emptyBody}>Runary 기록을 불러오지 못했어요. 원본은 유지됩니다.</Text>}
+        <Pressable accessibilityRole="button" onPress={refresh} style={styles.retryBtn}><Text style={styles.retryBtnText}>다시 시도</Text></Pressable>
+        {state === 'error' && <AppPermissionsLink />}
+      </View>}
+      {visibleRuns.length > 0 && loadingSources && <Text style={styles.sourceLabel}>다른 기록을 불러오는 중이에요.</Text>}
+      {trackingEnabled && !ownAvailable && <Text style={styles.sourceLabel}>Runary 기록 선택은 최신 개발 앱에서 사용할 수 있어요.</Text>}
       <FlatList
         data={visibleRuns}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[styles.list, !visibleRuns.length && { flexGrow: 1 }]}
+        ListEmptyComponent={empty}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
           const failed = failedIds.has(item.id);
@@ -197,7 +191,8 @@ export default function RecordSelectionScreen() {
           const loading = loadingRouteFor === item.id;
           return (
             <Pressable
-              disabled={!selectable || selecting}
+              disabled={selecting}
+              accessibilityRole="button"
               onPress={() => handleSelect(item)}
               style={[styles.row, !selectable && styles.rowDashed, failed && styles.rowFailed]}>
               <View style={[styles.thumb, failed && styles.thumbFailed]}>
@@ -212,6 +207,7 @@ export default function RecordSelectionScreen() {
                 </Text>
                 <Text style={styles.rowMeta}>
                   {[
+                    item.source === 'runary' ? 'Runary' : 'Apple 건강',
                     formatDistanceKm(item.distanceMeters),
                     !failed ? formatDuration(item.durationSeconds) : null,
                     selectable ? formatPace(item.averagePaceSecPerKm) : null,
@@ -228,13 +224,10 @@ export default function RecordSelectionScreen() {
             </Pressable>
           );
         }}
-        ListFooterComponent={
-          runs.length > visibleRuns.length ? (
-            <Text style={styles.footerNote}>
-              좌표가 없는 기록 {runs.length - visibleRuns.length}건은 목록에서 걸렀어요.
-            </Text>
-          ) : null
-        }
+        ListFooterComponent={<>
+          {allRuns.length > visibleRuns.length && <Text style={styles.footerNote}>좌표가 없는 기록 {allRuns.length - visibleRuns.length}건은 목록에서 걸렀어요.</Text>}
+          {damagedCount > 0 && <Text style={styles.footerNote}>Runary 기록 {damagedCount}건을 읽지 못했어요. 원본은 유지되며 새로고침으로 다시 시도할 수 있어요.</Text>}
+        </>}
       />
     </SafeAreaView>
   );
@@ -265,6 +258,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   retryBtnText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.text },
+  sourceNotice: { paddingHorizontal: 24, paddingBottom: 12, alignItems: 'center', gap: 6 },
   sourceLabel: {
     fontFamily: Fonts.sans,
     fontSize: 10,

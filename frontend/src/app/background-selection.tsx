@@ -16,6 +16,7 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { useBackgroundTask } from '@/hooks/use-background-task';
 import { BACKGROUNDS_DIR, isVideoBackground, persistBackground, persistDefaultBackground, type PhotoBackground } from '@/lib/background-storage';
 import { INITIAL_PHOTO_CROP, type PhotoCrop } from '@/lib/photo-crop';
+import { goBackOrHome } from '@/lib/navigation';
 import { preparePhoto, renderPhotoBackground } from '@/lib/photo-processing';
 import { VIDEO_KEEP_SECONDS } from '@/lib/video-rules';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -195,7 +196,10 @@ export default function BackgroundSelectionScreen() {
     }, result => {
       setBackground(result.path, result.photo);
       // 편집에서 배경을 다시 열었다면 기존 편집 화면으로 돌아간다.
-      if (returnTo === 'edit') router.back();
+      if (returnTo === 'edit') {
+        if (router.canGoBack()) router.back();
+        else router.replace('/edit');
+      }
       else router.push('/edit');
     }, async result => { await removeFiles(result.created); });
   }
@@ -217,7 +221,7 @@ export default function BackgroundSelectionScreen() {
         if (savingPhoto) return;
         if (task.busy) task.cancel();
         else if (candidate) cancelPhotoSelection();
-        else router.back();
+        else goBackOrHome();
       }} right={<Pressable onPress={handleConfirm} disabled={disabled} hitSlop={12} accessibilityRole="button">
         <Text style={[styles.headerAction, disabled && styles.disabled]}>다음</Text>
       </Pressable>} />
