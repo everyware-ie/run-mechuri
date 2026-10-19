@@ -98,6 +98,7 @@ export default function InternalRunScreen() {
     <ScreenHeader title="러닝" right={<Pressable accessibilityRole="button" accessibilityLabel="앱 권한 확인" hitSlop={12} onPress={() => router.push('/app-permissions')}><SymbolView name="gearshape" size={19} tintColor={Colors.textMuted} /></Pressable>} />
     <ScrollView contentContainerStyle={[runUI.body, runUI.mapBody]}>
       {error || pollError || state?.notice ? <View style={runUI.error}><Text style={styles.notice}>{error || pollError || state?.notice}</Text></View> : null}
+      {current && ['disabled', 'unavailable'].includes(state?.liveActivityState ?? '') ? <Text style={styles.subtitle}>잠금화면 현황을 표시할 수 없어요. 러닝은 계속 측정 중이며, 앱 설정에서 실시간 현황 허용 여부를 확인할 수 있어요.</Text> : null}
       {!Tracking!.watchAutoSync ? <Text style={styles.subtitle}>워치 자동 연결과 워치에서 시작은 최신 아이폰·워치 앱을 설치하면 사용할 수 있어요.</Text> : null}
       {current ? <>
         <View style={runUI.center}><Text style={runUI.eyebrow}>RUNARY RUN</Text><RunStatus label={status} active={running} /></View>

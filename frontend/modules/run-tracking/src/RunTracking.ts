@@ -22,6 +22,7 @@ export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
   watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
   watchStartPending?: boolean;
+  liveActivityState?: 'off' | 'active' | 'disabled' | 'waiting' | 'dismissed' | 'unavailable';
   locationPermission: number; preciseLocation: boolean; motionPermission: number; motionSupported: boolean;
   watchPaired: boolean; watchInstalled: boolean;
 };

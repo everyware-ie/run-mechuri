@@ -30,7 +30,12 @@ function withRunTracking(config) {
     const info = { version: 1, author: 'runary' };
     fs.writeFileSync(path.join(assets, 'Contents.json'), JSON.stringify({ info }));
     fs.writeFileSync(path.join(icon, 'Contents.json'), JSON.stringify({ info, images: [{ filename: 'icon.png', idiom: 'universal', platform: 'watchos', size: '1024x1024' }] }));
-    fs.copyFileSync(path.resolve(mod.modRequest.projectRoot, config.ios.icon || config.icon), path.join(icon, 'icon.png'));
+    const { generateImageAsync } = require('@expo/image-utils');
+    const image = await generateImageAsync({ projectRoot: mod.modRequest.projectRoot, cacheType: 'runary-watch-icon' }, {
+      src: path.resolve(mod.modRequest.projectRoot, config.ios.icon || config.icon),
+      width: 1024, height: 1024, resizeMode: 'cover', removeTransparency: true, backgroundColor: '#F0EAE3',
+    });
+    fs.writeFileSync(path.join(icon, 'icon.png'), image.source);
     return mod;
   }]);
   return withXcodeProject(config, mod => { addWatchTarget(mod.modResults, config); return mod; });

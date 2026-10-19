@@ -41,6 +41,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   private var writeFailedAt: Double?
   private var writeRetries = 0
   private var observers: [NSObjectProtocol] = []
+  private lazy var liveActivity = TrackingLiveActivity()
+  private var liveSession = RunaryLiveSession()
+  private var liveActionError = false
   private var now: Double { Date().timeIntervalSince1970 }
 
   override init() {
@@ -66,7 +69,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid }
     })
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      self?.liveActivity.foreground()
       self?.validatePermissions(); self?.continueWatchRequest(); self?.syncWatch(); self?.restartHealthHeartIfNeeded()
+      self?.syncLiveActivity(force: true)
     })
     if WCSession.isSupported() { WCSession.default.delegate = self; WCSession.default.activate() }
     // A single native timer is only for checkpoint/UI freshness. Location events
@@ -84,6 +89,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     } else { UserDefaults.standard.removeObject(forKey: watchRequestKey) }
     if let data = UserDefaults.standard.data(forKey: watchRequestsKey),
        let requests = try? JSONDecoder().decode(TrackingWatchRequests.self, from: data) { watchRequests = requests }
+    syncLiveActivity(force: true)
   }
   private func requireEnabled() throws {
     guard Self.enabled else { throw problem("내부 측정은 팀 테스트 빌드에서만 사용할 수 있어요.") }
@@ -154,6 +160,62 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     closeWatchRecovery(); append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
     guard flush() else { haltForStorage(); throw problem("재개 상태를 저장하지 못했어요.") }
     beginSensors(); syncWatch(); launchWatch(); restartHealthHeartIfNeeded()
+  }
+  // Only an explicit button in the active Live Activity can use this path.
+  // A resumed segment starts now and accepts no cached pre-resume coordinates.
+  private func resumeFromLiveActivity() throws {
+    try requireEnabled()
+    guard let engine, engine.status == "paused", liveActivity.active(runID: engine.id) else { return }
+    guard authorizeLocation(), CLLocationManager.locationServicesEnabled(), location.accuracyAuthorization == .fullAccuracy else {
+      throw problem("위치 권한과 정확한 위치를 앱에서 확인해 주세요.")
+    }
+    setWatchRequest(nil); closeWatchRecovery()
+    append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
+    guard flush() else { haltForStorage(); throw problem("재개 상태를 저장하지 못했어요.") }
+    beginSensors(); syncWatch(); launchWatch(); restartHealthHeartIfNeeded()
+  }
+  func performLiveAction(_ rawAction: String, runID: String, revision: String, confirmation: String?) throws {
+    try requireEnabled()
+    syncLiveActivity()
+    guard let action = RunaryLiveAction(rawValue: rawAction), liveActivity.active(runID: runID),
+          liveSession.accept(action, runID: runID, revision: revision, confirmation: confirmation) else {
+      syncLiveActivity(force: true)
+      return
+    }
+    liveActionError = false
+    defer { syncLiveActivity(force: true) }
+    do {
+      switch action {
+      case .pause: try pause()
+      case .resume: try resumeFromLiveActivity()
+      case .finish: try finish()
+      case .askFinish, .cancelFinish: break
+      }
+    } catch {
+      liveSession.invalidate()
+      liveActionError = true
+      // Keep the actual native phase and a route back to recovery. The card
+      // must not disappear when finalization fails.
+      notice = error.localizedDescription
+      throw error
+    }
+  }
+  func waitForLiveUpdates() async { await liveActivity.waitForUpdates() }
+  private func syncLiveActivity(force: Bool = false) {
+    guard Self.enabled else { return }
+    let status = engine?.status ?? "idle"
+    let previousRevision = liveSession.revision
+    liveSession.observe(runID: engine?.id, phase: status, storageError: writeFailedAt != nil)
+    if previousRevision != liveSession.revision { liveActionError = false }
+    guard liveActivity.due(revision: engine?.lastSaved == nil ? nil : liveSession.revision, force: force) else { return }
+    guard let summary = engine?.summary(at: now), summary.lastSaved != nil else {
+      liveActivity.publish(id: nil, state: nil, force: force)
+      return
+    }
+    let state = RunaryLiveState(phase: status, revision: liveSession.revision, confirmation: liveSession.confirmation,
+      snapshotAt: now, duration: summary.duration, distance: summary.distance, averagePace: summary.averagePace,
+      heartRate: summary.heartRate, lastHeart: summary.lastHeart, storageError: writeFailedAt != nil, actionError: liveActionError)
+    liveActivity.publish(id: summary.id, state: state, force: force)
   }
   func finish() throws {
     try requireEnabled()
@@ -400,6 +462,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   }
   private func beginMotion() {
     guard !motionCollecting, engine?.status == "running", CMPedometer.isStepCountingAvailable(), let interval = engine?.intervals.last else { return }
+    // A lock-screen resume reuses authorization; first-time permission sheets
+    // belong to a foreground app visit, not a background App Intent.
+    guard CMPedometer.authorizationStatus() != .notDetermined || UIApplication.shared.applicationState == .active else { return }
     motionCollecting = true
     motion.startUpdates(from: Date(timeIntervalSince1970: interval.start)) { [weak self] data, error in
       DispatchQueue.main.async {
@@ -422,6 +487,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     append(TrackingEvent(kind: "battery", time: now, value: value < 0 ? nil : Double(value), detail: charging ? "charging" : "unplugged"))
   }
   @discardableResult private func flush() -> Bool {
+    defer { syncLiveActivity() }
     guard let engine, let store else { return false }
     let date = now
     var summary = engine.summary(at: date); summary.lastSaved = date
@@ -449,6 +515,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     if now - (engine?.lastSaved ?? 0) >= 5 { battery(); flush() }
   }
   private func onTick() {
+    defer { syncLiveActivity() }
     if let request = watchRequest, !request.valid(at: now) {
       cancelPreparation(); notice = "워치의 러닝 요청 시간이 지났어요. 다시 시작해 주세요."; syncWatch()
     }
@@ -514,6 +581,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     return ["enabled": true, "phase": phase, "notice": notice as Any? ?? NSNull(),
       "summary": summary, "watchState": watchState, "healthHeartState": healthHeartState,
       "watchStartPending": watchRequest != nil,
+      "liveActivityState": liveActivity.availability,
       "unsavedEvents": pending.count, "storageError": writeFailedAt != nil,
       "locationPermission": location.authorizationStatus.rawValue,
       "preciseLocation": location.accuracyAuthorization == .fullAccuracy,
@@ -663,6 +731,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     return message
   }
   private func syncWatch() {
+    syncLiveActivity()
     guard Self.enabled, WCSession.isSupported() else { return }
     let session = WCSession.default
     guard session.isPaired else { watchState = "notPaired"; return }

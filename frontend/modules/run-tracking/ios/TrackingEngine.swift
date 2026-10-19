@@ -207,7 +207,8 @@ final class TrackingEngine {
     guard let lat = e.latitude, let lon = e.longitude, let accuracy = e.accuracy,
           lat.isFinite, lon.isFinite, abs(lat) <= 90, abs(lon) <= 180,
           accuracy.isFinite, accuracy >= 0, accuracy <= 35, e.time.isFinite else { reject("accuracyOrCoordinate"); return }
-    guard active(at: e.time), e.time <= (e.received ?? e.time) + 2 else { reject("outsideInterval"); return }
+    guard active(at: e.time), e.time >= (intervals.last?.start ?? started),
+          e.time <= (e.received ?? e.time) + 2 else { reject("outsideInterval"); return }
     // Batch delivery is retained; old start-cache and out-of-order points are not.
     if let previousTime = lastValidLocationTime, e.time <= previousTime { reject("outOfOrder"); return }
     let sampleGap = e.time - (lastValidLocationTime ?? e.time)
