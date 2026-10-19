@@ -25,8 +25,9 @@ import { useInstagramShare } from '@/hooks/use-instagram-share';
 // 필요 없이 바로 인스타그램 스토리로 넘긴다.
 
 export default function ResultDetailScreen() {
-  const { width } = useWindowDimensions();
-  const previewSize = Math.min(300, Math.max(1, width - Spacing.lg * 2));
+  const { width, height } = useWindowDimensions();
+  const previewSize = Math.min(360, Math.max(1, width - Spacing.md * 2));
+  const previewHeight = Math.round(Math.min(previewSize * 1.25, Math.max(previewSize, height * 0.5)));
   const { id } = useLocalSearchParams<{ id: string }>();
   const { loadDraft, setSelectedRun } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
@@ -132,7 +133,11 @@ export default function ResultDetailScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScreenHeader title="결과물" />
       <ScrollView contentContainerStyle={styles.container}>
-        <ResultVideoPreview key={result.outputPath} uri={result.outputPath} size={previewSize}>
+        <ResultVideoPreview key={result.outputPath} uri={result.outputPath} size={previewSize} height={previewHeight}
+          metadata={<>
+            <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
+            <Text style={styles.meta}>{isSampleRun(result.run) ? '샘플 기록 · ' : ''}{result.runDate.slice(0, 10)}</Text>
+          </>}>
           <RouteThumbnail
             points={result.track.coordinates}
             preset={result.preset}
@@ -144,11 +149,9 @@ export default function ResultDetailScreen() {
             backgroundImagePath={result.backgroundImagePath}
             framing="content"
             size={previewSize}
+            height={previewHeight}
           />
         </ResultVideoPreview>
-        <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
-        <Text style={styles.meta}>{isSampleRun(result.run) ? '샘플 기록 · ' : ''}{result.runDate.slice(0, 10)}</Text>
-
         <View style={styles.actionColumn}>
           {/* share.tsx S8b와 같은 구성(2026-09-08): 주 버튼(인스타그램 공유) + 저장
               아이콘 버튼 한 줄. */}
@@ -198,11 +201,11 @@ export default function ResultDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
-  container: { flexGrow: 1, alignItems: 'center', padding: Spacing.lg, gap: Spacing.sm },
-  distance: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, marginTop: Spacing.sm },
-  meta: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  container: { flexGrow: 1, alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: 8, paddingBottom: Spacing.lg, gap: 12 },
+  distance: { fontFamily: Fonts.sansBold, fontSize: 22, color: Colors.text },
+  meta: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 12 },
-  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.lg },
+  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: 4 },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   shareButton: { flex: 1 },
   iconButton: {

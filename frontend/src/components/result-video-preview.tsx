@@ -10,7 +10,7 @@ import { Colors, Fonts, Radius } from '@/constants/theme';
 import { Slider } from '@/components/slider';
 
 /** 홈과 보관함 FRD §2-2: 보관한 완성 영상을 재생하며 편집 사본은 건드리지 않는다. */
-export function ResultVideoPreview({ uri, size, children }: { uri: string; size: number; children: ReactNode }) {
+export function ResultVideoPreview({ uri, size, height = size, metadata, children }: { uri: string; size: number; height?: number; metadata?: ReactNode; children: ReactNode }) {
   const [visible, setVisible] = useState(false);
   const [checking, setChecking] = useState(false);
   const request = useRef(0);
@@ -43,15 +43,15 @@ export function ResultVideoPreview({ uri, size, children }: { uri: string; size:
     }
   }
 
-  if (visible) return <ResultVideoPlayer uri={uri} size={size} onClose={() => setVisible(false)} />;
+  if (visible) return <ResultVideoPlayer uri={uri} size={size} height={height} metadata={metadata} onClose={() => setVisible(false)} />;
 
   return <View style={{ width: size }}>
-    <View style={[styles.preview, { height: size }]}>{children}</View>
-    <PlaybackControls onToggle={open} onRestart={() => {}} onStop={() => {}} busy={checking} />
+    <View style={[styles.preview, { height }]}>{children}</View>
+    <PlaybackControls metadata={metadata} onToggle={open} onRestart={() => {}} onStop={() => {}} busy={checking} />
   </View>;
 }
 
-function ResultVideoPlayer({ uri, size, onClose }: { uri: string; size: number; onClose: () => void }) {
+function ResultVideoPlayer({ uri, size, height, metadata, onClose }: { uri: string; size: number; height: number; metadata?: ReactNode; onClose: () => void }) {
   const player = useVideoPlayer(uri, p => {
     p.muted = true;
     p.audioMixingMode = 'mixWithOthers';
@@ -77,7 +77,7 @@ function ResultVideoPlayer({ uri, size, onClose }: { uri: string; size: number; 
   const duration = Number.isFinite(player.duration) ? Math.max(0, player.duration) : 0;
   const failed = status === 'error';
   return <View style={{ width: size }}>
-    <View style={[styles.preview, { height: size }]}>
+    <View style={[styles.preview, { height }]}>
       {failed ? <View style={styles.message}>
         <Text style={styles.notice}>영상을 재생하지 못했어요.</Text>
         <Text style={styles.notice}>정지한 뒤 다시 시도하거나, 다시 편집에서 영상을 새로 만들어 주세요.</Text>
@@ -89,7 +89,7 @@ function ResultVideoPlayer({ uri, size, onClose }: { uri: string; size: number; 
         </View>}
       </View>}
     </View>
-    <PlaybackControls currentTime={currentTime} duration={duration} playing={isPlaying} loaded={!failed}
+    <PlaybackControls metadata={metadata} currentTime={currentTime} duration={duration} playing={isPlaying} loaded={!failed}
       busy={status === 'loading' || status === 'idle'}
       onSeekStart={() => { resumeAfterSeek.current = player.playing; player.pause(); }}
       onSeek={fraction => seekTo(player, fraction * duration)}
@@ -120,14 +120,17 @@ function clock(seconds: number) {
   return `${Math.floor(value / 60).toString().padStart(2, '0')}:${(value % 60).toString().padStart(2, '0')}`;
 }
 
-function PlaybackControls({ currentTime = 0, duration = 0, playing = false, loaded = false, busy = false, canStop = false, onToggle, onRestart, onStop, onSeekStart, onSeek, onSeekEnd }: {
+function PlaybackControls({ metadata, currentTime = 0, duration = 0, playing = false, loaded = false, busy = false, canStop = false, onToggle, onRestart, onStop, onSeekStart, onSeek, onSeekEnd }: {
+  metadata?: ReactNode;
   currentTime?: number; duration?: number; playing?: boolean; loaded?: boolean; busy?: boolean; canStop?: boolean;
   onToggle: () => void; onRestart: () => void; onStop: () => void;
   onSeekStart?: () => void; onSeek?: (fraction: number) => void; onSeekEnd?: (fraction: number) => void;
 }) {
   const progress = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
   return <View style={styles.controls}>
-    <View style={styles.seekArea}>
+    <View style={styles.timeline}>
+      <Text style={styles.time}>{clock(currentTime)}</Text>
+      <View style={styles.seekArea}>
       {loaded && duration > 0 && onSeek ? <Slider value={progress * 100} tapToSeek
         accessibilityLabel="영상 재생 위치" onSlidingStart={onSeekStart}
         onChange={value => onSeek(value / 100)} onSlidingComplete={value => onSeekEnd?.(value / 100)} />
@@ -135,8 +138,11 @@ function PlaybackControls({ currentTime = 0, duration = 0, playing = false, load
         accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}>
         <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
       </View>}
+      </View>
+      <Text style={styles.time}>{clock(duration)}</Text>
     </View>
-    <View style={styles.times}><Text style={styles.time}>{clock(currentTime)}</Text><Text style={styles.time}>{clock(duration)}</Text></View>
+    <View style={[styles.bottomRow, !metadata && styles.centerControls]}>
+    {metadata && <View style={styles.metadata}>{metadata}</View>}
     <View style={styles.controlRow}>
       <Pressable onPress={onRestart} disabled={!loaded || busy} accessibilityRole="button" accessibilityLabel="영상 처음부터 재생"
         style={[styles.secondaryButton, (!loaded || busy) && styles.disabled]}>
@@ -151,21 +157,25 @@ function PlaybackControls({ currentTime = 0, duration = 0, playing = false, load
         <SymbolView name="stop.fill" size={16} tintColor={Colors.textMuted} />
       </Pressable>
     </View>
+    </View>
   </View>;
 }
 
 const styles = StyleSheet.create({
   preview: { overflow: 'hidden', borderRadius: Radius.card, backgroundColor: Colors.bgCard },
-  playButton: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
+  playButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
   secondaryButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: Colors.borderStrong },
   disabled: { opacity: 0.35 },
-  controls: { paddingTop: 12, gap: 6 },
-  seekArea: { height: 32, justifyContent: 'center' },
+  controls: { paddingTop: 4, gap: 4 },
+  timeline: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  seekArea: { flex: 1, height: 32, justifyContent: 'center' },
   progress: { height: 3, borderRadius: 2, backgroundColor: Colors.border, overflow: 'hidden' },
   progressFill: { height: 3, backgroundColor: Colors.accent },
-  times: { flexDirection: 'row', justifyContent: 'space-between' },
-  time: { fontFamily: Fonts.mono, fontSize: 10, color: Colors.textMuted },
-  controlRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24 },
+  time: { fontFamily: Fonts.mono, fontSize: 10, color: Colors.textMuted, minWidth: 32, textAlign: 'center' },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  centerControls: { justifyContent: 'center' },
+  metadata: { flex: 1, minWidth: 0 },
+  controlRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   videoArea: { flex: 1 },
   video: { flex: 1 },
   loading: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' },
