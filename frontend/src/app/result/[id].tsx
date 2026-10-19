@@ -2,12 +2,13 @@ import { SymbolView } from 'expo-symbols';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { ResultVideoPreview } from '@/components/result-video-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
@@ -19,11 +20,13 @@ import { useInstagramShare } from '@/hooks/use-instagram-share';
 
 // FRD: docs/specs/frd/home-and-library.md §2-2
 // "보기 / 공유 / 다시 편집 / 같은 기록으로 새로 만들기 / 삭제"
-// 보기는 v0는 정지 이미지(썸네일 크게)로 대신한다 — 영상 재생 라이브러리는 아직 안 붙임.
+// 썸네일 아래 전용 컨트롤로 보관한 완성 영상을 같은 자리에서 재생한다.
 // 공유(2026-09-08 추가): mp4가 이미 outputPath에 있으므로 share.tsx처럼 다시 인코딩할
 // 필요 없이 바로 인스타그램 스토리로 넘긴다.
 
 export default function ResultDetailScreen() {
+  const { width } = useWindowDimensions();
+  const previewSize = Math.min(300, Math.max(1, width - Spacing.lg * 2));
   const { id } = useLocalSearchParams<{ id: string }>();
   const { loadDraft, setSelectedRun } = useCreationFlow();
   const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
@@ -128,8 +131,8 @@ export default function ResultDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScreenHeader title="결과물" />
-      <View style={styles.container}>
-        <View style={styles.previewBox}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <ResultVideoPreview key={result.outputPath} uri={result.outputPath} size={previewSize}>
           <RouteThumbnail
             points={result.track.coordinates}
             preset={result.preset}
@@ -140,9 +143,9 @@ export default function ResultDetailScreen() {
             stampConfig={result.stampConfig}
             backgroundImagePath={result.backgroundImagePath}
             framing="content"
-            size={270}
+            size={previewSize}
           />
-        </View>
+        </ResultVideoPreview>
         <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
         <Text style={styles.meta}>{isSampleRun(result.run) ? '샘플 기록 · ' : ''}{result.runDate.slice(0, 10)}</Text>
 
@@ -176,7 +179,7 @@ export default function ResultDetailScreen() {
           <ThemedButton title="같은 기록으로 새로 만들기" variant="outline" onPress={handleMakeAnother} />
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
         </View>
-      </View>
+      </ScrollView>
 
       <InstagramMissingSheet
         visible={showMissingSheet}
@@ -195,14 +198,7 @@ export default function ResultDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1, alignItems: 'center', padding: Spacing.lg, gap: Spacing.sm },
-  previewBox: {
-    width: 270,
-    height: 270,
-    borderRadius: Radius.card,
-    overflow: 'hidden',
-    backgroundColor: Colors.bgCard,
-  },
+  container: { flexGrow: 1, alignItems: 'center', padding: Spacing.lg, gap: Spacing.sm },
   distance: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, marginTop: Spacing.sm },
   meta: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 12 },
