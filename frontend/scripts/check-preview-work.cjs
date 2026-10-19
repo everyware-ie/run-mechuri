@@ -117,7 +117,8 @@ for (const clock of ['default/segment', 'light-runner']) {
   const draw = () => clock === 'default/segment'
     ? preview.useUIThreadProgress(paused, true, () => {})
     : preview.LightRunnerLayer({ projected: [], cumulative: [], totalDistance: 0, fullPath: {}, rawFullPath: {},
-      isInteracting: paused, playing: true, blurScale: .7, onProgressSample: () => {} });
+      isInteracting: paused, playing: true, blurScale: .7, onProgressSample: () => {},
+      lineStyle: load('src/lib/editor-style.ts').resolveRouteStyle() });
   render(draw);
   assert.equal(lastFrame.active, true);
   lastFrame.callback({ timeSincePreviousFrame: 16 });
@@ -287,7 +288,7 @@ for (const run of [
     }
   }
 }
-const noLine = preview.stampLayoutDescriptors(props.run, { ...preview.IDENTITY_STAMP, layout: 'line', enabled: Object.fromEntries(lineKeys.map(k => [k, false])), caption: '달리기 완료' }, 1);
+const noLine = preview.stampLayoutDescriptors(props.run, { ...preview.IDENTITY_STAMP, layout: 'line', enabled: Object.fromEntries(lineKeys.map(k => [k, false])), captions: undefined, caption: '달리기 완료' }, 1);
 assert(!noLine.texts.some(n => n.key === 'oneLine'));
 assert(noLine.texts.some(n => n.key.startsWith('caption')));
 console.log('PASS: one-line defaults fit all 63 field combinations, Korean places and long runs; stable count-up font; manual scale/position preserved; caption-only works.');
@@ -338,6 +339,7 @@ console.log('PASS: all stamp presets keep text selectable, separate empty areas,
 slots = [];
 const stampPositionShared = { x: { value: 100 }, y: { value: -50 } };
 const dragProps = { ...props, stampSelected: true, stampPositionShared,
+  captionPositionShared: { x: { value: 0 }, y: { value: 0 } },
   stampConfig: { ...hitConfig, layout: 'corner', position: { x: 100, y: -50 } } };
 function stampWrapper(p) {
   return nodes(render(() => preview.RoutePreview(p))).find(node => node.type === 'ReanimatedView');
@@ -346,19 +348,20 @@ let wrapper = stampWrapper(dragProps);
 assert(wrapper, 'stamp content must use one animated position wrapper');
 const fitScale = preview.computeFitTransform(props.viewWidth, props.viewHeight, 'contain').fitScale;
 const stampLayer = node => nodes(node).find(child => child.type?.name === 'StampPreviewLayer');
-assert.deepEqual(stampLayer(wrapper).props.config.position, { x: 0, y: 0 });
+assert.equal(stampLayer(wrapper).props.options.zeroOffsets, true);
 stampPositionShared.x.value = 280;
 stampPositionShared.y.value = 75;
 const beforeCommit = wrapper.props.style[1].transform;
 assert.deepEqual(beforeCommit, [{ translateX: 280 * fitScale }, { translateY: 75 * fitScale }]);
 wrapper = stampWrapper({ ...dragProps, stampConfig: { ...dragProps.stampConfig, position: { x: 280, y: 75 } } });
 assert.deepEqual(wrapper.props.style[1].transform, beforeCommit, 'persisting position must leave displayed position unchanged');
-assert.deepEqual(stampLayer(wrapper).props.config.position, { x: 0, y: 0 }, 'committed position must not also enter SVG layout');
+assert.equal(stampLayer(wrapper).props.options.zeroOffsets, true, 'committed position must not also enter SVG layout');
 stampPositionShared.x.value = -20;
 stampPositionShared.y.value = 10;
 assert.deepEqual(wrapper.props.style[1].transform, [{ translateX: -20 * fitScale }, { translateY: 10 * fitScale }], 'next drag must not inherit delayed offset resets');
-const regular = stampWrapper({ ...dragProps, stampPositionShared: undefined });
+const regular = render(() => preview.RoutePreview({ ...dragProps, stampPositionShared: undefined, captionPositionShared: undefined }));
 assert.deepEqual(stampLayer(regular).props.config.position, dragProps.stampConfig.position, 'non-editor previews retain stored layout coordinates');
+assert.notEqual(stampLayer(regular).props.options.zeroOffsets, true, 'non-editor previews must apply stored offsets');
 console.log('PASS: stamp drag and commit share one absolute translation without double movement; repeated drag and non-editor previews preserve position.');
 
 // Slider callbacks must receive the last finger position even before React renders again.
@@ -370,12 +373,13 @@ const { Slider } = load('src/components/slider.tsx');
 for (const [minimumValue, maximumValue, startValue] of [[0, 100, 40], [50, 300, 100]]) {
   slots = [];
   const changes = [], commits = [];
-  let options = { value: startValue, minimumValue, maximumValue, onChange: v => changes.push(v), onSlidingComplete: v => commits.push(v) };
+  let options = { value: startValue, minimumValue, maximumValue, tapToSeek: true, onChange: v => changes.push(v), onSlidingComplete: v => commits.push(v) };
   let slider = render(() => Slider(options));
   slider.props.onLayout({ nativeEvent: { layout: { width: 100 } } });
   slider.props.onPanResponderGrant({ nativeEvent: { locationX: 20 } });
   const at20 = Math.round(minimumValue + .2 * (maximumValue - minimumValue));
-  assert.equal(changes.at(-1), at20);
+  assert.equal(changes.at(-1) ?? startValue, at20);
+  assert.equal(changes.length, at20 === startValue ? 0 : 1, 'unchanged taps must not emit redundant changes');
   slider.props.onPanResponderRelease();
   assert.equal(commits.at(-1), at20, 'tap release must commit without waiting for a render');
   slider.props.onPanResponderMove({}, { dx: 20 });

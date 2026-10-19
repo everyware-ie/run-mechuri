@@ -44,6 +44,9 @@ jobs:
         # 화면 첫 렌더의 지연 로딩이 제한된 러너 자원을 서로 차지하지 않도록 직렬 실행한다.
         run: npm test -- --ci --runInBand
 
+      - name: Preview interaction checks
+        run: node scripts/check-preview-work.cjs
+
   docs:
     name: Docs consistency (check-docs.py)
     runs-on: ubuntu-latest
