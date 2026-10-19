@@ -44,6 +44,8 @@ export default function RecordSelectionScreen() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [loadingRouteFor, setLoadingRouteFor] = useState<string | null>(null);
   const selectionLock = useRef(false);
+  const selectionEpoch = useRef(0);
+  const focused = useRef(false);
   const [selecting, setSelecting] = useState(false);
   const [failedIds, setFailedIds] = useState<Set<string>>(new Set());
   const { setSelectedRun } = useCreationFlow();
@@ -51,6 +53,12 @@ export default function RecordSelectionScreen() {
   const reload = useRef<(() => Promise<void>) | null>(null);
   const refresh = () => { void reload.current?.(); };
   useFocusEffect(useCallback(() => {
+    focused.current = true;
+    const cancelSelection = () => {
+      selectionEpoch.current++;
+      selectionLock.current = false;
+      setSelecting(false); setLoadingRouteFor(null);
+    };
     let alive = true, request = 0, loading = false, retryAfterLoad = false;
     const load = async (requestPermission = false) => {
       if (loading) { retryAfterLoad = true; return; }
@@ -89,13 +97,15 @@ export default function RecordSelectionScreen() {
     reload.current = async () => { await Promise.all([load(true), loadOwn()]); };
     void load(true); void loadOwn();
     const subscription = AppState.addEventListener('change', status => {
-      if (status === 'active') { void load(); void loadOwn(); } else { request++; ownRequest++; }
+      if (status === 'active') { void load(); void loadOwn(); }
+      else { request++; ownRequest++; cancelSelection(); }
     });
-    return () => { alive = false; request++; reload.current = null; subscription.remove(); };
+    return () => { focused.current = false; cancelSelection(); alive = false; request++; reload.current = null; subscription.remove(); };
   }, [ownAvailable]));
 
   const claimSelection = () => {
-    if (selectionLock.current) return false;
+    if (!focused.current || selectionLock.current) return false;
+    selectionEpoch.current++;
     selectionLock.current = true; setSelecting(true); return true;
   };
   const releaseSelection = () => { selectionLock.current = false; setSelecting(false); };
@@ -103,26 +113,29 @@ export default function RecordSelectionScreen() {
     claimSelection={claimSelection} releaseSelection={releaseSelection} /></View>;
   const handleSelect = async (run: RunRecord) => {
     if (!run.hasRoute || !claimSelection()) return;
+    const token = selectionEpoch.current;
+    const isCurrent = () => focused.current && token === selectionEpoch.current;
     try {
       setLoadingRouteFor(run.id);
       // §5: 고른 다음에만 실제 좌표를 가져온다.
       const localID = runaryRecordID(run.id);
       if (localID !== null) {
         const detail = await Tracking!.detail(localID);
+        if (!isCurrent()) return;
         if (detail.summary.id !== localID) throw new Error('다른 기록의 경로는 선택할 수 없어요.');
         const selected = runaryTrack(detail);
-        await setSelectedRun(selected.run, selected.track);
+        await setSelectedRun(selected.run, selected.track, isCurrent);
       } else {
         const track = await HealthKitBridge.getRoute(run.id);
-        await setSelectedRun(run, track);
+        if (!isCurrent()) return;
+        await setSelectedRun(run, track, isCurrent);
       }
-      router.push('/background-selection');
+      if (isCurrent()) router.push('/background-selection');
     } catch {
       // §6: 좌표를 읽다 실패하면 목록에 머무른다. 그 줄에 "다시 시도"를 남긴다.
-      setFailedIds((prev) => new Set(prev).add(run.id));
+      if (isCurrent()) setFailedIds((prev) => new Set(prev).add(run.id));
     } finally {
-      setLoadingRouteFor(null);
-      releaseSelection();
+      if (isCurrent()) { setLoadingRouteFor(null); releaseSelection(); }
     }
   };
 

@@ -153,3 +153,35 @@ test('local selection locks other records and supports retry after a deleted sou
   expect(mockSelect).toHaveBeenCalledTimes(1);
   expect(router.push).toHaveBeenCalledTimes(1);
 });
+
+test.each(['health', 'runary'])('leaving during %s route lookup must not replace the draft or reopen the flow', async source => {
+  runs.mockResolvedValue([realRun]);
+  (Tracking!.records as jest.Mock).mockResolvedValue({ records: [ownRun], damaged: [] });
+  let finish!: (value: unknown) => void;
+  const request = new Promise(resolve => { finish = resolve; });
+  if (source === 'runary') (Tracking!.detail as jest.Mock).mockReturnValueOnce(request);
+  else (HealthKit.getRoute as jest.Mock).mockReturnValueOnce(request);
+  await act(async () => { renderer = create(createElement(RecordScreen)); });
+  await act(async () => { if (source === 'runary') ownButton().props.onPress(); else selectionButtons().real(); });
+  await act(async () => renderer.unmount());
+  await act(async () => { finish(source === 'runary' ? ownDetail : { coordinates: [] }); });
+  expect(mockSelect).not.toHaveBeenCalled();
+  expect(router.push).not.toHaveBeenCalled();
+});
+
+test('an old selection cannot unlock a new selection after returning from the background', async () => {
+  (Tracking!.records as jest.Mock).mockResolvedValue({ records: [ownRun], damaged: [] });
+  let oldFinish!: (value: typeof ownDetail) => void, newFinish!: (value: typeof ownDetail) => void;
+  (Tracking!.detail as jest.Mock).mockReturnValueOnce(new Promise(resolve => { oldFinish = resolve; }))
+    .mockReturnValueOnce(new Promise(resolve => { newFinish = resolve; }));
+  await act(async () => { renderer = create(createElement(RecordScreen)); });
+  await act(async () => { ownButton().props.onPress(); });
+  await change('background'); await change('active');
+  await act(async () => { ownButton().props.onPress(); });
+  await act(async () => { oldFinish(ownDetail); });
+  expect(mockSelect).not.toHaveBeenCalled();
+  expect(ownButton().props.disabled).toBe(true);
+  await act(async () => { newFinish(ownDetail); });
+  expect(mockSelect).toHaveBeenCalledTimes(1);
+  expect(router.push).toHaveBeenCalledTimes(1);
+});

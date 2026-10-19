@@ -7,7 +7,13 @@ import { markConnectedOnce } from '@/lib/connection-store';
 import { SAMPLE_HEART_ID } from '@/lib/sample-run';
 
 const mockSelect = jest.fn();
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+jest.mock('expo-router', () => ({
+  useFocusEffect: (callback: () => void | (() => void)) => {
+    const React = jest.requireActual<typeof import('react')>('react');
+    React.useEffect(callback, [callback]);
+  },
+  router: { push: jest.fn(), replace: jest.fn() },
+}));
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => ({ setSelectedRun: mockSelect }) }));
 jest.mock('@/lib/connection-store', () => ({ markConnectedOnce: jest.fn() }));
@@ -20,7 +26,7 @@ afterEach(async () => { await act(async () => renderer?.unmount()); });
 it('첫 체험은 하트 트랙을 준비하고 홈을 남긴 채 배경 선택으로 간다', async () => {
   await act(async () => { renderer = create(createElement(SampleRunEntry, { fromWelcome: true })); });
   await act(async () => { button().props.onPress(); });
-  expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ id: SAMPLE_HEART_ID }), expect.objectContaining({ coordinates: expect.any(Array) }));
+  expect(mockSelect).toHaveBeenCalledWith(expect.objectContaining({ id: SAMPLE_HEART_ID }), expect.objectContaining({ coordinates: expect.any(Array) }), expect.any(Function));
   expect(markConnectedOnce).toHaveBeenCalledTimes(1);
   expect(router.replace).toHaveBeenCalledWith('/');
   expect(router.push).toHaveBeenCalledWith('/background-selection');
@@ -50,5 +56,18 @@ it('다른 기록의 좌표 조회 중에는 샘플 시작으로 생성 상태�
   expect(button().props.disabled).toBe(true);
   await act(async () => { button().props.onPress(); });
   expect(mockSelect).not.toHaveBeenCalled();
+  expect(router.push).not.toHaveBeenCalled();
+});
+
+it('샘플 준비 중 화면을 닫으면 늦은 완료가 다음 화면을 열지 않는다', async () => {
+  let finish!: () => void;
+  mockSelect.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+  await act(async () => { renderer = create(createElement(SampleRunEntry)); });
+  await act(async () => { button().props.onPress(); });
+  const isCurrent = mockSelect.mock.calls[0][2];
+  expect(isCurrent()).toBe(true);
+  await act(async () => renderer.unmount());
+  expect(isCurrent()).toBe(false);
+  await act(async () => { finish(); });
   expect(router.push).not.toHaveBeenCalled();
 });

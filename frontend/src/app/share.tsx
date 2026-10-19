@@ -17,6 +17,7 @@ import { clearDraft } from '@/lib/draft-store';
 import { captionLines, freeCaptionLines } from '@/lib/caption-layout';
 import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
+import { goBackOrHome } from '@/lib/navigation';
 import { useCreationFlow } from '@/state/creation-flow';
 import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
 import { useInstagramShare } from '@/hooks/use-instagram-share';
@@ -178,7 +179,7 @@ export default function ShareScreen() {
         try {
           if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
           if (cancelledRef.current) {
-            router.back();
+            goBackOrHome();
             return;
           }
           // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
@@ -213,7 +214,7 @@ export default function ShareScreen() {
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.
-          router.back();
+          goBackOrHome();
           return;
         }
         // 실기기 피드백(2026-09-03): 실패 원인을 그냥 버리고 있어서 "왜" 실패했는지
@@ -224,7 +225,7 @@ export default function ShareScreen() {
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
         Alert.alert('결과물을 만들지 못했어요', '편집 내용은 그대로예요. 편집 화면에서 다시 완료를 눌러주세요.', [
-          { text: '확인', onPress: () => router.back() },
+          { text: '확인', onPress: () => { if (myGeneration === activeShareGeneration) goBackOrHome(); } },
         ]);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps

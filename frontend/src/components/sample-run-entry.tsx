@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Fonts } from '@/constants/theme';
 import { markConnectedOnce } from '@/lib/connection-store';
@@ -18,26 +18,37 @@ export function SampleRunEntry({ fromWelcome = false, disabled = false, claimSel
 }) {
   const { setSelectedRun } = useCreationFlow();
   const lock = useRef(false);
+  const epoch = useRef(0);
+  const focused = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  useFocusEffect(useCallback(() => {
+    focused.current = true;
+    const cancel = () => { epoch.current++; lock.current = false; setBusy(false); };
+    const subscription = AppState.addEventListener('change', status => { if (status !== 'active') cancel(); });
+    return () => { focused.current = false; cancel(); subscription.remove(); };
+  }, []));
   const start = async () => {
-    if (disabled || lock.current) return;
+    if (!focused.current || disabled || lock.current) return;
     if (claimSelection && !claimSelection()) return;
     lock.current = true; setBusy(true); setError('');
+    const token = ++epoch.current;
+    const isCurrent = () => focused.current && token === epoch.current;
     try {
       const { run, track } = createSampleRun();
-      await setSelectedRun(run, track);
+      await setSelectedRun(run, track, isCurrent);
+      if (!isCurrent()) return;
       if (fromWelcome) {
         await markConnectedOnce();
+        if (!isCurrent()) return;
         // 첫 실행은 홈을 스택에 남겨 배경 선택에서 돌아갈 수 있게 한다.
         router.replace('/');
       }
       router.push('/background-selection');
     } catch {
-      setError('샘플을 준비하지 못했어요. 다시 눌러 주세요.');
+      if (isCurrent()) setError('샘플을 준비하지 못했어요. 다시 눌러 주세요.');
     } finally {
-      lock.current = false; setBusy(false);
-      releaseSelection?.();
+      if (isCurrent()) { lock.current = false; setBusy(false); releaseSelection?.(); }
     }
   };
   return (

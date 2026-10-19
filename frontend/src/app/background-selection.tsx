@@ -196,7 +196,10 @@ export default function BackgroundSelectionScreen() {
     }, result => {
       setBackground(result.path, result.photo);
       // 편집에서 배경을 다시 열었다면 기존 편집 화면으로 돌아간다.
-      if (returnTo === 'edit') router.back();
+      if (returnTo === 'edit') {
+        if (router.canGoBack()) router.back();
+        else router.replace('/edit');
+      }
       else router.push('/edit');
     }, async result => { await removeFiles(result.created); });
   }

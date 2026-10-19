@@ -37,7 +37,7 @@ type CreationDraft = {
 
 type CreationFlowContextValue = {
   draft: CreationDraft;
-  setSelectedRun: (run: RunRecord, track: Track) => Promise<void>;
+  setSelectedRun: (run: RunRecord, track: Track, isCurrent?: () => boolean) => Promise<void>;
   setBackground: (path: string, photo?: PhotoBackground) => void;
   setPreset: (preset: RoutePreset) => void;
   setRouteStyle: (style: RouteStyle) => void;
@@ -70,8 +70,9 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CreationFlowContextValue>(
     () => ({
       draft,
-      setSelectedRun: async (run, track) => {
+      setSelectedRun: async (run, track, isCurrent = () => true) => {
         const layout = await getPreferredStampLayout();
+        if (!isCurrent()) return;
         setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout,
           placeName: isSampleRun(run) ? SAMPLE_PLACE_NAME : '' } });
       },
