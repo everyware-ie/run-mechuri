@@ -24,6 +24,9 @@ public final class RunTrackingModule: Module {
     AsyncFunction("start") { (watch: Bool) throws -> [String: Any] in
       try TrackingManager.shared.start(); return TrackingManager.shared.snapshot()
     }.runOnQueue(.main)
+    AsyncFunction("startImmediately") { () throws -> [String: Any] in
+      try TrackingManager.shared.startImmediately(); return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
     AsyncFunction("startWithHeartSource") { (source: String) throws -> [String: Any] in
       guard source == "health" else { throw NSError(domain: "RunaryTracking", code: 1) }
       try TrackingManager.shared.start()

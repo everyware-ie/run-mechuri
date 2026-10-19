@@ -21,7 +21,7 @@ export type RunMapPage = {
 export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
   watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
-  watchStartPending?: boolean;
+  watchStartPending?: boolean; phoneStartPending?: boolean;
   liveActivityState?: 'off' | 'active' | 'disabled' | 'waiting' | 'dismissed' | 'unavailable';
   locationPermission: number; preciseLocation: boolean; motionPermission: number; motionSupported: boolean;
   watchPaired: boolean; watchInstalled: boolean;
@@ -31,6 +31,7 @@ type Module = {
   appVersion: string; buildVersion: string;
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;
+  startImmediately?(): Promise<TrackingState>;
   startWithHeartSource?(source: HeartSource): Promise<TrackingState>;
   reconnectHealthHeart?(): Promise<void>; refreshHealthHeart?(id: string): Promise<boolean>;
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;

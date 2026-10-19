@@ -536,3 +536,9 @@ Debug 빌드와 `codesign --verify --deep --strict`가 통과했다. IPA 배포 
 Metro는 `RUNARY_INTERNAL_TRACKING=1 node_modules/.bin/expo start --dev-client --lan --port 8081`로 실행했다. 이번 LAN 주소는 `192.168.0.27:8081`이며 서버 응답과 iOS 번들 생성을 확인했다. 미러링에서 개발 앱의 홈과 보관함 25개 유지, `frontend://internal-run`의 러닝 준비 화면 진입을 확인했다. 러닝은 시작하지 않았다.
 
 워치 앱 동봉·서명은 확인했지만 실제 워치의 업데이트 반영과 잠금화면 카드 생성·일시정지·즉시 재개·종료 저장은 별도 실기기 확인이 남아 있다. TestFlight 업로드는 하지 않았다.
+
+## 2026-10-19: 아이폰 러닝 시작 버튼 간소화
+
+같은 개발 브랜치에서 아이폰의 시작을 시간 즉시 측정으로 변경했다. 기존 DerivedData와 개발 프로파일을 재사용해 `1.0.0(1)`의 아이폰·워치·잠금화면 확장 전체 Debug 빌드와 `codesign --verify --deep --strict`를 통과했다. 서명 검증은 시스템 키체인에 접근 가능한 환경에서 수행했다. API 키를 다시 가져오거나 기기를 추가 등록하지 않았다.
+
+CoreDevice로 업데이트를 전송하던 중 연결 중단(3002 / IXRemoteErrorDomain 6)으로 실패했고 기기 목록에서도 아이폰이 `unavailable`로 표시됐다. 미러링의 연결 중단도 확인해 사용자에게 기기 연결을 요청했다. 설치 완료와 앱 화면 확인은 보류 상태다. TestFlight 업로드는 하지 않았다.

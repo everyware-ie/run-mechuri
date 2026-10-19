@@ -19,6 +19,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   private var watchRecoveryStart: Double?
   private var historyCache: [String: TrackingSummary] = [:]
   private var tick: Timer?
+  private var phoneStartPending = false
   private var preparing = false
   private var ready: CLLocation?
   private var gpsReadyAt: Double?
@@ -70,7 +71,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     })
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
       self?.liveActivity.foreground()
-      self?.validatePermissions(); self?.continueWatchRequest(); self?.syncWatch(); self?.restartHealthHeartIfNeeded()
+      self?.continuePhoneStart(); self?.validatePermissions(); self?.continueWatchRequest(); self?.syncWatch(); self?.restartHealthHeartIfNeeded()
       self?.syncLiveActivity(force: true)
     })
     if WCSession.isSupported() { WCSession.default.delegate = self; WCSession.default.activate() }
@@ -112,6 +113,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     syncWatch()
   }
   func cancelPreparation(clearWatchRequest: Bool = true) {
+    phoneStartPending = false
     if clearWatchRequest { setWatchRequest(nil) }
     guard preparing else { return }
     preparing = false; ready = nil; prepareAt = nil
@@ -133,10 +135,53 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
     let initialPosition = try readyForStart()
+    try createRun(initialPosition: initialPosition)
+  }
+  // An explicit iPhone start does not wait for a location fix. The only
+  // deferred request is first-use permission, never persisted across launches.
+  func startImmediately() throws {
+    try requireEnabled()
+    guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
+    guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 시작해 주세요.") }
+    if phoneStartPending { return }
+    cancelPreparation()
+    notice = nil
+    guard CLLocationManager.locationServicesEnabled() else { throw problem("앱 권한에서 위치 접근을 확인해 주세요.") }
+    if location.authorizationStatus == .notDetermined {
+      phoneStartPending = true
+      location.requestWhenInUseAuthorization()
+      return
+    }
+    try requireStartPermission()
+    try createRun(initialPosition: nil)
+  }
+  private func requireStartPermission() throws {
+    guard authorizeLocation(), CLLocationManager.locationServicesEnabled(), location.accuracyAuthorization == .fullAccuracy else {
+      throw problem("앱 권한에서 위치와 정확한 위치를 확인해 주세요.")
+    }
+  }
+  private func continuePhoneStart() {
+    guard phoneStartPending, UIApplication.shared.applicationState == .active,
+          location.authorizationStatus != .notDetermined else { return }
+    phoneStartPending = false
+    guard engine == nil else { return }
+    do {
+      try requireEnabled()
+      try requireStartPermission()
+      try createRun(initialPosition: nil)
+    } catch { notice = error.localizedDescription }
+  }
+  private func createRun(initialPosition: CLLocation?) throws {
+    // All entry points execute on the main queue and share this single engine.
+    guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
+    phoneStartPending = false
     let e = TrackingEngine(id: watchRequest?.action == "start" ? watchRequest!.id : UUID().uuidString, started: now)
     setWatchRequest(nil)
     engine = e; pending = []; phase = "running"; preparing = false
-    append(TrackingEvent(kind: "preparation", time: now, received: initialPosition.timestamp.timeIntervalSince1970, value: gpsReadyAt, intervalStart: prepareAt))
+    if let initialPosition {
+      append(TrackingEvent(kind: "preparation", time: now, received: initialPosition.timestamp.timeIntervalSince1970, value: gpsReadyAt, intervalStart: prepareAt))
+    }
+    ready = nil; gpsReadyAt = nil; prepareAt = nil
     append(TrackingEvent(kind: "watch", time: now, value: 0))
     append(TrackingEvent(kind: "heartSource", time: now, detail: "health"))
     if let watchAppInfo { append(TrackingEvent(kind: "watchApp", time: now, detail: watchAppInfo)) }
@@ -548,6 +593,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     }
   }
   func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    continuePhoneStart()
     if preparing {
       if authorizeLocation() && manager.accuracyAuthorization == .fullAccuracy { manager.startUpdatingLocation() }
       else if manager.authorizationStatus != .notDetermined { cancelPreparation(); notice = "앱 권한에서 위치와 정확한 위치를 확인해 주세요." }
@@ -580,7 +626,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     let summary: Any = engine.map { json($0.summary(at: now)) } ?? NSNull()
     return ["enabled": true, "phase": phase, "notice": notice as Any? ?? NSNull(),
       "summary": summary, "watchState": watchState, "healthHeartState": healthHeartState,
-      "watchStartPending": watchRequest != nil,
+      "watchStartPending": watchRequest != nil, "phoneStartPending": phoneStartPending,
       "liveActivityState": liveActivity.availability,
       "unsavedEvents": pending.count, "storageError": writeFailedAt != nil,
       "locationPermission": location.authorizationStatus.rawValue,
@@ -685,7 +731,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     else { UserDefaults.standard.removeObject(forKey: watchRequestKey) }
   }
   private func continueWatchRequest() {
-    guard let request = watchRequest else { return }
+    guard !phoneStartPending, let request = watchRequest else { return }
     guard request.valid(at: now) else { cancelPreparation(); notice = "워치의 러닝 요청 시간이 지났어요."; syncWatch(); return }
     if request.action == "start", engine != nil { setWatchRequest(nil); syncWatch(); return }
     if request.action == "resume", engine?.id != request.id || !["paused", "interrupted"].contains(engine?.status ?? "") {
