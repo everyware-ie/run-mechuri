@@ -63,6 +63,7 @@ python3 scripts/threads-insights.py set-token
 | 게시물 조회·공유 | Meta 문서에 "개발 중"으로 표시된 지표다. 값이 비거나 기준이 바뀔 수 있다 |
 | 게시물 답글 | 그 글에 바로 달린 답글만 센다. 답글의 답글은 빠진다 |
 | 주별 조회 | 미국 태평양 시간 기준으로 하루가 나뉜다. 한국 시간과 몇 시간 어긋난다 |
+| 링크 클릭 | 우리 게시물에 넣은 링크를 누른 횟수다. 프로필 방문 수가 아니다. 프로필 링크 클릭이 들어가는지는 API 문서에 없다. 스레드 앱 인사이트에서는 프로필 링크 클릭을 볼 수 있다 |
 | 팔로워 분포 | 나라·나이·성별 분포는 팔로워가 100명이 넘어야 볼 수 있다. 지금은 가져오지 않는다 |
 
 ## 분석할 때
@@ -78,3 +79,5 @@ python3 scripts/threads-insights.py set-token
 - [Threads API 시작하기](https://developers.facebook.com/docs/threads/get-started): 앱, 테스터, 권한
 - [장기 토큰](https://developers.facebook.com/documentation/threads/get-started/long-lived-tokens): 60일 유효, 연장 조건
 - [Threads API 개요](https://developers.facebook.com/docs/threads/overview): 호출 한도
+- [Threads API 변경 이력](https://developers.facebook.com/docs/threads/changelog): 2025-07-02 링크 클릭 지표 추가
+- [TechCrunch (2025-05-15)](https://techcrunch.com/2025/05/15/threads-now-lets-creators-add-up-to-5-links-to-profiles-track-clicks): 프로필 링크 5개와 앱 인사이트의 클릭 추적
