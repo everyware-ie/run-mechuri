@@ -27,6 +27,7 @@ docs/
 | **제품 요구 문서 (PRD)** | `specs/prd/running-drawing-mvp.md` (러닝 드로잉 MVP, `draft`) |
 | **아이디어 원문 쌓기** | `ideation/<본인 닉네임>/` (`idea/<닉네임>` 브랜치에서) |
 | **반응, 콘텐츠, 외부 활동** | `marketing/reactions.md`, `marketing/content.md`, `ops/external-activities.md` |
+| **스레드 조회수·팔로워** | [`marketing/threads/stats.md`](marketing/threads/stats.md). 갱신하는 법은 [`marketing/threads/README.md`](marketing/threads/README.md) |
 
 ## 다음 회의에서 확인할 안건 후보
 

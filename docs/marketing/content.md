@@ -3,12 +3,14 @@ title: 콘텐츠 운영
 product: running
 type: marketing
 status: draft
-updated: 2026-10-07
+updated: 2026-10-20
 ---
 
 # 콘텐츠 운영
 
 **스레드와 인스타에 무엇을 어떻게 올리는지 모은다.** 결과물을 본 사람의 반응은 [반응 모음](reactions.md)에, 지원 사업이나 대회 같은 외부 활동은 [외부 활동](../ops/external-activities.md)에 따로 적는다.
+
+**조회수와 팔로워는 [스레드 통계](threads/stats.md)에 쌓는다.** 회의 안건을 쓰기 전에 갱신한다([방법](threads/README.md)).
 
 ## 매주 합본
 
