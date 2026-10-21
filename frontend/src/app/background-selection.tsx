@@ -2,7 +2,7 @@ import { Asset } from 'expo-asset';
 import { router } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useEffect, useState } from 'react';
-import { Dimensions, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RoutePreview } from '@/components/route-preview';
@@ -104,7 +104,12 @@ export default function BackgroundSelectionScreen() {
         </View>
 
         <Text style={styles.sectionLabel}>기본 이미지 · BACKGROUND</Text>
-        <View style={styles.swatchRow}>
+        {/* 6장 + 갤러리는 한 줄에 다 안 들어가서 가로로 스크롤한다. 갤러리 칸을 맨 앞에 둬서
+            스크롤하지 않아도 항상 보이게 한다. */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow}>
+          <View style={[styles.swatch, styles.swatchGallery]}>
+            <Text style={styles.swatchGalleryText}>갤러리</Text>
+          </View>
           {DEFAULT_BACKGROUNDS.map((bg) => {
             const on = bg.id === selectedId;
             return (
@@ -116,14 +121,10 @@ export default function BackgroundSelectionScreen() {
               </Pressable>
             );
           })}
-          <View style={[styles.swatch, styles.swatchGallery]}>
-            <Text style={styles.swatchGalleryText}>갤러리</Text>
-          </View>
-        </View>
+        </ScrollView>
 
         <Text style={styles.note}>
-          자리표시자예요. 실제 기본 이미지 3장은 디자인이 나온 뒤 정해집니다. 갤러리에서
-          고르기는 이후에 붙습니다.
+          기본 이미지는 옆으로 넘겨서 고를 수 있어요. 갤러리에서 고르기는 이후에 붙습니다.
         </Text>
       </View>
     </SafeAreaView>
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
   // 잘려 나갔다. 스와치 자체를 사진과 같은 9:16 비율로 만들면 cover를 유지해도
   // 사진 전체가 실제 구도 그대로 보인다.
   swatch: {
-    flex: 1,
+    width: 72,
     aspectRatio: 9 / 16,
     borderRadius: 14,
     overflow: 'hidden',
