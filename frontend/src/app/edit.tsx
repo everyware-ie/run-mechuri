@@ -149,6 +149,9 @@ export default function EditScreen() {
   const isFocused = useIsFocused();
 
   const [tool, setTool] = useState<Tool | null>(null);
+  // 오른쪽 도구 버튼을 접은 상태. 코너 프리셋의 러닝 데이터가 버튼에 가린다는 QA(2026-10-06)로 추가했다.
+  // 저장하지 않는다. 이 화면을 보는 동안만 유지하고 다시 들어오면 펼쳐진 채 시작한다(결과물 편집 FRD §1).
+  const [toolsFolded, setToolsFolded] = useState(false);
   const toolRef = useRef<Tool | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [drawingPreview, setDrawingPreview] = useState<HandDrawingPreview | null>(null);
@@ -1047,7 +1050,11 @@ export default function EditScreen() {
               </View>}
 
               {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.toolRail} pointerEvents="box-none">
-                {TOOLS.map((t) => {
+                <Pressable onPress={() => setToolsFolded(folded => !folded)} hitSlop={8} style={styles.toolFold}
+                  accessibilityRole="button" accessibilityLabel={toolsFolded ? '도구 펼치기' : '도구 접기'} accessibilityState={{ expanded: !toolsFolded }}>
+                  <SymbolView name={toolsFolded ? 'chevron.down' : 'chevron.up'} size={13} tintColor={Colors.text} />
+                </Pressable>
+                {!toolsFolded && TOOLS.map((t) => {
                   const on = tool === t.id;
                   return (
                     <Pressable key={t.id} onPress={() => t.id === 'caption' ? startNewCaption() : t.id === 'draw' ? startDrawing() : on ? closeTool() : openTool(t.id)}
@@ -1238,6 +1245,8 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   toolRail: { position: 'absolute', top: 10, right: 10, gap: 10, alignItems: 'flex-end' },
   toolButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+  // 접기 손잡이. 도구 아이콘(40)보다 작게 해서 접었을 때 러닝 데이터를 거의 가리지 않게 한다. 오른쪽 가장자리는 아이콘과 중심을 맞춘다.
+  toolFold: { width: 32, height: 32, borderRadius: 16, marginRight: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG },
   toolLabel: {
     fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.text,
     textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4, textShadowOffset: { width: 0, height: 0 },
