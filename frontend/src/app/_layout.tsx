@@ -5,6 +5,7 @@ import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { Colors } from '@/constants/theme';
@@ -25,6 +26,8 @@ export default function RootLayout() {
     SpaceGrotesk_700Bold,
     JetBrainsMono_500Medium,
     JetBrainsMono_700Bold,
+    Pretendard_500Medium: require('@/assets/fonts/Pretendard-Medium.otf'),
+    Pretendard_700Bold: require('@/assets/fonts/Pretendard-Bold.otf'),
     // 실기기 피드백(2026-09-03): SpaceGrotesk·JetBrains Mono 둘 다 한글 글리프가
     // 없어서, 각인 "한 줄 문구"에 한글을 쓰면 조용히 시스템 폰트로 폴백돼 숫자
     // 부분(SpaceGrotesk)과 글씨체가 달라 보였다. 한글 문구 전용으로 추가.
@@ -37,25 +40,27 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={DarkTheme}>
-      <AnimatedSplashOverlay />
-      <CreationFlowProvider>
-        {/* 시안대로 네이티브 내비 바를 쓰지 않는다 — 각 화면이 ScreenHeader로 상단 행을 직접 그린다. */}
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: Colors.bg },
-            // 실기기 피드백(2026-09): 화면 중앙에서 오른쪽으로 밀어도 뒤로가기가
-            // 됐다 — 편집 화면처럼 오른쪽으로 끄는 제스처(드로잉 이동, 슬라이더)가
-            // 많은 화면에서 특히 문제였다. fullScreenGestureEnabled가 기본으로
-            // 켜져 있으면(react-native-screens) 화면 전체가 스와이프백 대상이
-            // 된다 — 꺼서 진짜 왼쪽 가장자리에서 시작한 스와이프만 반응하게 한다.
-            gestureEnabled: true,
-            fullScreenGestureEnabled: false,
-            gestureResponseDistance: { start: 24 },
-          }}
-        />
-      </CreationFlowProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={DarkTheme}>
+        <AnimatedSplashOverlay />
+        <CreationFlowProvider>
+          {/* 시안대로 네이티브 내비 바를 쓰지 않는다 — 각 화면이 ScreenHeader로 상단 행을 직접 그린다. */}
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: Colors.bg },
+              // 실기기 피드백(2026-09): 화면 중앙에서 오른쪽으로 밀어도 뒤로가기가
+              // 됐다 — 편집 화면처럼 오른쪽으로 끄는 제스처(드로잉 이동, 슬라이더)가
+              // 많은 화면에서 특히 문제였다. fullScreenGestureEnabled가 기본으로
+              // 켜져 있으면(react-native-screens) 화면 전체가 스와이프백 대상이
+              // 된다 — 꺼서 진짜 왼쪽 가장자리에서 시작한 스와이프만 반응하게 한다.
+              gestureEnabled: true,
+              fullScreenGestureEnabled: false,
+              gestureResponseDistance: { start: 24 },
+            }}
+          />
+        </CreationFlowProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

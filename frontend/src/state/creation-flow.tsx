@@ -1,3 +1,5 @@
+import { normalizeHandDrawing, type HandStroke } from '@/lib/hand-drawing';
+import { type RouteStyle } from '@/lib/editor-style';
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -8,7 +10,10 @@ import {
   type RouteTransform,
   type StampConfig,
 } from '@/components/route-preview';
+import type { PhotoBackground } from '@/lib/background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
+import { FIRST_STAMP_LAYOUT, getPreferredStampLayout } from '@/lib/stamp-preference';
+import { isSampleRun, SAMPLE_PLACE_NAME } from '@/lib/sample-run';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
@@ -19,8 +24,11 @@ type CreationDraft = {
   selectedRun: RunRecord | null;
   track: Track | null;
   backgroundImagePath: string | null;
+  backgroundPhoto?: PhotoBackground;
   preset: RoutePreset;
   transform: RouteTransform;
+  routeStyle?: RouteStyle;
+  handDrawing?: HandStroke[];
   /** result-editing FRD §5 다듬기 세기 */
   smoothOptions: SmoothOptions;
   /** result-editing FRD §7 각인 */
@@ -29,9 +37,11 @@ type CreationDraft = {
 
 type CreationFlowContextValue = {
   draft: CreationDraft;
-  setSelectedRun: (run: RunRecord, track: Track) => void;
-  setBackground: (path: string) => void;
+  setSelectedRun: (run: RunRecord, track: Track, isCurrent?: () => boolean) => Promise<void>;
+  setBackground: (path: string, photo?: PhotoBackground) => void;
   setPreset: (preset: RoutePreset) => void;
+  setRouteStyle: (style: RouteStyle) => void;
+  setHandDrawing: (strokes: HandStroke[]) => void;
   setTransform: (transform: RouteTransform) => void;
   setSmoothOptions: (smoothOptions: SmoothOptions) => void;
   setStampConfig: (stampConfig: StampConfig) => void;
@@ -49,7 +59,7 @@ const emptyDraft: CreationDraft = {
   preset: 'default-drawing',
   transform: IDENTITY_TRANSFORM,
   smoothOptions: IDENTITY_SMOOTH,
-  stampConfig: IDENTITY_STAMP,
+  stampConfig: { ...IDENTITY_STAMP, layout: FIRST_STAMP_LAYOUT },
 };
 
 const CreationFlowContext = createContext<CreationFlowContextValue | null>(null);
@@ -60,14 +70,21 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CreationFlowContextValue>(
     () => ({
       draft,
-      setSelectedRun: (run, track) => setDraft((prev) => ({ ...prev, selectedRun: run, track })),
-      setBackground: (path) => setDraft((prev) => ({ ...prev, backgroundImagePath: path })),
+      setSelectedRun: async (run, track, isCurrent = () => true) => {
+        const layout = await getPreferredStampLayout();
+        if (!isCurrent()) return;
+        setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout,
+          placeName: isSampleRun(run) ? SAMPLE_PLACE_NAME : '' } });
+      },
+      setBackground: (path, photo) => setDraft((prev) => ({ ...prev, backgroundImagePath: path, backgroundPhoto: photo })),
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),
+      setHandDrawing: (handDrawing) => setDraft(prev => ({ ...prev, handDrawing: normalizeHandDrawing(handDrawing) })),
+      setRouteStyle: (routeStyle) => setDraft((prev) => ({ ...prev, routeStyle })),
       setTransform: (transform) => setDraft((prev) => ({ ...prev, transform })),
       setSmoothOptions: (smoothOptions) => setDraft((prev) => ({ ...prev, smoothOptions })),
       setStampConfig: (stampConfig) => setDraft((prev) => ({ ...prev, stampConfig })),
       resetTransform: () => setDraft((prev) => ({ ...prev, transform: IDENTITY_TRANSFORM })),
-      loadDraft: (partial) => setDraft((prev) => ({ ...prev, ...partial })),
+      loadDraft: (partial) => setDraft((prev) => ({ ...prev, routeStyle: undefined, handDrawing: undefined, ...partial })),
       reset: () => setDraft(emptyDraft),
     }),
     [draft]

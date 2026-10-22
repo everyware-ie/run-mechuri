@@ -1,19 +1,29 @@
+import { normalizeHandDrawing } from '@/lib/hand-drawing';
+import { resolveRouteStyle } from '@/lib/editor-style';
+import { buildPaceTimeline } from '@/lib/pace-timeline';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { clearDraft } from '@/lib/draft-store';
+import { captionLines, freeCaptionLines } from '@/lib/caption-layout';
+import { captionItems, isFreeCaption } from '@/lib/stamp-caption';
 import { addResult } from '@/lib/results-store';
+import { goBackOrHome } from '@/lib/navigation';
 import { useCreationFlow } from '@/state/creation-flow';
+import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
+import { useInstagramShare } from '@/hooks/use-instagram-share';
 
-import InstagramStoryShare from '../../modules/instagram-story-share/src/InstagramStoryShareModule';
+import { isVideoBackground } from '@/lib/background-storage';
+import { videoCrop } from '@/lib/video-rules';
 import RouteRenderer from '../../modules/route-renderer/src/RouteRendererModule';
 
 // FRD: docs/specs/frd/export-and-share.md
@@ -53,10 +63,17 @@ export default function ShareScreen() {
   const [uiPhase, setUiPhase] = useState<UiPhase>('hidden');
   const [progress, setProgress] = useState(0);
   const [outputPath, setOutputPath] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const { saving, saveStatus, saveToPhotos: handleSaveToPhotos } = useSaveToPhotos(outputPath);
   const [showMissingSheet, setShowMissingSheet] = useState(false);
+  const { sharing, share: handleShareToInstagram } = useInstagramShare({
+    outputPath,
+    backgroundImagePath: draft.backgroundImagePath ?? undefined,
+    onUnavailable: () => setShowMissingSheet(true),
+    onShared: () => { reset(); router.replace('/'); },
+  });
   const shownAtRef = useRef<number | null>(null);
   const cancelledRef = useRef(false);
+  const renderFileRef = useRef<string | null>(null);
 
   // common-rules §6 타이밍: 0.3초에 표시, 2초에 진행률·취소로 전환.
   useEffect(() => {
@@ -75,6 +92,7 @@ export default function ShareScreen() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     const subscription = RouteRenderer.addListener('onRenderProgress', (event) => {
+      if (event.outputFileName && event.outputFileName !== renderFileRef.current) return;
       setProgress(event.progress);
     });
     return () => subscription.remove();
@@ -101,15 +119,30 @@ export default function ShareScreen() {
     };
 
     const resultId = `${selectedRun.id}-${Date.now()}`;
+    // Source identifiers stay intact in saved metadata, while the video file
+    // uses the portable filename format understood by storage/recovery.
+    const outputFileName = `mechuri-${resultId.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 
     activeShareGeneration += 1;
     const myGeneration = activeShareGeneration;
+    renderFileRef.current = outputFileName;
 
+    // 배경 선택 FRD §5: 영상 배경이면 프레임마다 영상 장면을 깐다. backgroundImagePath는 첫 장면(대체용)이다.
+    const backgroundVideo = isVideoBackground(draft.backgroundPhoto) ? draft.backgroundPhoto : undefined;
     RouteRenderer.renderClip({
-      points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude })),
+      points: track.coordinates.map((c) => ({ latitude: c.latitude, longitude: c.longitude, ...(c.segment != null ? { segment: c.segment } : {}) })),
       backgroundImagePath,
-      outputFileName: `mechuri-${resultId}`,
+      ...(backgroundVideo ? {
+        backgroundVideoPath: backgroundVideo.sourceUri,
+        backgroundVideoCrop: videoCrop(backgroundVideo),
+      } : {}),
+      outputFileName,
       preset: draft.preset,
+      handDrawing: normalizeHandDrawing(draft.handDrawing),
+      routeColor: resolveRouteStyle(draft.routeStyle).color,
+      routeWidthScale: resolveRouteStyle(draft.routeStyle).widthScale,
+      stampFont: draft.stampConfig.font ?? 'preset',
+      ...(draft.stampConfig.textColor ? { stampTextColor: draft.stampConfig.textColor } : {}),
       transform: draft.transform,
       smooth: draft.smoothOptions.smooth,
       corner: draft.smoothOptions.corner,
@@ -127,41 +160,61 @@ export default function ShareScreen() {
       stampY: draft.stampConfig.position.y,
       stampScale: draft.stampConfig.scale ?? 1,
       caption: draft.stampConfig.caption ?? '',
+      captionLines: captionLines(draft.stampConfig.caption ?? '', draft.stampConfig),
+      captionFree: isFreeCaption(draft.stampConfig),
+      freeCaptions: captionItems(draft.stampConfig).map((item) => ({
+        lines: freeCaptionLines(item.text, item.scale), x: item.offset.x, y: item.offset.y, scale: item.scale,
+      })),
+      stampHidden: draft.stampConfig.hidden ?? false,
       placeName: draft.stampConfig.placeName ?? '',
       runDate: selectedRun.date,
       distanceMeters: selectedRun.distanceMeters,
       durationSeconds: selectedRun.durationSeconds,
       averagePaceSecPerKm: selectedRun.averagePaceSecPerKm,
+      paceSamples: buildPaceTimeline(track.coordinates, selectedRun.averagePaceSecPerKm),
       averageHeartRate: selectedRun.averageHeartRate ?? null,
     })
       .then(async (result) => {
-        if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
-        // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
-        // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
-        // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
-        await addResult({
-          id: resultId,
-          run: selectedRun,
-          runDate: selectedRun.date,
-          distanceMeters: selectedRun.distanceMeters,
-          track,
-          preset: draft.preset,
-          transform: draft.transform,
-          smoothOptions: draft.smoothOptions,
-          stampConfig: draft.stampConfig,
-          backgroundImagePath,
-          outputPath: result.outputPath,
-          createdAt: new Date().toISOString(),
-        });
-        await clearDraft();
-        finishAfterMinHold(() => setOutputPath(result.outputPath));
+        let persisted = false;
+        try {
+          if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 무시
+          if (cancelledRef.current) {
+            goBackOrHome();
+            return;
+          }
+          // 완성 시점 = 인코딩 완료 시점. 여기서만 보관함에 추가하고, 초안은 지운다
+          // (홈과 보관함 FRD §2-3: 다시 편집·같은 기록으로 새로 만들기가 되려면
+          // 트랙·배경 참조·편집값을 다 들고 있어야 한다).
+          await addResult({
+            id: resultId,
+            run: selectedRun,
+            runDate: selectedRun.date,
+            distanceMeters: selectedRun.distanceMeters,
+            track,
+            preset: draft.preset,
+            routeStyle: draft.routeStyle,
+            handDrawing: draft.handDrawing,
+            transform: draft.transform,
+            smoothOptions: draft.smoothOptions,
+            stampConfig: draft.stampConfig,
+            backgroundImagePath,
+            backgroundPhoto: draft.backgroundPhoto,
+            outputPath: result.outputPath,
+            createdAt: new Date().toISOString(),
+          });
+          persisted = true;
+          await clearDraft().catch((error) => console.warn('Completed result saved, draft cleanup failed', error));
+          finishAfterMinHold(() => setOutputPath(result.outputPath));
+        } finally {
+          if (result.jobId) RouteRenderer.finishRender?.(result.jobId, persisted);
+        }
       })
       .catch((error) => {
         if (myGeneration !== activeShareGeneration) return; // 대체된 옛 인스턴스 — 조용히 종료
         if (cancelledRef.current) {
           // F2: 취소하면 편집 화면으로 돌아오고 편집값은 그대로다. 사용자가 직접
           // 멈춘 거라 설명이 필요 없다.
-          router.back();
+          goBackOrHome();
           return;
         }
         // 실기기 피드백(2026-09-03): 실패 원인을 그냥 버리고 있어서 "왜" 실패했는지
@@ -171,8 +224,8 @@ export default function ShareScreen() {
         console.warn('RouteRenderer.renderClip failed', error);
         // F1·F3: 실패도 편집 화면으로 돌아오고 편집값은 그대로다. 무엇이 안 됐는지
         // 알리고, "다음"을 다시 누르는 게 재시도 경로다.
-        Alert.alert('결과물을 만들지 못했어요', '다시 시도해주세요.', [
-          { text: '확인', onPress: () => router.back() },
+        Alert.alert('결과물을 만들지 못했어요', '편집 내용은 그대로예요. 편집 화면에서 다시 완료를 눌러주세요.', [
+          { text: '확인', onPress: () => { if (myGeneration === activeShareGeneration) goBackOrHome(); } },
         ]);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,60 +234,6 @@ export default function ShareScreen() {
   const handleCancel = () => {
     cancelledRef.current = true;
     RouteRenderer.cancelRender();
-  };
-
-  const handleShareToInstagram = async () => {
-    if (!outputPath) return;
-    // §3-2: 인스타그램이 없으면 저장으로 안내한다. canOpenURL이 스킴을 인식하려면
-    // app.json의 LSApplicationQueriesSchemes에 미리 선언돼 있어야 한다.
-    const canOpen = await Linking.canOpenURL('instagram-stories://share');
-    if (!canOpen) {
-      // "3a" 시안 S8b-상세: OS Alert 대신 앱 디자인에 맞춘 카드로 안내한다.
-      setShowMissingSheet(true);
-      return;
-    }
-    try {
-      await InstagramStoryShare.shareToStory(outputPath, draft.backgroundImagePath ?? undefined);
-      // §3-3: 공유 API는 실제로 게시했는지 콜백을 주지 않는다 — URL을 연 시점을
-      // 공유로 간주하고 바로 홈(보관함)으로 보낸다. 편집 화면으로 돌리지 않는다.
-      reset();
-      router.replace('/');
-    } catch (error) {
-      // App ID 미등록(Meta 앱 등록 진행 중, docs/product/features/export-and-share.md
-      // 참고)을 포함한 모든 실패를 같은 안내로 묶는다 — §3-2 미설치 안내와 같은
-      // 경로(저장으로 유도)라 실패 사유별 UI를 따로 만들지 않는다.
-      console.warn('InstagramStoryShare.shareToStory failed', error);
-      Alert.alert('인스타그램으로 보내지 못했어요', '대신 기기에 저장해서 나중에 올려주세요.');
-    }
-  };
-
-  const handleSaveToPhotos = async () => {
-    if (!outputPath) return;
-    // 동적 import: expo-media-library는 웹 지원 자체가 없어서, 정적 import로 두면
-    // 웹 번들이 로드되는 순간(호출 전인데도) 크래시한다. 실제로 누를 때만 불러온다.
-    const MediaLibrary = await import('expo-media-library');
-    // expo-media-library 57(SDK 57)에서 top-level 함수들이 새 클래스형 API로
-    // 갈아끼워지면서, 기본 진입점의 saveToLibraryAsync는 실제 구현이 없고 항상
-    // throw만 하는 껍데기로 바뀌었다(권한 승인 여부와 무관하게 무조건 실패).
-    // 실제 구현은 legacy 서브패스에만 남아 있어 거기서 따로 불러온다.
-    // (requestPermissionsAsync는 deprecated 목록에 없어 기본 진입점 그대로 둔다.)
-    const { saveToLibraryAsync } = await import('expo-media-library/legacy');
-    // §4-3: 필요한 건 "사진 쓰기"(add-only)뿐. 전체 접근을 요청하면 iOS가
-    // NSPhotoLibraryUsageDescription을 요구하는데 app.json은 add-only 문구
-    // (NSPhotoLibraryAddUsageDescription)만 넣어서, 요청이 조용히 실패했다.
-    // writeOnly로 요청해 plist와 맞춘다.
-    const { status } = await MediaLibrary.requestPermissionsAsync(true);
-    if (status !== 'granted') {
-      setSaveStatus('사진 저장 권한이 필요해요. 설정에서 허용해주세요.');
-      return;
-    }
-    try {
-      await saveToLibraryAsync(outputPath);
-      setSaveStatus('기기에 저장했어요');
-    } catch (error) {
-      console.warn('saveToLibraryAsync failed', error);
-      setSaveStatus('저장에 실패했어요');
-    }
   };
 
   const handleDone = () => {
@@ -273,21 +272,18 @@ export default function ShareScreen() {
         <View style={styles.doneBody}>
           <View style={styles.encCard}>
             {encTrack && draft.selectedRun && draft.backgroundImagePath && (
-              <>
-                <Image
-                  source={{ uri: draft.backgroundImagePath }}
-                  style={StyleSheet.absoluteFill}
-                  resizeMode="cover"
-                />
-                <RouteThumbnail
-                  points={encTrack.coordinates}
-                  transform={draft.transform}
-                  smoothOptions={draft.smoothOptions}
-                  run={draft.selectedRun}
-                  stampConfig={draft.stampConfig}
-                  size={CARD_SIZE}
-                />
-              </>
+              <RouteThumbnail
+                points={encTrack.coordinates}
+                preset={draft.preset}
+                routeStyle={draft.routeStyle} handDrawing={draft.handDrawing}
+                transform={draft.transform}
+                smoothOptions={draft.smoothOptions}
+                run={draft.selectedRun}
+                stampConfig={draft.stampConfig}
+                size={CARD_SIZE}
+                framing="content"
+                backgroundImagePath={draft.backgroundImagePath}
+              />
             )}
             <View style={styles.encOverlay}>
               <Text style={styles.encPct}>{pct}%</Text>
@@ -302,7 +298,7 @@ export default function ShareScreen() {
 
           <ThemedButton title="취소" variant="outline" onPress={handleCancel} style={styles.cancelButton} />
           <Text style={styles.notice}>
-            이 화면을 벗어나도 인코딩은 계속됩니다. 끝나면 보관함에 완성으로 들어옵니다.
+            {'다른 앱을 보거나 화면을 잠가도 계속 만들어요.\n시스템이 중단하면 편집 내용을 유지해요.'}
           </Text>
         </View>
       </SafeAreaView>
@@ -323,16 +319,19 @@ export default function ShareScreen() {
       <ScreenHeader title="완성!" onBack={null} />
       <View style={styles.doneBody}>
         <View style={styles.card}>
-          <Image source={{ uri: backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           <RouteThumbnail
             points={track.coordinates}
+            preset={draft.preset}
+            routeStyle={draft.routeStyle} handDrawing={draft.handDrawing}
             transform={draft.transform}
             smoothOptions={draft.smoothOptions}
             run={selectedRun}
             stampConfig={draft.stampConfig}
             size={CARD_SIZE}
+            framing="content"
+            backgroundImagePath={backgroundImagePath}
           />
-          <Text style={styles.cardTag}>메추리 · {selectedRun.date.slice(0, 10)}</Text>
+          <Text style={styles.cardTag}>Runary · {selectedRun.date.slice(0, 10)}</Text>
         </View>
         <Text style={styles.distance}>
           {(selectedRun.distanceMeters / 1000).toFixed(2)}
@@ -345,12 +344,28 @@ export default function ShareScreen() {
               한 줄 구성(2026-09-08, 이미지 UI 반영). 홈으로는 시안에 없지만 앱에는
               필요한 동작이라 그대로 아래 별도 버튼으로 둔다. */}
           <View style={styles.primaryRow}>
-            <ThemedButton title="인스타그램 스토리로 공유" onPress={handleShareToInstagram} style={styles.shareButton} />
-            <Pressable onPress={handleSaveToPhotos} style={styles.iconButton} hitSlop={8}>
+            <ThemedButton
+              title="인스타그램 스토리로 공유"
+              onPress={handleShareToInstagram}
+              disabled={sharing}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: sharing, busy: sharing }}
+              style={styles.shareButton}
+            />
+            <Pressable
+              onPress={handleSaveToPhotos}
+              disabled={saving}
+              accessibilityRole="button"
+              accessibilityLabel={saving ? '기기에 저장 중' : '기기에 저장'}
+              accessibilityState={{ disabled: saving, busy: saving }}
+              style={[styles.iconButton, saving && { opacity: 0.5 }]}
+              hitSlop={8}
+            >
               <SymbolView name="square.and.arrow.down" size={20} tintColor={Colors.text} />
             </Pressable>
           </View>
           {saveStatus && <Text style={styles.notice}>{saveStatus}</Text>}
+          {saveStatus?.includes('권한') && <AppPermissionsLink />}
           <ThemedButton title="홈으로" variant="outline" onPress={handleDone} />
           <Text style={styles.notice}>공유하지 않고 나가도 보관함에 완성된 결과물로 남습니다.</Text>
         </View>
@@ -362,7 +377,7 @@ export default function ShareScreen() {
         primaryLabel="기기에 저장"
         onPrimary={() => {
           setShowMissingSheet(false);
-          handleSaveToPhotos();
+          void handleSaveToPhotos();
         }}
         onClose={() => setShowMissingSheet(false)}
       />
@@ -387,7 +402,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
   },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, color: Colors.text },
+  title: { fontFamily: Fonts.sansBold, fontSize: 22, color: Colors.text },
   card: {
     width: CARD_SIZE,
     height: CARD_SIZE,
@@ -400,20 +415,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     left: 16,
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.6,
     color: Colors.accent,
   },
   distance: {
-    fontFamily: 'SpaceGrotesk_700Bold',
+    fontFamily: Fonts.sansBold,
     fontSize: 34,
     color: Colors.text,
     letterSpacing: -1.2,
     marginTop: Spacing.sm,
   },
-  distanceUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
-  notice: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
+  distanceUnit: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
+  notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 11, textAlign: 'center', lineHeight: 17 },
   actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.md },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   shareButton: { flex: 1 },
@@ -447,14 +462,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 14,
   },
-  encPct: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 40, color: Colors.accent, letterSpacing: -1.6 },
+  encPct: { fontFamily: Fonts.sansBold, fontSize: 40, color: Colors.accent, letterSpacing: -1.6 },
   encLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10.5,
     letterSpacing: 1.2,
     color: Colors.textMuted,
   },
-  encSpec: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted, alignSelf: 'flex-start' },
+  encSpec: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, alignSelf: 'flex-start' },
   progressTrack: {
     alignSelf: 'stretch',
     height: 3,

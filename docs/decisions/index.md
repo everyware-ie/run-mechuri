@@ -2,7 +2,7 @@
 title: running Decisions Index
 product: running
 type: decision
-updated: 2026-09-02
+updated: 2026-10-12
 ---
 
 # 의사결정 목록
@@ -14,5 +14,16 @@ updated: 2026-09-02
 | 2026-08-18 | [iOS 네이티브 단독 확정, HealthKit 기반, MVP 범위와 9/1 1차 빌드](2026-08-18-native-ios-and-mvp-scope.md) | decided | [2026-08-18](../meetings/2026-08-18/synthesis.md) |
 | 2026-08-25 | [기술 스택 React Native + Expo 확정, 디자인 컨셉 1a, GPX 제외](2026-08-25-react-native-expo-stack.md) | decided | [2026-08-25](../meetings/2026-08-25/synthesis.md) |
 | 2026-09-01 | [시안과 FRD가 부딪치면 FRD를 따른다, 기본 배경 3장 확정, 설정 화면 제외](2026-09-01-frd-over-mockup.md) | decided | [2026-09-01](../meetings/2026-09-01/synthesis.md) |
+| 2026-09-08 | [배경 소재 두 가지를 MVP에 넣는다, 각인 표시 모드 개정, 역할 변경](2026-09-08-scope-and-roles.md) | decided | [2026-09-08](../meetings/2026-09-08/synthesis.md) |
+| 2026-09-16 | [제품명을 Runary로 확정한다](2026-09-16-product-name-runary.md) | decided | [2026-09-16](../meetings/2026-09-16/synthesis.md) |
+| 2026-09-16 | [심사가 막히면 출시일을 미룬다, 각인 가독성이 최우선, 편집 화면 손질](2026-09-16-release-and-editor-scope.md) | decided | [2026-09-16](../meetings/2026-09-16/synthesis.md) |
+| 2026-09-22 | [공개 링크를 열었다, 빌드 23이 심사 없이 나갔다](2026-09-22-public-launch.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
+| 2026-09-22 | [앱 아이콘을 R 마크로 바꾼다](2026-09-22-app-icon.md) | decided | [2026-09-22](../meetings/2026-09-22/synthesis.md) |
+| 2026-09-29 | [결과물을 장면 둘씩 동시에 그려 생성 시간을 줄인다 (10/3 영상 압축 픽셀 차이 수용 보완)](2026-09-29-export-parallel-rendering.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
+| 2026-09-29 | [매주 셋의 기록을 합쳐 스레드에 올린다, 반응은 레포에 모은다](2026-09-29-weekly-content-and-reactions.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
+| 2026-10-04 | [편집 화면을 인스타 스토리 편집처럼 바꾼다 (단계별 QA·1단계 선행 내부 배포 개정)](2026-10-04-story-style-editor.md) | decided | 회의 없음. [지민 시안](../ideation/jminkkk/2026-10-03-change-editing-page.html)을 보고 정했다 |
+| 2026-10-06 | [2차 스프린트는 정식 등재부터, 측정은 안정성 먼저](2026-10-06-second-sprint-app-store.md) | decided | [2026-10-06](../meetings/2026-10-06/synthesis.md) |
+
+| 2026-10-12 | [하트 샘플로 편집·영상 생성 체험 제공](2026-10-12-heart-sample-experience.md) | decided | 사용자 FRD 확인·경로 선택·로컬 미러링 요청 |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)

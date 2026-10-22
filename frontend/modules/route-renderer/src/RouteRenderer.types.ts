@@ -1,8 +1,10 @@
+import type { HandStroke } from '../../../src/lib/hand-drawing';
 // FRD: docs/specs/frd/route-rendering.md, docs/specs/frd/result-editing.md
 
 export type RoutePoint = {
   latitude: number;
   longitude: number;
+  segment?: number;
 };
 
 export type RoutePreset = 'default-drawing' | 'light-runner' | 'segment-lighting';
@@ -18,14 +20,38 @@ export type RouteTransform = {
 export type StampMode = 'always' | 'after' | 'hidden';
 export type StampLayout = 'row' | 'stack' | 'bar' | 'corner' | 'glass' | 'rail' | 'line';
 
+/** 배경 선택 FRD §5. 영상 방향을 반영한 화면 기준 픽셀 좌표의 9:16 영역. */
+export type VideoCrop = { originX: number; originY: number; width: number; height: number };
+
+/** prepareVideoBackground 결과. 경로는 앱 캐시의 임시 파일이라 확정할 때 보관 폴더로 옮긴다. */
+export type PreparedVideo = {
+  videoPath: string;
+  /** 첫 장면 이미지. 영상 방향을 반영한 원래 크기다. */
+  posterPath: string;
+  /** 영상 방향을 반영한 화면 기준 크기(px). */
+  width: number;
+  height: number;
+  durationSec: number;
+};
+
 export type RenderClipOptions = {
   points: RoutePoint[];
-  /** 기기 로컬 파일 경로 (file://). 배경 사진. */
+  /** 편집 3단계: 화면 좌표의 손그림. 영상 처음부터 경로 위·글자 아래에 표시. */
+  handDrawing?: HandStroke[];
+  /** 기기 로컬 파일 경로 (file://). 배경 사진. 영상 배경이면 첫 장면 이미지이고 대체용으로 쓴다. */
   backgroundImagePath: string;
+  /** 배경 영상(선택). 있으면 프레임마다 영상 장면을 깐다. */
+  backgroundVideoPath?: string;
+  backgroundVideoCrop?: VideoCrop;
   /** 저장할 파일 이름 (확장자 없이). */
   outputFileName: string;
   preset: RoutePreset;
   transform: RouteTransform;
+  /** 2단계 스타일. 생략 시 기존 프리셋 기본값. */
+  routeColor?: string;
+  routeWidthScale?: number;
+  stampFont?: 'preset' | 'pretendard' | 'noto';
+  stampTextColor?: 'white' | 'black';
   /** result-editing FRD §5 다듬기 세기. 0~100, 기본 0(무보정). */
   smooth: number;
   /** result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정). */
@@ -49,6 +75,15 @@ export type RenderClipOptions = {
   stampScale?: number;
   /** 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다. */
   caption: string;
+  /** 미리보기와 공유하는 자동/직접 줄바꿈 결과. 원문 저장과는 별개다. */
+  captionLines?: string[];
+  /** 스토리형 편집(2026-10-04): 참이면 문구는 화면에 바로 쓰는 글자들(freeCaptions)이다. 거짓이면
+   * 옛 저장분이라 문구(caption) 하나가 러닝 데이터 프리셋 안에 있다. */
+  captionFree?: boolean;
+  /** 자리는 화면 가운데로부터의 오프셋(캔버스 px), scale은 문구 기본 크기에 곱한다. */
+  freeCaptions?: { lines: string[]; x: number; y: number; scale: number }[];
+  /** 러닝 데이터를 숨겼는지. 문구는 남는다. */
+  stampHidden?: boolean;
   /** '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다. */
   placeName: string;
   /** '날짜' 각인 값 계산용 — 러닝한 날 (ISO). */
@@ -56,15 +91,19 @@ export type RenderClipOptions = {
   /** 각인 값 계산용. 그려진 선 길이가 아니라 기록된 값을 쓴다(§7-3). */
   distanceMeters: number;
   durationSeconds: number;
-  averagePaceSecPerKm: number;
+  averagePaceSecPerKm: number | null;
+  /** GPS 구간 페이스(초/km). 9초 그리기의 등간격 샘플. 없으면 평균값 사용. */
+  paceSamples?: number[];
   /** 데이터가 없으면 null(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다). */
   averageHeartRate: number | null;
 };
 
 /** export-and-share FRD §2-3. progress는 0~1. */
-export type RenderProgressEvent = { progress: number };
+export type RenderProgressEvent = { progress: number; outputFileName?: string };
 
 export type RenderClipResult = {
   /** 완성된 mp4의 로컬 파일 경로 (file://). */
   outputPath: string;
+  /** 보관함 저장 후 백그라운드 작업을 종료하기 위한 네이티브 작업 ID. */
+  jobId?: string;
 };

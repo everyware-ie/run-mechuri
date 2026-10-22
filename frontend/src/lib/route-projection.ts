@@ -6,12 +6,12 @@
 // 캔버스 좌표계는 최종 출력 규격과 동일한 1080x1920을 기준으로 삼는다(§9).
 // 편집에서 만든 변형값(x/y/scale/rotation)을 그대로 네이티브 렌더러에 넘길 수 있게 하기 위함.
 
-export type Point = { latitude: number; longitude: number };
-export type CanvasPoint = { x: number; y: number };
+export type Point = { latitude: number; longitude: number; segment?: number };
+export type CanvasPoint = { x: number; y: number; segment?: number };
 
 export const CANVAS_WIDTH = 1080;
 export const CANVAS_HEIGHT = 1920;
-const MARGIN_RATIO = 0.08; // §4 제안값: 짧은 축 기준 8%
+export const MARGIN_RATIO = 0.08; // §4 제안값: 짧은 축 기준 8%
 
 export function projectPoints(points: Point[]): CanvasPoint[] {
   if (points.length === 0) return [];
@@ -47,7 +47,8 @@ export function projectPoints(points: Point[]): CanvasPoint[] {
   const centerX = CANVAS_WIDTH / 2;
   const centerY = CANVAS_HEIGHT / 2;
 
-  return raw.map((p) => ({
+  return raw.map((p, index) => ({
+    ...(points[index].segment != null ? { segment: points[index].segment } : {}),
     x: p.x - rawCenterX + centerX,
     y: p.y - rawCenterY + centerY,
   }));
@@ -67,7 +68,7 @@ function haversineMeters(a: Point, b: Point): number {
 export function cumulativeDistances(points: Point[]): number[] {
   const result = [0];
   for (let i = 1; i < points.length; i++) {
-    result.push(result[i - 1] + haversineMeters(points[i - 1], points[i]));
+    result.push(result[i - 1] + ((points[i].segment ?? 0) === (points[i - 1].segment ?? 0) ? haversineMeters(points[i - 1], points[i]) : 0));
   }
   return result;
 }
@@ -103,6 +104,7 @@ export function pointsUpToDistance(
   const segLen = segEnd - segStart;
   const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
   const interpolated: CanvasPoint = {
+    ...projected[i - 1],
     x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
     y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
   };
@@ -141,6 +143,7 @@ export function pointAtDistance(
   const segLen = segEnd - segStart;
   const t = segLen > 0 ? (targetDistance - segStart) / segLen : 0;
   return {
+    ...projected[i - 1],
     x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * t,
     y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * t,
   };
@@ -153,14 +156,14 @@ export function pointAtDistance(
 export function cumulativeCanvasDistances(points: CanvasPoint[]): number[] {
   const result = [0];
   for (let i = 1; i < points.length; i++) {
-    result.push(result[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+    result.push(result[i - 1] + ((points[i].segment ?? 0) === (points[i - 1].segment ?? 0) ? Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y) : 0));
   }
   return result;
 }
 
 export function toSvgPath(points: CanvasPoint[]): string {
   if (points.length < 2) return '';
-  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  return points.map((p, i) => `${i === 0 || (p.segment ?? 0) !== (points[i - 1].segment ?? 0) ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 }
 
 /** §6-3 구간 점등: 점등 횟수 5~8회 목표로 구간 단위를 자동 선택. */

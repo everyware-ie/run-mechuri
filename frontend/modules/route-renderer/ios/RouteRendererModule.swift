@@ -1,11 +1,13 @@
 import AVFoundation
+import BackgroundTasks
 import CoreGraphics
 import ExpoModulesCore
 import UIKit
+import os
 
 // FRD: docs/specs/frd/route-rendering.md, docs/specs/frd/result-editing.md
 //
-// 접근: 실시간 화면 캡처가 아니라 프레임을 하나씩 오프라인으로 그려
+// 접근: 실시간 화면 캡처가 아니라 프레임을 최대 둘씩 오프라인으로 그려
 // AVAssetWriter로 인코딩한다 (2026-08-16 mp4 스파이크 테스트에서
 // 실시간 캡처가 배경 합성과 함께 무너지는 것을 확인하고 전환하기로 한 방향).
 //
@@ -32,6 +34,7 @@ private enum ClipSpec {
 struct RoutePointInput: Record {
   @Field var latitude: Double = 0
   @Field var longitude: Double = 0
+  @Field var segment: Int = 0
 }
 
 struct RouteTransformInput: Record {
@@ -52,12 +55,35 @@ struct StampItemsInput: Record {
   @Field var place: Bool = false
 }
 
+struct InkPointInput: Record {
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+}
+
+struct HandStrokeInput: Record {
+  @Field var brush: String = "pen"
+  @Field var color: String = "#FFFFFF"
+  @Field var width: Double = 12
+  @Field var points: [InkPointInput] = []
+  @Field var offset: InkPointInput? = nil
+  @Field var scale: Double = 1
+}
+
 struct RenderClipOptionsInput: Record {
+  @Field var handDrawing: [HandStrokeInput] = []
   @Field var points: [RoutePointInput] = []
   @Field var backgroundImagePath: String = ""
+  /// 배경 영상(선택). 비어 있으면 backgroundImagePath만 쓴다. 있으면 backgroundImagePath는 첫 장면이다.
+  @Field var backgroundVideoPath: String = ""
+  @Field var backgroundVideoCrop: VideoCropInput? = nil
   @Field var outputFileName: String = ""
   @Field var preset: String = "default-drawing"
   @Field var transform: RouteTransformInput = RouteTransformInput()
+  /// 스토리형 편집 2단계. 생략하면 옛 저장분의 색·두께·폰트가 그대로다.
+  @Field var routeColor: String = ""
+  @Field var routeWidthScale: Double = 1
+  @Field var stampFont: String = "preset"
+  @Field var stampTextColor: String = ""
   /// result-editing FRD §5. 0~100, 기본 0(무보정).
   @Field var smooth: Double = 0
   /// result-editing FRD §5 고급 설정: 모서리 라운딩. 0~100, 기본 0(무보정).
@@ -74,6 +100,14 @@ struct RenderClipOptionsInput: Record {
   @Field var stampScale: Double = 1
   /// 시안 S6 "한 줄 문구". 빈 문자열이면 안 그린다.
   @Field var caption: String = ""
+  @Field var captionLines: [String]? = nil
+  /// 스토리형 편집(2026-10-04, result-editing §7): 참이면 문구는 인스타처럼 화면에 바로 쓰는 글자들
+  /// (freeCaptions)이고 러닝 데이터 프리셋과 상관없다. 거짓이면 옛 저장분이라 문구(caption) 하나가
+  /// 프리셋 배치 안에 있다. route-preview.tsx StampConfig.captions와 같은 값이다.
+  @Field var captionFree: Bool = false
+  @Field var freeCaptions: [FreeCaptionInput] = []
+  /// 러닝 데이터를 숨겼는지(result-editing §7-2). 문구는 남는다.
+  @Field var stampHidden: Bool = false
   /// '장소' 각인 값 (역지오코딩 결과). 빈 문자열이면 장소 항목은 안 나온다.
   @Field var placeName: String = ""
   /// '날짜' 각인 값 계산용 — 러닝한 날 (ISO 8601).
@@ -81,13 +115,24 @@ struct RenderClipOptionsInput: Record {
   /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
-  @Field var averagePaceSecPerKm: Double = 0
+  @Field var averagePaceSecPerKm: Double? = nil
+  @Field var paceSamples: [Double] = []
   /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
   @Field var averageHeartRate: Double? = nil
 }
 
+/// 화면에 바로 쓰는 문구 하나. 자리(x, y)는 화면 가운데로부터의 오프셋(캔버스 px), scale은
+/// freeCaptionSize에 곱한다. 줄은 JS(caption-layout.ts freeCaptionLines)가 나눠 보낸다.
+struct FreeCaptionInput: Record {
+  @Field var lines: [String] = []
+  @Field var x: Double = 0
+  @Field var y: Double = 0
+  @Field var scale: Double = 1
+}
+
 struct RenderClipResultPayload: Record {
   @Field var outputPath: String = ""
+  @Field var jobId: String = ""
 }
 
 enum RouteRendererError: Error, LocalizedError {
@@ -95,6 +140,8 @@ enum RouteRendererError: Error, LocalizedError {
   case backgroundImageNotFound
   case writerSetupFailed
   case pixelBufferPoolMissing
+  case encodingFailed
+  case backgroundExpired
   /// export-and-share FRD §2-4·F2: 취소는 실패가 아니다. JS 쪽은 이 케이스를 문자열로
   /// 구분하지 않고, 취소 버튼을 누른 시점을 자체적으로 기억해뒀다가 구분한다(share.tsx).
   case cancelled
@@ -109,6 +156,10 @@ enum RouteRendererError: Error, LocalizedError {
       return "비디오 인코더 초기화에 실패했습니다"
     case .pixelBufferPoolMissing:
       return "프레임 버퍼 풀을 만들지 못했습니다"
+    case .encodingFailed:
+      return "영상 파일을 완성하지 못했습니다"
+    case .backgroundExpired:
+      return "백그라운드 처리 시간이 종료됐어요. 편집 내용은 유지됩니다."
     case .cancelled:
       return "취소했습니다"
     }
@@ -121,71 +172,282 @@ private enum RoutePreset: String {
   case segmentLighting = "segment-lighting"
 }
 
+// 취소 상태는 JS 호출, 시스템 만료, 렌더 큐가 함께 읽으므로 작업별로 잠근다.
+private final class RenderJob {
+  let id = UUID().uuidString
+  let outputFileName: String
+  private let lock = NSLock()
+  private var cancellation: RouteRendererError?
+
+  init(outputFileName: String) { self.outputFileName = outputFileName }
+  func cancel(_ reason: RouteRendererError = .cancelled) {
+    lock.lock(); defer { lock.unlock() }
+    if cancellation == nil { cancellation = reason }
+  }
+  func checkCancellation() throws {
+    lock.lock(); let reason = cancellation; lock.unlock()
+    if let reason { throw reason }
+  }
+}
+
+// 한 작업에서 최대 두 프레임만 유지한다. 압박이 생기면 남은 작업은 직렬로 유지한다.
+private final class ParallelRenderBudget {
+  private let lock = NSLock()
+  private var serialOnly = false
+  private let pressure = DispatchSource.makeMemoryPressureSource(
+    eventMask: [.warning, .critical], queue: DispatchQueue.global(qos: .utility)
+  )
+
+  init() {
+    pressure.setEventHandler { [weak self] in self?.useSerial() }
+    pressure.resume()
+  }
+  deinit { pressure.cancel() }
+
+  private func useSerial() {
+    lock.lock(); serialOnly = true; lock.unlock()
+  }
+
+  var allowsParallel: Bool {
+    if ProcessInfo.processInfo.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+      || os_proc_available_memory() < 256 * 1024 * 1024 {
+      useSerial()
+    }
+    lock.lock(); defer { lock.unlock() }
+    return !serialOnly
+  }
+}
+
+// 모든 메서드는 main queue에서 호출한다. 프레임 생성은 별도 serial queue에서 실행한다.
+// 보관함 저장 ACK까지 유지해, 네이티브 Promise 반환 직후 JS가 중단되는 틈을 막는다.
+private final class RenderBackgroundLease {
+  let job: RenderJob
+  private var legacyTask: UIBackgroundTaskIdentifier = .invalid
+  private var task: BGTask?
+  private var work: (() -> Void)?
+  private var started = false
+  private var finished = false
+  var onFinish: (() -> Void)?
+
+  init(job: RenderJob) { self.job = job }
+
+  deinit {
+    let remainingLegacy = legacyTask
+    let remainingTask = task
+    if remainingLegacy != .invalid || remainingTask != nil {
+      DispatchQueue.main.async {
+        remainingTask?.setTaskCompleted(success: false)
+        if remainingLegacy != .invalid { UIApplication.shared.endBackgroundTask(remainingLegacy) }
+      }
+    }
+  }
+
+  func start(_ work: @escaping () -> Void) {
+    self.work = work
+    legacyTask = UIApplication.shared.beginBackgroundTask(withName: "러닝 영상 만들기") { [weak self] in
+      guard let self else { return }
+      self.job.cancel(.backgroundExpired)
+      self.runOnce()
+      self.finish(success: false)
+    }
+    if #available(iOS 26.0, *) {
+      let identifier = "\(Bundle.main.bundleIdentifier!).render.\(job.id)"
+      // 각 작업의 ID를 한 번만 등록한다. 늦게 오는 콜백이 새 작업에 붙지 않는다.
+      let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
+        guard let self, !self.finished, let task = task as? BGContinuedProcessingTask else {
+          task.setTaskCompleted(success: false)
+          return
+        }
+        self.task = task
+        task.progress.totalUnitCount = Int64(ClipSpec.totalFrames + 1)
+        task.expirationHandler = { [weak self] in
+          self?.job.cancel(.backgroundExpired)
+        }
+        self.endLegacyTask()
+        self.runOnce()
+      }
+      if registered {
+        let request = BGContinuedProcessingTaskRequest(
+          identifier: identifier, title: "러닝 영상 만들기", subtitle: "완성하면 보관함에 저장해요"
+        )
+        request.strategy = .fail
+        do {
+          try BGTaskScheduler.shared.submit(request)
+          return
+        } catch {
+          // 장시간 실행을 받을 수 없으면 기존 OS와 같은 유한한 실행 시간을 사용한다.
+          NSLog("[encoding] continued processing unavailable; using finite background time")
+        }
+      }
+    }
+    runOnce()
+  }
+
+  private func runOnce() {
+    guard !started else { return }
+    started = true
+    let callback = work
+    work = nil
+    callback?()
+  }
+
+  func updateProgress(_ frames: Int) {
+    guard !finished else { return }
+    if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
+      task.progress.completedUnitCount = Int64(frames)
+    }
+  }
+
+  func didEncode() {
+    updateProgress(ClipSpec.totalFrames)
+    // JS reload/종료로 ACK가 사라져도 백그라운드 권한을 계속 붙들지 않는다.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+      self?.finish(success: false)
+    }
+  }
+
+  func finish(success: Bool) {
+    guard !finished else { return }
+    finished = true
+    if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask, success {
+      task.progress.completedUnitCount = task.progress.totalUnitCount
+    }
+    task?.setTaskCompleted(success: success)
+    task = nil
+    endLegacyTask()
+    onFinish?()
+    onFinish = nil
+  }
+
+  private func endLegacyTask() {
+    if legacyTask != .invalid {
+      UIApplication.shared.endBackgroundTask(legacyTask)
+      legacyTask = .invalid
+    }
+  }
+}
+
 public class RouteRendererModule: Module {
-  // export-and-share FRD §2-3 취소. 이 앱은 한 번에 하나의 renderClip만 돈다는 전제였는데,
-  // 실기기 피드백(2026-09-08) "퍼센트가 늘었다줄었다한다" — 그 전제가 실제로는 보장돼
-  // 있지 않았다. 편집 화면을 벗어나도 인코딩은 계속되는 게 의도된 동작(§2-3 "이 화면을
-  // 벗어나도 계속")인데, 인코딩 중 뒤로 가서 "다음"을 다시 누르면 이전 renderClip이
-  // 안 멈춘 채로 새 renderClip이 하나 더 시작돼 두 개가 동시에 프레임을 그리며 각자
-  // onRenderProgress를 쐈다 — 새로 뜬 공유 화면의 리스너는 둘을 구분 못 하고 둘 다
-  // 받아서, 최신 것(낮은 값에서 시작)과 이전 것(더 진행된 값)이 번갈아 들어와
-  // 퍼센트가 오르내리는 것처럼 보였다. isCancelled 하나로는 "취소 버튼"과 "새
-  // 요청이 이전 걸 대체"를 구분 못 해 세대 번호(generation)를 따로 둔다 — 새
-  // renderClip이 시작되면 이전 세대의 프레임 루프는 다음 프레임에서 스스로 멈춘다.
-  private var isCancelled = false
-  private var currentGeneration = 0
+  private let renderQueue = DispatchQueue(label: "com.mechuri.runmechuri.encoding", qos: .userInitiated)
+  private let jobLock = NSLock()
+  private var activeJob: RenderJob?
+  // main queue에서만 접근한다.
+  private var leases: [String: RenderBackgroundLease] = [:]
 
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
-
-    // export-and-share FRD §2-3: 인코딩 진행률.
     Events("onRenderProgress")
+    OnCreate {
+      // Apply the same exclusion to clips made by an older app version.
+      do {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        _ = try LocalClipStorage.prepare(in: documents, create: false)
+      } catch {
+        NSLog("Runary: stored video backup exclusion could not be applied")
+      }
+    }
+    View(RouteColorPickerView.self) {
+      Events("onColorChange")
+      Prop("color") { (view: RouteColorPickerView, color: String) in view.setColor(color) }
+    }
 
     Function("cancelRender") {
-      self.isCancelled = true
+      self.jobLock.lock(); let job = self.activeJob; self.jobLock.unlock()
+      job?.cancel()
+    }
+
+    Function("finishRender") { (jobId: String, persisted: Bool) in
+      DispatchQueue.main.async { self.leases[jobId]?.finish(success: persisted) }
+    }
+
+    /// 배경 선택 FRD §5: 고른 영상의 앞부분만 보관하고 첫 장면 이미지를 만든다.
+    AsyncFunction("prepareVideoBackground") { (inputUri: String, maxSeconds: Double) async throws -> PreparedVideoPayload in
+      try await VideoBackground.prepare(inputUri: inputUri, maxSeconds: maxSeconds)
     }
 
     AsyncFunction("renderClip") { (options: RenderClipOptionsInput) async throws -> RenderClipResultPayload in
-      self.isCancelled = false
-      self.currentGeneration &+= 1
-      let generation = self.currentGeneration
-      guard options.points.count >= 2 else {
-        throw RouteRendererError.notEnoughPoints
+      let job = self.replaceActiveJob(outputFileName: options.outputFileName)
+      return try await withCheckedThrowingContinuation { continuation in
+        DispatchQueue.main.async {
+          let lease = RenderBackgroundLease(job: job)
+          self.leases[job.id] = lease
+          lease.onFinish = { [weak self] in self?.leases.removeValue(forKey: job.id) }
+          lease.start {
+            self.renderQueue.async {
+              do {
+                let result = try self.render(options, job: job)
+                DispatchQueue.main.async { lease.didEncode() }
+                continuation.resume(returning: result)
+              } catch {
+                DispatchQueue.main.async { lease.finish(success: false) }
+                continuation.resume(throwing: error)
+              }
+            }
+          }
+        }
       }
-      guard let background = self.loadImage(path: options.backgroundImagePath) else {
-        throw RouteRendererError.backgroundImageNotFound
-      }
-      let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
-
-      let baseProjected = self.projectPoints(options.points)
-      // §5: 다듬기는 그룹 변형(scale/rotate) 이전, 캔버스 좌표계에서 적용한다 — 편집
-      // 화면 미리보기(route-preview.tsx)의 순서(projectPoints → applySmoothing → transform)와 맞춘다.
-      let smoothed = self.applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
-      let projected = self.applyTransform(smoothed, transform: options.transform)
-      // 다듬기가 점 개수·위치를 바꾸므로 원본 위경도 기반 누적 거리와 대응이 깨진다.
-      // §5-4 진행률은 항상 비율(targetDistance = total * fraction)로만 쓰이므로
-      // 캔버스 유클리드 거리로 다시 계산해도 결과가 같다(route-projection.ts와 동일).
-      let cumulativeDistances = self.cumulativeCanvasDistances(projected)
-      let totalDistance = cumulativeDistances.last ?? 0
-
-      let outputURL = self.outputURL(named: options.outputFileName)
-      try self.writeClip(
-        preset: preset,
-        projectedPoints: projected,
-        cumulativeDistances: cumulativeDistances,
-        totalDistance: totalDistance,
-        background: background,
-        stamp: options,
-        to: outputURL,
-        generation: generation
-      )
-
-      self.sendEvent("onRenderProgress", ["progress": 1.0])
-
-      var result = RenderClipResultPayload()
-      result.outputPath = outputURL.absoluteString
-      return result
     }
+  }
+
+  private func replaceActiveJob(outputFileName: String) -> RenderJob {
+    jobLock.lock(); defer { jobLock.unlock() }
+    activeJob?.cancel()
+    let job = RenderJob(outputFileName: outputFileName)
+    activeJob = job
+    return job
+  }
+
+  private func reportProgress(_ frames: Int, job: RenderJob) {
+    jobLock.lock(); let current = activeJob === job; jobLock.unlock()
+    guard current else { return }
+    sendEvent("onRenderProgress", [
+      "progress": Double(frames) / Double(ClipSpec.totalFrames),
+      "outputFileName": job.outputFileName,
+    ])
+    DispatchQueue.main.async { self.leases[job.id]?.updateProgress(frames) }
+  }
+
+  private func render(_ options: RenderClipOptionsInput, job: RenderJob) throws -> RenderClipResultPayload {
+    try job.checkCancellation()
+    guard options.points.count >= 2 else { throw RouteRendererError.notEnoughPoints }
+    let renderStart = CFAbsoluteTimeGetCurrent()
+    guard let background = loadImage(path: options.backgroundImagePath) else {
+      throw RouteRendererError.backgroundImageNotFound
+    }
+    var videoSource: VideoBackgroundSource?
+    if !options.backgroundVideoPath.isEmpty {
+      let crop = options.backgroundVideoCrop.map { CGRect(x: $0.originX, y: $0.originY, width: $0.width, height: $0.height) } ?? .zero
+      videoSource = try VideoBackgroundSource(
+        path: options.backgroundVideoPath, crop: crop,
+        outputSize: CGSize(width: ClipSpec.width, height: ClipSpec.height), fps: ClipSpec.fps
+      )
+    }
+    let imageLoadSeconds = CFAbsoluteTimeGetCurrent() - renderStart
+    let routeStart = CFAbsoluteTimeGetCurrent()
+    let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
+    let baseProjected = projectPoints(options.points)
+    var projected: [RouteVertex] = []
+    var start = 0
+    for end in 1...options.points.count {
+      if end == options.points.count || options.points[end].segment != options.points[start].segment {
+        let smoothed = applySmoothing(Array(baseProjected[start..<end]), smooth: options.smooth, corner: options.corner)
+        projected += applyTransform(smoothed, transform: options.transform).map { RouteVertex(point: $0, segment: options.points[start].segment) }
+        start = end
+      }
+    }
+    let distances = cumulativeCanvasDistances(projected)
+    let routePreparationSeconds = CFAbsoluteTimeGetCurrent() - routeStart
+    let output = try outputURL(named: options.outputFileName)
+    try writeClip(preset: preset, projectedPoints: projected, cumulativeDistances: distances,
+                  totalDistance: distances.last ?? 0, background: background, videoSource: videoSource,
+                  stamp: options, to: output, job: job)
+    NSLog("[encoding-preparation] load=%.4f route=%.4f nativeTotal=%.4f points=%d",
+          imageLoadSeconds, routePreparationSeconds, CFAbsoluteTimeGetCurrent() - renderStart, options.points.count)
+    reportProgress(ClipSpec.totalFrames, job: job)
+    var result = RenderClipResultPayload()
+    result.outputPath = output.absoluteString
+    result.jobId = job.id
+    return result
   }
 
   // MARK: - 좌표 처리
@@ -258,7 +520,7 @@ public class RouteRendererModule: Module {
         lat1: points[i - 1].latitude, lon1: points[i - 1].longitude,
         lat2: points[i].latitude, lon2: points[i].longitude
       )
-      result.append(result[i - 1] + d)
+      result.append(result[i - 1] + (points[i].segment == points[i - 1].segment ? d : 0))
     }
     return result
   }
@@ -274,13 +536,8 @@ public class RouteRendererModule: Module {
   }
 
   /// 캔버스(픽셀) 좌표계 누적 거리. route-projection.ts의 cumulativeCanvasDistances와 동일.
-  private func cumulativeCanvasDistances(_ points: [CGPoint]) -> [Double] {
-    guard points.count > 1 else { return [0] }
-    var result: [Double] = [0]
-    for i in 1..<points.count {
-      result.append(result[i - 1] + Double(hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)))
-    }
-    return result
+  private func cumulativeCanvasDistances(_ points: [RouteVertex]) -> [Double] {
+    SegmentedRoute.cumulative(points)
   }
 
   // MARK: - 다듬기 (result-editing FRD §5)
@@ -393,26 +650,8 @@ public class RouteRendererModule: Module {
   }
 
   /// §5-4: 진행률은 점 인덱스가 아니라 거리(호 길이) 기준.
-  private func pointsUpTo(distance targetDistance: Double, projected: [CGPoint], cumulative: [Double]) -> [CGPoint] {
-    if targetDistance <= 0 { return [projected[0]] }
-    var result: [CGPoint] = [projected[0]]
-    for i in 1..<projected.count {
-      if cumulative[i] <= targetDistance {
-        result.append(projected[i])
-      } else {
-        let segmentStart = cumulative[i - 1]
-        let segmentEnd = cumulative[i]
-        let segmentLength = segmentEnd - segmentStart
-        let t = segmentLength > 0 ? (targetDistance - segmentStart) / segmentLength : 0
-        let interpolated = CGPoint(
-          x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * CGFloat(t),
-          y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * CGFloat(t)
-        )
-        result.append(interpolated)
-        break
-      }
-    }
-    return result
+  private func pointsUpTo(distance targetDistance: Double, projected: [RouteVertex], cumulative: [Double]) -> [RouteVertex] {
+    SegmentedRoute.prefix(distance: targetDistance, points: projected, cumulative: cumulative)
   }
 
   // MARK: - 프레임 렌더링
@@ -420,6 +659,34 @@ public class RouteRendererModule: Module {
   // 색상·레이어 구성은 2026-08-04 JiEung2 목업
   // (docs/ideation/JiEung2/2026-08-04-route-overlay-mockup.html)의 캔버스 드로잉 로직을
   // 그대로 옮긴 것이다 — 미리보기(route-preview.tsx)도 같은 값을 쓴다.
+
+  // JS editor-style.ts와 같이 6자리 HEX를 검증하고 잘못된 문자열은 기본색으로 읽는다.
+  private func selectedRouteColor(_ value: String) -> UIColor {
+    return routeHexColor(value) ?? lineWarm
+  }
+
+  // JS runnerLightColors와 같은 RGB 계산. 파스텔 본선과 주변 빛의 대비를 보존한다.
+  private func runnerLightColors(_ color: UIColor) -> (glow: UIColor, core: UIColor) {
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    color.getRed(&r, green: &g, blue: &b, alpha: &a)
+    let channels = [r, g, b], high = channels.max() ?? 1, low = channels.min() ?? 0
+    let glow = channels.map { high == low ? $0 : (255 * (1 - 0.78 * (high - $0) / (high - low))).rounded() / 255 }
+    let core = channels.map { (255 * ($0 * 0.22 + 0.78)).rounded() / 255 }
+    return (UIColor(red: glow[0], green: glow[1], blue: glow[2], alpha: 1),
+      UIColor(red: core[0], green: core[1], blue: core[2], alpha: 1))
+  }
+
+  private func selectedTextColor(_ stamp: RenderClipOptionsInput) -> UIColor {
+    stamp.stampTextColor == "black" ? UIColor(white: 17 / 255, alpha: 1)
+      : stamp.stampTextColor == "white" ? .white : lineWarm
+  }
+
+  private func selectedFont(_ stamp: RenderClipOptionsInput, name: String, size: CGFloat, fallback: UIFont) -> UIFont {
+    let bold = name.hasSuffix("Bold")
+    let selected = stamp.stampFont == "pretendard" ? (bold ? "Pretendard-Bold" : "Pretendard-Medium")
+      : stamp.stampFont == "noto" ? (bold ? "NotoSansKR-Bold" : "NotoSansKR-Medium") : name
+    return UIFont(name: selected, size: size) ?? fallback
+  }
 
   private let lineWarm = UIColor(red: 255 / 255, green: 243 / 255, blue: 236 / 255, alpha: 1)
   private let glowColor = UIColor(red: 255 / 255, green: 107 / 255, blue: 74 / 255, alpha: 1)
@@ -439,11 +706,16 @@ public class RouteRendererModule: Module {
   }
 
   private func strokePath(_ points: [CGPoint], color: UIColor, width: CGFloat, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
+    strokePath(points.map { RouteVertex(point: $0, segment: 0) }, color: color, width: width, glowRadius: glowRadius, glowColor: glowColor)
+  }
+
+  private func strokePath(_ points: [RouteVertex], color: UIColor, width: CGFloat, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
     guard points.count >= 2 else { return }
     let path = UIBezierPath()
-    path.move(to: points[0])
-    for point in points.dropFirst() {
-      path.addLine(to: point)
+    path.move(to: points[0].point)
+    for index in 1..<points.count {
+      if points[index].segment != points[index - 1].segment { path.move(to: points[index].point) }
+      else { path.addLine(to: points[index].point) }
     }
     path.lineWidth = width
     path.lineCapStyle = .round
@@ -476,6 +748,26 @@ public class RouteRendererModule: Module {
     ctx.restoreGState()
   }
 
+  // JS segmentMarkerSize·SegmentGlowMarker와 같은 크기와 빛 분포.
+  private func fillSegmentMarker(at point: CGPoint, color: UIColor, widthScale: CGFloat, flash: Double) {
+    let scale = sqrt(widthScale)
+    let radius = 9 * scale * (1 + CGFloat(flash) * 0.12)
+    let coreRadius = 3.2 * scale * (1 + CGFloat(flash) * 0.12)
+    let haloRadius = 26 * scale * (1 + CGFloat(flash) * 0.25)
+    let haloOpacity = 0.24 + CGFloat(flash) * 0.18
+    if let context = UIGraphicsGetCurrentContext(), let gradient = CGGradient(
+      colorsSpace: CGColorSpaceCreateDeviceRGB(),
+      colors: [color.withAlphaComponent(haloOpacity).cgColor, color.withAlphaComponent(0).cgColor] as CFArray,
+      locations: [0, 1]) {
+      context.saveGState()
+      context.drawRadialGradient(gradient, startCenter: point, startRadius: 0,
+        endCenter: point, endRadius: haloRadius, options: [])
+      context.restoreGState()
+    }
+    fillDot(at: point, radius: radius, color: color)
+    fillDot(at: point, radius: coreRadius, color: UIColor.white.withAlphaComponent(0.9))
+  }
+
   /// 배경을 출력 크기(1080×1920)로 한 번만 크롭·스케일한다(짧은 축 기준 확대 후 중앙 크롭).
   /// writeClip 루프에서 프레임마다 원본을 다시 그리지 않도록.
   private func prepareBackground(_ background: UIImage) -> UIImage {
@@ -490,19 +782,70 @@ public class RouteRendererModule: Module {
     }
   }
 
+  /// 손그림은 처음부터 고정된다. 투명 이미지를 한 번 만들어 두 렌더 worker에서 재사용한다.
+  private func makeDrawingOverlay(_ strokes: [HandStrokeInput]) -> UIImage? {
+    guard !strokes.isEmpty else { return nil }
+    let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = false
+    format.preferredRange = .standard
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    return renderer.image { context in
+      var remaining = 10_000
+      for stroke in strokes.prefix(100) {
+        guard remaining > 0, ["pen", "highlight", "neon"].contains(stroke.brush) else { continue }
+        let points = stroke.points.prefix(remaining).filter { $0.x.isFinite && $0.y.isFinite }.map {
+          CGPoint(x: min(1080, max(0, $0.x)), y: min(1920, max(0, $0.y)))
+        }
+        remaining -= points.count
+        guard !points.isEmpty else { continue }
+        let palette = ["#FFFFFF", "#111111", "#FFF3EC", "#FF985C", "#8EF0CE", "#8ECFFF", "#FFADD5", "#C5AEFF"]
+        let rgb = palette.contains(stroke.color) ? UInt32(stroke.color.dropFirst(), radix: 16) ?? 0xFFFFFF : 0xFFFFFF
+        let color = UIColor(red: CGFloat((rgb >> 16) & 255) / 255, green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        let scale = CGFloat(stroke.scale.isFinite ? min(3, max(1.0 / 3, stroke.scale)) : 1)
+        let center = CGPoint(x: ((points.map(\.x).min() ?? 0) + (points.map(\.x).max() ?? 0)) / 2,
+                             y: ((points.map(\.y).min() ?? 0) + (points.map(\.y).max() ?? 0)) / 2)
+        let ox = stroke.offset?.x ?? 0, oy = stroke.offset?.y ?? 0
+        let offset = CGPoint(x: ox.isFinite ? min(3240, max(-3240, ox)) : 0,
+                             y: oy.isFinite ? min(5760, max(-5760, oy)) : 0)
+        let width = CGFloat(stroke.width.isFinite ? min(48, max(4, stroke.width)) : 12)
+        let neon = stroke.brush == "neon"
+        context.cgContext.saveGState()
+        context.cgContext.translateBy(x: center.x + offset.x, y: center.y + offset.y)
+        context.cgContext.scaleBy(x: scale, y: scale)
+        context.cgContext.translateBy(x: -center.x, y: -center.y)
+        if stroke.brush == "highlight" { context.cgContext.setAlpha(0.4) }
+        if points.count == 1 {
+          self.fillDot(at: points[0], radius: width / 2, color: color, glowRadius: neon ? 16 * scale : 0, glowColor: color)
+          if neon { self.fillDot(at: points[0], radius: width * 0.19, color: .white) }
+        } else {
+          self.strokePath(points, color: color, width: width, glowRadius: neon ? 16 * scale : 0, glowColor: color)
+          if neon { self.strokePath(points, color: .white, width: width * 0.38) }
+        }
+        context.cgContext.restoreGState()
+      }
+    }
+  }
+
   /// §8 합성 순서(배경 → 경로 → 각인) + 프리셋별 진행 표현(§6).
   /// `background`는 prepareBackground로 이미 출력 크기에 맞춰진 이미지다.
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
-    projectedPoints: [CGPoint],
+    projectedPoints: [RouteVertex],
     cumulativeDistances: [Double],
     totalDistance: Double,
     progressFraction: Double,
-    stamp: RenderClipOptionsInput
+    lightingBounds: [(start: Double, end: Double)],
+    drawingOverlay: UIImage?,
+    stamp: RenderClipOptionsInput,
+    renderer: UIGraphicsImageRenderer
   ) -> UIImage {
     let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
-    let renderer = UIGraphicsImageRenderer(size: size)
+    let routeColor = selectedRouteColor(stamp.routeColor)
+    let widthScale = CGFloat(stamp.routeWidthScale.isFinite ? min(2, max(0.5, stamp.routeWidthScale)) : 1)
+    let routeGlow = stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? glowColor : routeColor
     let targetDistance = totalDistance * progressFraction
 
     return renderer.image { _ in
@@ -513,15 +856,18 @@ public class RouteRendererModule: Module {
       case .defaultDrawing:
         // §6-1: 빈 화면에서 시작해 선으로 그려져 나간다. 따뜻한 흰색 + 옅은 글로우.
         let visible = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
-        self.strokePath(visible, color: self.lineWarm, width: 10, glowRadius: 6, glowColor: .white)
+        self.strokePath(visible, color: routeColor, width: 10 * widthScale, glowRadius: 6, glowColor: stamp.routeColor.isEmpty || stamp.routeColor == "#FFF3EC" ? .white : routeGlow)
 
       case .lightRunner:
+        let coloredLight = !stamp.routeColor.isEmpty && stamp.routeColor.uppercased() != "#FFF3EC"
+        let light = self.runnerLightColors(routeColor)
+        let runnerGlow = coloredLight ? light.glow : routeGlow
         // §6-2: 옅은 전체 경로 + 지나온 길(중간 밝기, 옅은 글로우) + 최근 6%(핫 트레일) +
         // 머리 발광 점. 끝점에 닿는 순간 경로 전체가 밝아진다.
-        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5)
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 5 * widthScale)
         let traveled = self.pointsUpTo(distance: targetDistance, projected: projectedPoints, cumulative: cumulativeDistances)
         // 목업의 "지나온 길" 레이어에도 옅은 글로우가 있다 — 처음 옮길 때 빠뜨렸던 부분.
-        self.strokePath(traveled, color: self.lineWarm.withAlphaComponent(0.55), width: 8, glowRadius: 10, glowColor: .white)
+        self.strokePath(traveled, color: routeColor.withAlphaComponent(0.55), width: 8 * widthScale, glowRadius: 10, glowColor: coloredLight ? runnerGlow : .white)
 
         let isComplete = progressFraction >= 1
         if !isComplete {
@@ -530,57 +876,48 @@ public class RouteRendererModule: Module {
           let hotStartDistance = max(0, targetDistance - totalDistance * 0.06)
           let before = self.pointsUpTo(distance: hotStartDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let hotTrail = Array(traveled.dropFirst(max(0, before.count - 1)))
-          self.strokePath(hotTrail, color: self.lineWarm, width: 10, glowRadius: 14, glowColor: self.glowColor)
+          self.strokePath(hotTrail, color: routeColor, width: 10 * widthScale, glowRadius: 14, glowColor: runnerGlow)
+          if coloredLight { self.strokePath(hotTrail, color: light.core, width: 3.4 * widthScale) }
           if let head = traveled.last {
-            self.fillDot(at: head, radius: 8, color: .white, glowRadius: 14, glowColor: self.glowColor)
+            self.fillDot(at: head.point, radius: 8 * widthScale, color: coloredLight ? light.core : .white, glowRadius: 14, glowColor: runnerGlow)
           }
         } else {
-          self.strokePath(projectedPoints, color: self.lineWarm, width: 14, glowRadius: 14, glowColor: self.glowColor)
+          self.strokePath(projectedPoints, color: routeColor, width: 14 * widthScale, glowRadius: 14, glowColor: runnerGlow)
+          if coloredLight { self.strokePath(projectedPoints, color: light.core, width: 4.3 * widthScale) }
         }
 
       case .segmentLighting:
         // §6-3: 경로 전체가 희미하게 깔린 채 시작, 구간이 하나씩 켜진다.
         // 완료된 구간은 밝게(+짧은 반짝임), 그리는 중인 구간은 중간 밝기.
-        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10)
+        self.strokePath(projectedPoints, color: UIColor.white.withAlphaComponent(0.2), width: 10 * widthScale)
         guard totalDistance > 0 else { return }
 
-        let unit = self.segmentUnitMeters(totalDistance)
-        let segmentCount = Int(ceil(totalDistance / unit))
-        for s in 0..<segmentCount {
-          let segStartDist = Double(s) * unit
-          let segEndDist = min(totalDistance, Double(s + 1) * unit)
-          let segStartFraction = segStartDist / totalDistance
-          let segEndFraction = segEndDist / totalDistance
-          if progressFraction <= segStartFraction { break } // 아직 도달 안 함 — 이후 구간도 마찬가지
+        var completedMarkers: [(point: CGPoint, flash: Double)] = []
+        for bound in lightingBounds {
+          let segStartDist = bound.start * totalDistance
+          let segEndDist = bound.end * totalDistance
+          if progressFraction <= bound.start { break }
 
-          let done = progressFraction >= segEndFraction
-          let endDistance = done ? segEndDist : progressFraction * totalDistance
+          let done = progressFraction >= bound.end
+          let endDistance = min(segEndDist, progressFraction * totalDistance)
           let segPoints = self.pointsUpTo(distance: endDistance, projected: projectedPoints, cumulative: cumulativeDistances)
           let before = self.pointsUpTo(distance: segStartDist, projected: projectedPoints, cumulative: cumulativeDistances)
-          let slice = Array(segPoints.dropFirst(max(0, before.count - 1)))
-
-          // 방금 완료된 구간일수록 반짝임이 강하다(감쇠 계수는 목업 근사치).
-          let justLit = done ? max(0, 1 - (progressFraction - segEndFraction) * 14) : 0
-          let alpha: CGFloat = done ? 0.95 : 0.5
-          self.strokePath(
-            slice,
-            color: self.lineWarm.withAlphaComponent(alpha),
-            width: 10 + CGFloat(justLit) * 4,
-            glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0,
-            glowColor: self.glowColor
-          )
-          if done, let boundary = self.pointsUpTo(distance: segEndDist, projected: projectedPoints, cumulative: cumulativeDistances).last {
-            self.fillDot(
-              at: boundary,
-              radius: 4 + CGFloat(justLit) * 3,
-              color: self.lineWarm,
-              glowRadius: 16 + CGFloat(justLit) * 24,
-              glowColor: self.glowColor
-            )
-          }
+          // 경계가 원래 꼭짓점 사이에 있어도 이전 꼭짓점으로 되돌아가지 않는다.
+          var slice = Array(segPoints.dropFirst(before.count - 1))
+          if let start = before.last { slice.insert(start, at: 0) }
+          let justLit = done ? max(0, 1 - (progressFraction - bound.end) * 14) : 0
+          self.strokePath(slice, color: routeColor.withAlphaComponent(done ? 0.95 : 0.5),
+            width: (10 + CGFloat(justLit) * 4) * widthScale,
+            glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0, glowColor: routeGlow)
+          if done, let boundary = segPoints.last { completedMarkers.append((point: boundary.point, flash: justLit * justLit)) }
+        }
+        // 선을 모두 그린 뒤 표시해 다음 구간이 경계 점을 덮지 않게 한다.
+        for marker in completedMarkers {
+          self.fillSegmentMarker(at: marker.point, color: routeColor, widthScale: widthScale, flash: marker.flash)
         }
       }
 
+      drawingOverlay?.draw(in: CGRect(origin: .zero, size: size))
       self.drawStamps(stamp, progressFraction: progressFraction, canvasSize: size)
     }
   }
@@ -605,13 +942,24 @@ public class RouteRendererModule: Module {
     return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
   }
 
+  /// TS paceAtProgress와 동일. 전처리는 JS에서 한 번만 수행해 미리보기와 공유한다.
+  private func paceAtProgress(_ stamp: RenderClipOptionsInput, _ progress: Double) -> Double {
+    let samples = stamp.paceSamples
+    guard samples.count >= 2, progress.isFinite, progress < 1 else { return stamp.averagePaceSecPerKm ?? 0 }
+    let index = max(0, progress) * Double(samples.count - 1)
+    let lo = Int(floor(index)), hi = min(lo + 1, samples.count - 1)
+    let value = samples[lo] + (samples[hi] - samples[lo]) * (index - Double(lo))
+    return value.isFinite && value > 0 ? value : (stamp.averagePaceSecPerKm ?? 0)
+  }
+
   private func formatPace(_ secPerKm: Double) -> String {
+    guard secPerKm.isFinite, secPerKm > 0 else { return "-" }
     let total = max(0, Int(secPerKm.rounded()))
     return String(format: "%d'%02d\"/km", total / 60, total % 60)
   }
 
-  private func formatHeartRate(_ bpm: Double) -> String {
-    String(format: "%.0fbpm", bpm)
+  private func formatHeartRate(_ bpm: Double, includeUnit: Bool = true) -> String {
+    String(format: "%.0f", bpm) + (includeUnit ? "bpm" : "")
   }
 
   /// 러닝한 날 (ISO) → "MM.dd". route-preview.tsx formatStampDate와 같은 규칙.
@@ -629,7 +977,89 @@ public class RouteRendererModule: Module {
     return String(format: "%02d.%02d", m, day)
   }
 
+  // TS stamp-columns.ts와 동일한 보수적 글자 폭. 통계 칸 배치에만 사용한다.
+  private func estimateStampTextWidth(_ text: String, _ size: CGFloat) -> CGFloat {
+    text.unicodeScalars.reduce(CGFloat.zero) { sum, char in
+      let em: CGFloat = char.value > 127 || "mMwW@".unicodeScalars.contains(char)
+        ? 1.05 : " .,:;\'\"/".unicodeScalars.contains(char) ? 0.45 : 0.72
+      return sum + size * em
+    }
+  }
+
+  // JetBrains Mono의 원라인 전용 폭. TS estimateOneLineTextWidth와 동일하다.
+  private func estimateOneLineTextWidth(_ text: String, _ size: CGFloat) -> CGFloat {
+    text.unicodeScalars.reduce(CGFloat.zero) { sum, char in
+      let mono = char.value <= 127 || "·′″‘’“”".unicodeScalars.contains(char)
+      return sum + size * (mono ? 0.62 : 1.05)
+    }
+  }
+
+  // TS fitStampColumns와 동일: 간격을 확보하고 통계 글자를 함께 축소한다.
+  private func fitStampColumns(_ widths: [CGFloat], _ availableWidth: CGFloat, _ minGap: CGFloat) -> (scale: CGFloat, offsets: [CGFloat]) {
+    let gaps = CGFloat(max(0, widths.count - 1))
+    let total = widths.reduce(0, +)
+    let scale = min(1, max(1, availableWidth - gaps * minGap) / max(1, total))
+    let gap = gaps > 0 ? (availableWidth - total * scale) / gaps : 0
+    var cursor: CGFloat = 0
+    let offsets = widths.map { width -> CGFloat in
+      let x = cursor
+      cursor += width * scale + gap
+      return x
+    }
+    return (scale, offsets)
+  }
+
+  // 스토리형 편집(2026-10-04): 문구는 러닝 데이터 프리셋과 상관없는 자유 문구다. 프리셋 배치는
+  // 문구 없이 그리고 문구는 drawFreeCaption이 따로 그린다. 옛 저장분은 문구가 프리셋 안에 있던
+  // 모습 그대로 그린다. route-preview.tsx stampLayoutDescriptors와 같은 규칙이다.
   private func drawStamps(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize) {
+    if stamp.captionFree {
+      if !stamp.stampHidden {
+        drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
+          ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+          caption: "", itemPass: true, captionPass: false)
+      }
+      drawFreeCaptions(stamp, canvasSize: canvasSize)
+      return
+    }
+    drawStampPass(stamp, progressFraction: progressFraction, canvasSize: canvasSize,
+      ox: CGFloat(stamp.stampX), oy: CGFloat(stamp.stampY), s: CGFloat(stamp.stampScale),
+      caption: stamp.caption, itemPass: !stamp.stampHidden, captionPass: true)
+  }
+
+  /// 자유 문구의 기본 글자 크기(캔버스 px). caption-layout.ts FREE_CAPTION_SIZE와 같다.
+  private static let freeCaptionSize: CGFloat = 64
+
+  /// 화면에 바로 쓰는 문구들. 넣은 순서대로 그려 나중에 넣은 것이 위에 온다. 가운데 정렬이고 줄
+  /// 묶음의 가운데가 자리에 온다. 줄의 시각적 가운데는 기준선보다 글자 크기의 0.35배 위로 본다.
+  /// route-preview.tsx freeCaptionNodes와 같은 식이다.
+  private func drawFreeCaptions(_ stamp: RenderClipOptionsInput, canvasSize: CGSize) {
+    // 자유 문구는 러닝 데이터의 옛 표시 모드와 무관하게 클립 내내 보인다.
+    guard let ctx = UIGraphicsGetCurrentContext() else { return }
+    ctx.saveGState()
+    // 글자와 반대 색의 옅은 그림자. 외곽선을 겹치면 작은 검정 라벨이 흰색처럼 보여 생략한다.
+    ctx.setShadow(offset: .zero, blur: 6, color: (stamp.stampTextColor == "black" ? UIColor.white : UIColor.black).withAlphaComponent(0.55).cgColor)
+    for caption in stamp.freeCaptions where !caption.lines.isEmpty {
+      let size = Self.freeCaptionSize * CGFloat(caption.scale)
+      let font = selectedFont(stamp, name: "NotoSansKR-Bold", size: size, fallback: .systemFont(ofSize: size, weight: .bold))
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: selectedTextColor(stamp)]
+      let lineHeight = size * 1.3
+      let centerX = canvasSize.width / 2 + CGFloat(caption.x)
+      let top = canvasSize.height / 2 + CGFloat(caption.y) - CGFloat(caption.lines.count) * lineHeight / 2
+      for (i, line) in caption.lines.enumerated() {
+        let baseline = top + (CGFloat(i) + 0.5) * lineHeight + size * 0.35
+        let width = (line as NSString).size(withAttributes: attrs).width
+        (line as NSString).draw(at: CGPoint(x: centerX - width / 2, y: baseline - font.ascender), withAttributes: attrs)
+      }
+    }
+    ctx.restoreGState()
+  }
+
+  /// 프리셋 배치 한 번. itemPass가 거짓이면 러닝 데이터를, captionPass가 거짓이면 프리셋 안의 문구를
+  /// 그리지 않는다. 그리지 않아도 자리 계산에는 들어간다. 옛 저장분은 숨긴 러닝 데이터 자리에
+  /// 문구가 그대로 남아야 해서 이렇게 나눴다.
+  private func drawStampPass(_ stamp: RenderClipOptionsInput, progressFraction: Double, canvasSize: CGSize,
+    ox: CGFloat, oy: CGFloat, s: CGFloat, caption rawCaption: String, itemPass: Bool, captionPass: Bool) {
     let isComplete = progressFraction >= 1
     if stamp.stampMode == "hidden" { return }
     if stamp.stampMode == "after" && !isComplete { return }
@@ -638,15 +1068,18 @@ public class RouteRendererModule: Module {
     var keyed: [(String, String)] = []
     if stamp.stampItems.distance { keyed.append(("distance", formatDistanceKm(stamp.distanceMeters * progressFraction))) }
     if stamp.stampItems.time { keyed.append(("time", formatDuration(stamp.durationSeconds * progressFraction))) }
-    if stamp.stampItems.pace { keyed.append(("pace", formatPace(stamp.averagePaceSecPerKm))) }
+    if stamp.stampItems.pace { keyed.append(("pace", formatPace(paceAtProgress(stamp, progressFraction)))) }
     if stamp.stampItems.date {
       let s = formatStampDate(stamp.runDate)
       if !s.isEmpty { keyed.append(("date", s)) }
     }
     if stamp.stampItems.place && !stamp.placeName.isEmpty { keyed.append(("place", stamp.placeName)) }
-    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate { keyed.append(("heartRate", formatHeartRate(hr))) }
+    if stamp.stampItems.heartRate, let hr = stamp.averageHeartRate {
+      let hasUnitLabel = ["bar", "corner", "glass", "rail"].contains(stamp.stampLayout)
+      keyed.append(("heartRate", formatHeartRate(hr, includeUnit: !hasUnitLabel)))
+    }
 
-    let caption = stamp.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+    let caption = rawCaption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : rawCaption
     if keyed.isEmpty && caption.isEmpty { return }
 
     // route-preview.tsx SAFE_AREA_TOP/BOTTOM_RATIO와 같은 값이어야 미리보기와 결과물의 각인 위치가 맞는다.
@@ -654,11 +1087,51 @@ public class RouteRendererModule: Module {
     let safeAreaBottomRatio: CGFloat = 0.17
     guard let ctx = UIGraphicsGetCurrentContext() else { return }
 
+    // 2026-09-17 — "각인이 흐리게 보이고 화질이 안 좋다"(2026-09-16 결정 §1
+    // 각인 가독성)의 실제 원인. route-preview.tsx는 'row'(레거시, 이제 선택
+    // 목록에 없다)에서만 흰색 발광(글로우, softShadow=false)을 쓰고, 실제로
+    // 고를 수 있는 나머지 여섯 프리셋(코너 등)은 옅은 검정 그림자 하나만 쓴다
+    // (2026-09-02 결정 — "안쪽만 빛나고 겉은 새까맣게 되어 구리다"는 실기기
+    // 피드백으로 나뉜 것). 이 파일은 그 구분 없이 전부 흰색 글로우로 그리고
+    // 있었다 — 지금 쓰는 프리셋 전부가 미리보기보다 더 "빛나 보이는" 원인이다.
+    let isSoftShadow = stamp.stampLayout != "row"
+    let stampShadowColor: UIColor = stamp.stampTextColor == "black" ? UIColor.white.withAlphaComponent(0.55)
+      : isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
+    let textColor = selectedTextColor(stamp)
+
+    // 2026-09-17 — 폰트 불일치(v0 근사, 구현 노트 "폰트 불일치" 참고) 수정.
+    // 미리보기(route-preview.tsx)는 @expo-google-fonts로 로드한 실제 폰트를
+    // 쓰는데 이 파일은 시스템 폰트로 근사하고 있었다. expo-font가 JS에서
+    // Font.loadAsync를 부르면 CTFontManagerRegisterFontsForURL로 프로세스
+    // 전역에 등록되므로(node_modules/expo-font/ios/FontLoaderModule.swift),
+    // 실제 PostScript 이름으로 여기서도 찾을 수 있다 — 못 찾으면(등록 전 등)
+    // 기존 시스템 폰트로 그대로 폴백한다.
+    func loadedFont(_ postscriptName: String, size: CGFloat, fallback: UIFont) -> UIFont {
+      selectedFont(stamp, name: postscriptName, size: size, fallback: fallback)
+    }
+    // route-preview.tsx의 'JetBrainsMono_500Medium'/'_700Bold' — 라벨·날짜·mono 값.
+    func monoFont(_ size: CGFloat, bold: Bool) -> UIFont {
+      loadedFont(bold ? "JetBrainsMono-Bold" : "JetBrainsMono-Medium", size: size,
+        fallback: .monospacedSystemFont(ofSize: size, weight: bold ? .bold : .medium))
+    }
+    // route-preview.tsx의 'SpaceGrotesk_700Bold' — 히어로·통계 숫자값(항상 굵게).
+    func heroValueFont(_ size: CGFloat) -> UIFont {
+      loadedFont("SpaceGrotesk-Bold", size: size, fallback: .systemFont(ofSize: size, weight: .bold))
+    }
+    // route-preview.tsx의 'NotoSansKR_500Medium'/'_700Bold' — 한글 문구(caption).
+    func hangulFont(_ size: CGFloat, bold: Bool) -> UIFont {
+      loadedFont(bold ? "NotoSansKR-Bold" : "NotoSansKR-Medium", size: size,
+        fallback: .systemFont(ofSize: size, weight: bold ? .bold : .medium))
+    }
+
     // 어두운 아웃라인 사본 위에 밝은 글씨 — route-preview.tsx glowText와 같은 처리.
     // color 생략 시 기본 밝은 톤. 라벨류(muted)는 호출부에서 mutedColor를 넘긴다
     // (route-preview.tsx StampTextDescriptor.muted와 같은 개념, 2026-09-02).
+    // drawCaption 안에서만 참이다. 문구와 러닝 데이터를 이 값으로 갈라 그린다.
+    var drawingCaption = false
     func draw(_ text: String, _ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, color: UIColor? = nil) {
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? self.lineWarm]
+      if drawingCaption ? !captionPass : !itemPass { return }
+      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color ?? textColor]
       let w = (text as NSString).size(withAttributes: attrs).width
       let x = align == .center ? origin.x - w / 2 : align == .right ? origin.x - w : origin.x
       // 실기기 피드백(2026-09-08) "인스타 공유 결과물에서 각인이 다 겹쳐 보인다":
@@ -670,15 +1143,14 @@ public class RouteRendererModule: Module {
       // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
       let topY = origin.y - font.ascender
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
       (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
-    let mutedColor = self.lineWarm.withAlphaComponent(0.5)
+    let mutedColor = textColor.withAlphaComponent(0.5)
 
-    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(stampX/Y)는 그대로 두고
-    // 글자 크기·내부 간격에만 곱한다.
-    let s = CGFloat(stamp.stampScale)
+    // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(ox/oy)는 그대로 두고
+    // 글자 크기·내부 간격에만 곱한다. 문구 배치에서는 문구 크기(captionScale)가 들어온다.
 
     // route-preview.tsx splitHeroValue와 같은 규칙 — "5.23km"처럼 끝의 단위 글자(있으면,
     // "/km"처럼 슬래시 포함)를 떼어 작게 그린다. "28:14"처럼 단위가 없으면 nil.
@@ -692,14 +1164,15 @@ public class RouteRendererModule: Module {
     // 곳과 같은 "베이스라인" 기준 — main·unit 둘 다 자기 font.ascender로 top y를
     // 구해서 같은 베이스라인(origin.y)에 나란히 앉힌다(위 draw()와 같은 이유의 같은 수정).
     func drawHeroValue(_ text: String, _ origin: CGPoint, _ size: CGFloat, align: NSTextAlignment = .center) {
+      if !itemPass { return }
       guard let split = splitHeroValue(text) else {
-        draw(text, origin, UIFont.systemFont(ofSize: size, weight: .bold), align)
+        draw(text, origin, heroValueFont(size), align)
         return
       }
-      let mainFont = UIFont.systemFont(ofSize: size, weight: .bold)
-      let unitFont = UIFont.systemFont(ofSize: size * 0.42, weight: .bold)
-      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: self.lineWarm]
-      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: self.lineWarm]
+      let mainFont = heroValueFont(size)
+      let unitFont = heroValueFont(size * 0.42)
+      let mainAttrs: [NSAttributedString.Key: Any] = [.font: mainFont, .foregroundColor: textColor]
+      let unitAttrs: [NSAttributedString.Key: Any] = [.font: unitFont, .foregroundColor: textColor]
       let mainW = (split.main as NSString).size(withAttributes: mainAttrs).width
       let unitText = " \(split.unit)"
       let unitW = (unitText as NSString).size(withAttributes: unitAttrs).width
@@ -711,7 +1184,7 @@ public class RouteRendererModule: Module {
       default: startX = origin.x
       }
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: UIColor.white.cgColor)
+      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
       (split.main as NSString).draw(at: CGPoint(x: startX, y: origin.y - mainFont.ascender), withAttributes: mainAttrs)
       (unitText as NSString).draw(at: CGPoint(x: startX + mainW, y: origin.y - unitFont.ascender), withAttributes: unitAttrs)
       ctx.restoreGState()
@@ -723,8 +1196,14 @@ public class RouteRendererModule: Module {
     let heroKeys = ["distance", "time", "pace"]
     func hasKey(_ k: String) -> Bool { keyed.contains { $0.0 == k } }
     func valueFor(_ k: String) -> String { keyed.first { $0.0 == k }?.1 ?? "" }
+    func finalValueFor(_ k: String) -> String {
+      k == "distance" ? formatDistanceKm(stamp.distanceMeters)
+        : k == "time" ? formatDuration(stamp.durationSeconds)
+        : k == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm ?? 0)) : valueFor(k)
+    }
     // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
     func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
+      if !itemPass { return }
       let path = UIBezierPath(roundedRect: rect, cornerRadius: radius)
       ctx.saveGState()
       color.setFill()
@@ -741,14 +1220,43 @@ public class RouteRendererModule: Module {
     // 옮긴 것이다(2026-09-02, route-preview.tsx stampLayoutDescriptors와 같은 수식).
     // 목업은 300x533 캔버스라 M=3.6을 곱해 1080x1920으로 옮긴다.
     let M: CGFloat = 3.6
+    // JS의 caption-layout.ts에서 계산한 행을 받아 결과물의 줄 구성을 동일하게 유지한다.
+    let captionLines = caption.isEmpty ? [] : (stamp.captionLines ?? caption.components(separatedBy: "\n"))
+    // 2026-09-16 실기기 피드백, TS와 동일 — line 문구가 너무 크게 나와 26→22로 줄였다.
+    let captionSize: CGFloat = stamp.stampLayout == "row" ? 34 * s
+      : (stamp.stampLayout == "line" ? 22 : stamp.stampLayout == "bar" ? 15 : 13) * M * s
+    let captionLineHeight = captionSize * 1.3
+    let captionExtra = CGFloat(max(0, captionLines.count - 1)) * captionLineHeight
+    let captionMargin = canvasSize.width * 0.08
+    let captionPanelWidth = canvasSize.width - 32 * M
+    let captionLeft = stamp.stampLayout == "glass"
+      ? max(captionMargin, 16 * M + min(20 * M * s, captionPanelWidth * 0.15)) : captionMargin
+    let captionRight = canvasSize.width - captionLeft
+    let captionDateSpace = stamp.stampItems.date && ["bar", "corner", "glass"].contains(stamp.stampLayout)
+      ? estimateStampTextWidth("00.00", 11 * M * s) + 12 * M : 0
+    let captionWidth = max(captionSize, captionRight - captionLeft - captionDateSpace)
+    func drawCaption(_ origin: CGPoint, _ font: UIFont, _ align: NSTextAlignment, fromTop: Bool = false) {
+      if !captionPass { return }
+      drawingCaption = true
+      defer { drawingCaption = false }
+      let half: CGFloat = align == .center ? captionWidth / 2 : 0
+      let minX = captionLeft + (align == .right ? captionWidth : half)
+      let maxX = captionRight - (align == .left ? captionWidth : half)
+      let x = min(maxX, max(minX, origin.x - ox)) + ox
+      for (i, line) in captionLines.enumerated() {
+        let y = origin.y + CGFloat(i) * captionLineHeight - (fromTop ? 0 : captionExtra)
+        draw(line, CGPoint(x: x, y: y), font, align)
+      }
+    }
+
 
     if stamp.stampLayout == "stack" {
       // 2a "좌하단 스택" — 문구 → 큰 숫자(단위 작게) → 시간·페이스·BPM·날짜 한 줄.
       let u = M * s
-      let leftX = 24 * M + CGFloat(stamp.stampX)
+      let leftX = 24 * M + ox
       // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
       // 빠뜨렸던 버그. 26*M로 맞춘다.
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
       let hero = keyed.first { heroKeys.contains($0.0) }
       let metaItems = keyed.filter { $0.0 != hero?.0 }
 
@@ -777,18 +1285,18 @@ public class RouteRendererModule: Module {
       }
 
       if !metaItems.isEmpty {
-        let font = UIFont.monospacedSystemFont(ofSize: metaFont, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        var cursorX = leftX
-        for (key, val) in metaItems {
-          let text = key == "heartRate" ? "\(val)BPM" : val
-          draw(text, CGPoint(x: cursorX, y: metaBaseline), font, .left)
-          cursorX += (text as NSString).size(withAttributes: attrs).width + 14 * u
+        let metaGap = 14 * u
+        let widths = metaItems.map { estimateStampTextWidth(finalValueFor($0.0), metaFont) }
+        let rowWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + metaGap * CGFloat(metaItems.count - 1))
+        let fitted = fitStampColumns(widths, rowWidth, min(metaGap, 12 * M))
+        let font = monoFont(metaFont * fitted.scale, bold: false)
+        for (i, item) in metaItems.enumerated() {
+          draw(item.1, CGPoint(x: leftX + fitted.offsets[i], y: metaBaseline), font, .left)
         }
       }
       if let hero { drawHeroValue(hero.1, CGPoint(x: leftX, y: heroBaseline), heroSize, align: .left) }
       if !caption.isEmpty {
-        draw(caption, CGPoint(x: leftX, y: captionBaseline), UIFont.systemFont(ofSize: titleFont, weight: .medium), .left)
+        drawCaption(CGPoint(x: leftX, y: captionBaseline), hangulFont(titleFont, bold: false), .left)
       }
       return
     }
@@ -796,12 +1304,11 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "bar" {
       // 2b "하단 스탯 바" — 문구+날짜 머리글, 구분선, 그 아래 4칸 통계(거리 칸이 더 넓다).
       let u = M * s
-      let leftX = 20 * M + CGFloat(stamp.stampX)
-      let rightX = canvasSize.width - 20 * M + CGFloat(stamp.stampX)
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
+      let leftX = 20 * M + ox
+      let rightX = canvasSize.width - 20 * M + ox
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + oy
       let dateText = valueFor("date")
-      let statOrder = ["distance", "time", "pace", "heartRate"].filter(hasKey)
-      let statWeight: [String: CGFloat] = ["distance": 1.3, "time": 1, "pace": 1, "heartRate": 0.9]
+      let statOrder = ["distance", "time", "pace", "heartRate", "place"].filter(hasKey)
 
       let headerFont = 15 * u
       let labelFont = 9 * u
@@ -816,21 +1323,30 @@ public class RouteRendererModule: Module {
       let dividerY = hasStats ? labelBaseline - labelFont * 0.9 - rowPadTop : bottomAnchor
       let headerBaseline = dividerY - dividerGap - headerFont * 0.3
 
-      if !caption.isEmpty { draw(caption, CGPoint(x: leftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: leftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: rightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
       if !caption.isEmpty || !dateText.isEmpty {
-        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: 1, alpha: 0.28))
+        fillRect(CGRect(x: leftX, y: dividerY, width: rightX - leftX, height: max(1, u)), radius: 0, color: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.28))
       }
       if !statOrder.isEmpty {
-        let totalWeight = statOrder.reduce(0) { $0 + (statWeight[$1] ?? 1) }
+        let widths = statOrder.map { key -> CGFloat in
+          let finalValue = key == "distance" ? formatDistanceKm(stamp.distanceMeters)
+            : key == "time" ? formatDuration(stamp.durationSeconds)
+            : key == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm ?? 0)) : valueFor(key)
+          return max(estimateStampTextWidth(statLabel[key] ?? "", labelFont),
+            estimateStampTextWidth(finalValue, (key == "distance" ? 22 : 18) * u))
+        }
         let totalWidth = rightX - leftX
+        let total = widths.reduce(0, +)
+        let gaps = CGFloat(max(0, statOrder.count - 1))
+        let fittedScale = min(1, max(1, totalWidth - gaps * 12 * M) / max(1, total))
+        let gap = gaps > 0 ? (totalWidth - total * fittedScale) / gaps : 0
         var cursorX = leftX
-        for key in statOrder {
-          let colWidth = (statWeight[key] ?? 1) / totalWeight * totalWidth
+        for (index, key) in statOrder.enumerated() {
           let isDist = key == "distance"
-          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), UIFont.systemFont(ofSize: (isDist ? 22 : 18) * u, weight: .bold), .left)
-          cursorX += colWidth
+          draw(statLabel[key] ?? "", CGPoint(x: cursorX, y: labelBaseline), monoFont(labelFont * fittedScale, bold: false), .left, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: cursorX, y: valueBaseline), heroValueFont((isDist ? 22 : 18) * u * fittedScale), .left)
+          cursorX += widths[index] * fittedScale + gap
         }
       }
       return
@@ -839,27 +1355,27 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "corner" {
       // 2c "코너 분산" — 위쪽 문구·날짜, 오른쪽에 시간·페이스·평균심박 스택, 왼쪽 아래에 큰 숫자.
       let u = M * s
-      let topLeftX = 24 * M + CGFloat(stamp.stampX)
-      let topRightX = canvasSize.width - 24 * M + CGFloat(stamp.stampX)
+      let topLeftX = 24 * M + ox
+      let topRightX = canvasSize.width - 24 * M + ox
       let headerFont = 13 * u
-      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + CGFloat(stamp.stampY)
+      let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + oy
 
-      if !caption.isEmpty { draw(caption, CGPoint(x: topLeftX, y: headerBaseline), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
+      if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left, fromTop: true) }
       let dateText = valueFor("date")
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
 
-      let statItems = ["time", "pace", "heartRate"].filter(hasKey)
+      let statItems = ["time", "pace", "heartRate", "place"].filter(hasKey)
       if !statItems.isEmpty {
         let labelFont = 9 * u
         let valueFont = 19 * u
         let rowGap = 14 * u
-        var cursorY = headerBaseline + 72 * M
+        var cursorY = headerBaseline + 72 * M + captionExtra
         for key in statItems {
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 1.05
           let label = key == "heartRate" ? "AVG BPM" : (statLabel[key] ?? "")
-          draw(label, CGPoint(x: topRightX, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .right, color: mutedColor)
-          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .right)
+          draw(label, CGPoint(x: topRightX, y: labelY), monoFont(labelFont, bold: false), .right, color: mutedColor)
+          draw(valueFor(key), CGPoint(x: topRightX, y: valueY), heroValueFont(valueFont), .right)
           cursorY = valueY + rowGap
         }
       }
@@ -868,8 +1384,8 @@ public class RouteRendererModule: Module {
         let heroSize = 66 * u
         // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
         // 빠뜨렸던 버그. 26*M로 맞춘다.
-        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + CGFloat(stamp.stampY)
-        drawHeroValue(hero.1, CGPoint(x: 22 * M + CGFloat(stamp.stampX), y: heroBaseline), heroSize, align: .left)
+        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
+        drawHeroValue(hero.1, CGPoint(x: 22 * M + ox, y: heroBaseline), heroSize, align: .left)
       }
       return
     }
@@ -883,7 +1399,8 @@ public class RouteRendererModule: Module {
       let dateText = valueFor("date")
       let hasHeader = !caption.isEmpty || !dateText.isEmpty
 
-      let padX = 20 * u
+      let panelWidth = canvasSize.width - 32 * M
+      let padX = min(20 * u, panelWidth * 0.15)
       let padY = 20 * u
       let gap = 14 * u
       let headerFont = 13 * u
@@ -892,7 +1409,7 @@ public class RouteRendererModule: Module {
       let valueFont = 16 * u
       let colGap = 20 * u // 통계 칸 사이 최소 간격(겹침 방지)
 
-      let headerLineH = hasHeader ? headerFont * 1.3 : 0
+      let headerLineH = hasHeader ? headerFont * 1.3 + captionExtra : 0
       let heroLineH = hero != nil ? heroSize * 1.05 : 0
       let statLineH = !statItems.isEmpty ? labelFont * 1.3 + valueFont * 1.15 : 0
       var inner = headerLineH
@@ -900,39 +1417,36 @@ public class RouteRendererModule: Module {
       if !statItems.isEmpty { inner += (hero != nil ? gap : hasHeader ? gap : 0) + statLineH }
       let panelHeight = inner + padY * 2
 
-      // route-preview.tsx와 같은 이유 — 고정 균등폭 칸이 "장소"처럼 긴 값과
-      // "페이스"를 겹쳐 보이게 했다. 실제 글자 폭(추정)만큼만 차지하는 커서
-      // 방식으로 바꿔 절대 안 겹치게 하고, 필요하면 패널을 넓힌다.
-      let statWidths: [CGFloat] = statItems.map { (pair: (String, String)) -> CGFloat in
-        let labelW = CGFloat((statLabel[pair.0] ?? "").count) * labelFont * 0.62
-        let valueW = CGFloat(pair.1.count) * valueFont * 0.62
-        return max(labelW, valueW)
+      // 카드 너비를 유지하고 내부 통계만 가용 폭에 맞춘다(TS와 동일).
+      let contentWidth = panelWidth - padX * 2
+      let statWidths: [CGFloat] = statItems.map { pair in
+        max(estimateStampTextWidth(statLabel[pair.0] ?? "", labelFont),
+          estimateStampTextWidth(finalValueFor(pair.0), valueFont))
       }
-      let statRowWidth = statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1))
-      let nominalContentWidth = canvasSize.width - 32 * M - padX * 2
-      let contentWidth = max(nominalContentWidth, statRowWidth)
-      let panelWidth = contentWidth + padX * 2
+      let rowWidth = min(contentWidth, statWidths.reduce(0, +) + colGap * CGFloat(max(0, statItems.count - 1)))
+      let fitted = fitStampColumns(statWidths, rowWidth, min(colGap, 12 * M))
 
-      let panelLeft = 16 * M + CGFloat(stamp.stampX)
+      let panelLeft = 16 * M + ox
       let panelRight = panelLeft + panelWidth
       // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:18px, M 곱하는 걸
       // 빠뜨렸던 버그. 18*M로 맞춘다.
-      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + CGFloat(stamp.stampY)
+      let panelBottom = canvasSize.height * (1 - safeAreaBottomRatio) - 18 * M + oy
       let panelTop = panelBottom - panelHeight
 
       fillRect(
         CGRect(x: panelLeft, y: panelTop, width: panelWidth, height: panelHeight),
         radius: 18 * u,
-        color: UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
-        strokeColor: UIColor(white: 1, alpha: 0.14)
+        color: stamp.stampTextColor == "black" ? UIColor(white: 1, alpha: 0.72) : UIColor(red: 12 / 255, green: 14 / 255, blue: 17 / 255, alpha: 0.42),
+        strokeColor: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.14)
       )
 
       var cursor = panelTop + padY
       if hasHeader {
         cursor += headerFont * 0.85
-        if !caption.isEmpty { draw(caption, CGPoint(x: panelLeft + padX, y: cursor), UIFont.systemFont(ofSize: headerFont, weight: .bold), .left) }
-        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), UIFont.monospacedSystemFont(ofSize: 11 * u, weight: .medium), .right, color: mutedColor) }
+        if !caption.isEmpty { drawCaption(CGPoint(x: panelLeft + padX, y: cursor), hangulFont(headerFont, bold: true), .left, fromTop: true) }
+        if !dateText.isEmpty { draw(dateText, CGPoint(x: panelRight - padX, y: cursor), monoFont(11 * u, bold: false), .right, color: mutedColor) }
       }
+      cursor += captionExtra
       if let hero {
         cursor += (hasHeader ? gap : 0) + heroSize * 0.92
         drawHeroValue(hero.1, CGPoint(x: panelLeft + padX, y: cursor), heroSize, align: .left)
@@ -940,11 +1454,10 @@ public class RouteRendererModule: Module {
       if !statItems.isEmpty {
         cursor += (hero != nil ? gap : hasHeader ? gap : 0) + labelFont * 0.85
         let valueY = cursor + valueFont * 1.05
-        var colX = panelLeft + padX
         for (i, item) in statItems.enumerated() {
-          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(item.1, CGPoint(x: colX, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
-          colX += statWidths[i] + colGap
+          let colX = panelLeft + padX + fitted.offsets[i]
+          draw(statLabel[item.0] ?? "", CGPoint(x: colX, y: cursor), monoFont(labelFont * fitted.scale, bold: false), .left, color: mutedColor)
+          draw(item.1, CGPoint(x: colX, y: valueY), heroValueFont(valueFont * fitted.scale), .left)
         }
       }
       return
@@ -971,20 +1484,21 @@ public class RouteRendererModule: Module {
       if hasKey("pace") { rows.append(("PACE", valueFor("pace"), false)) }
       if hasKey("heartRate") { rows.append(("AVG BPM", valueFor("heartRate"), false)) }
       if hasKey("date") { rows.append(("DATE", valueFor("date"), false)) }
+      if hasKey("place") { rows.append(("PLACE", valueFor("place"), false)) }
 
-      let railX = CGFloat(stamp.stampX)
+      let railX = ox
       let hasRail = !rows.isEmpty
       // 실기기 피드백: "위치도 저기가 최선인가?" — 스택(rows)만 캔버스 세로
       // 중앙에 놓고 문구를 그 아래 덧붙이던 것을, 문구 몫까지 포함한 블록
       // 전체를 안전 영역(§7-1) 안에서 가운데 두도록 고쳤다(TS와 동일).
       let rowHeights = rows.map { labelFont * 1.2 + ($0.big ? distValueFont : otherValueFont) * 1.05 }
       let totalHeight = rowHeights.reduce(0, +) + rowGap * CGFloat(max(0, rows.count - 1))
-      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 : 0
+      let captionBlockHeight = (!caption.isEmpty && hasRail) ? rowGap + captionFont * 1.15 + captionExtra : 0
       let combinedHeight = totalHeight + captionBlockHeight
       let safeTop = canvasSize.height * safeAreaTopRatio
       let safeBottom = canvasSize.height * (1 - safeAreaBottomRatio)
       let blockTop = safeTop + max(0, (safeBottom - safeTop - combinedHeight) / 2)
-      let railTop = blockTop + CGFloat(stamp.stampY)
+      let railTop = blockTop + oy
       var railBottom = railTop
 
       if hasRail {
@@ -996,8 +1510,8 @@ public class RouteRendererModule: Module {
           let valueFont = row.big ? distValueFont : otherValueFont
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 0.95
-          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), UIFont.monospacedSystemFont(ofSize: labelFont, weight: .medium), .left, color: mutedColor)
-          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), UIFont.systemFont(ofSize: valueFont, weight: .bold), .left)
+          draw(row.label, CGPoint(x: railX + railPadLeft, y: labelY), monoFont(labelFont, bold: false), .left, color: mutedColor)
+          draw(row.text, CGPoint(x: railX + railPadLeft, y: valueY), heroValueFont(valueFont), .left)
           cursorY += rowHeights[i] + rowGap
         }
       }
@@ -1005,11 +1519,11 @@ public class RouteRendererModule: Module {
         // 실기기 피드백(2026-09-03), TS와 동일 — 원본 디자인의 오른쪽 아래 고립
         // 배치 대신, 스택이 있으면 그 바로 아래(왼쪽 정렬)로 붙인다. 스택이 아예
         // 없을 때만 기존 자리(안전 영역 하단, 오른쪽 정렬)로 돌아간다.
-        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + CGFloat(stamp.stampX)
+        let x = hasRail ? railX + railPadLeft : canvasSize.width - 22 * M + ox
         let y = hasRail
           ? railBottom + rowGap + captionFont * 0.8
-          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + CGFloat(stamp.stampY)
-        draw(caption, CGPoint(x: x, y: y), UIFont.systemFont(ofSize: captionFont, weight: .bold), hasRail ? .left : .right)
+          : canvasSize.height * (1 - safeAreaBottomRatio) - 24 * M + oy
+        drawCaption(CGPoint(x: x, y: y), hangulFont(captionFont, bold: true), hasRail ? .left : .right, fromTop: hasRail)
       }
       return
     }
@@ -1017,34 +1531,37 @@ public class RouteRendererModule: Module {
     if stamp.stampLayout == "line" {
       // 2f "원 라인" — 문구(크게) 아래 짧은 구분선, 그 아래 통계를 한 줄로 이어붙인다.
       let u = M * s
-      let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + CGFloat(stamp.stampY)
+      let centerX = canvasSize.width / 2 + ox
+      let bottomAnchor = canvasSize.height * (1 - safeAreaBottomRatio) - 30 * M + oy
       let gap = 12 * u
-      let oneLineFont = 11 * u
-      let titleFont = 26 * u
+      let titleFont = 22 * u
       let dividerW = 28 * u
 
-      var parts: [String] = []
-      if hasKey("distance") { parts.append(valueFor("distance").uppercased()) }
-      if hasKey("time") { parts.append(valueFor("time")) }
-      if hasKey("pace") { parts.append(valueFor("pace").uppercased()) }
-      if hasKey("heartRate") { parts.append(valueFor("heartRate").uppercased()) }
-      if hasKey("date") { parts.append(valueFor("date")) }
-      let oneLine = parts.joined(separator: " · ")
+      let lineItems = ["distance", "time", "pace", "heartRate", "date", "place"].filter(hasKey)
+      func lineText(_ getValue: (String) -> String) -> String {
+        lineItems.map { key in
+          let text = getValue(key)
+          return ["distance", "pace", "heartRate"].contains(key) ? text.uppercased() : text
+        }.joined(separator: " · ")
+      }
+      let oneLine = lineText(valueFor)
+      // 미리보기와 같은 완성 값 기준 너비 보정. 사용자 크기 배율은 유지한다.
+      let fitted = fitStampColumns([(stamp.stampFont == "pretendard" || stamp.stampFont == "noto" ? estimateStampTextWidth(lineText(finalValueFor), 11 * M) : estimateOneLineTextWidth(lineText(finalValueFor), 11 * M))], canvasSize.width - 24 * M, 0)
+      let oneLineFont = 11 * u * fitted.scale
 
       // 실기기 피드백(2026-09-03), TS와 동일 — 통계 한 줄이 비어도 문구가 그 몫의
       // 간격까지 띄운 채였다.
       let hasOneLine = !oneLine.isEmpty
       let oneLineBaseline = bottomAnchor
       let dividerY = oneLineBaseline - oneLineFont * 1.3 - gap
-      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.85 : bottomAnchor - titleFont * 0.85
+      let titleBaseline = hasOneLine ? dividerY - gap - titleFont * 0.7 : bottomAnchor - titleFont * 0.75
 
       if !oneLine.isEmpty {
-        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), UIFont.monospacedSystemFont(ofSize: oneLineFont, weight: .medium), .center)
-        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: 1, alpha: 0.5))
+        draw(oneLine, CGPoint(x: centerX, y: oneLineBaseline), monoFont(oneLineFont, bold: false), .center)
+        fillRect(CGRect(x: centerX - dividerW / 2, y: dividerY, width: dividerW, height: max(1, 2 * u)), radius: 0, color: UIColor(white: stamp.stampTextColor == "black" ? 0 : 1, alpha: 0.5))
       }
       if !caption.isEmpty {
-        draw(caption, CGPoint(x: centerX, y: titleBaseline), UIFont.systemFont(ofSize: titleFont, weight: .bold), .center)
+        drawCaption(CGPoint(x: centerX, y: titleBaseline), hangulFont(titleFont, bold: true), .center)
       }
       return
     }
@@ -1054,46 +1571,70 @@ public class RouteRendererModule: Module {
 
     // 'row' — 가운데 한 줄 + 문구는 그 위.
     let items = keyed.map { $0.1 }
-    let centerX = canvasSize.width / 2 + CGFloat(stamp.stampX)
-    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + CGFloat(stamp.stampY)
+    let centerX = canvasSize.width / 2 + ox
+    let baseY = canvasSize.height * (1 - safeAreaBottomRatio) - 90 + oy
 
     if !caption.isEmpty {
-      draw(caption, CGPoint(x: centerX, y: baseY - 58 * s), UIFont.systemFont(ofSize: 34 * s, weight: .medium), .center)
+      drawCaption(CGPoint(x: centerX, y: baseY - 58 * s), hangulFont(34 * s, bold: false), .center)
     }
     if !items.isEmpty {
       let fontSize: CGFloat = 28 * s
       let gap: CGFloat = 22 * s
-      let font = UIFont.monospacedSystemFont(ofSize: fontSize, weight: .bold)
-      let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: self.lineWarm]
-      let widths = items.map { ($0 as NSString).size(withAttributes: attrs).width }
-      let totalWidth = widths.reduce(0, +) + gap * CGFloat(items.count - 1)
-      var cursorX = centerX - totalWidth / 2
+      let widths = keyed.map { estimateStampTextWidth(finalValueFor($0.0), fontSize) }
+      let totalWidth = min(canvasSize.width - 48 * M, widths.reduce(0, +) + gap * CGFloat(items.count - 1))
+      let fitted = fitStampColumns(widths, totalWidth, min(gap, 12 * M))
+      let font = monoFont(fontSize * fitted.scale, bold: true)
       for (i, text) in items.enumerated() {
-        draw(text, CGPoint(x: cursorX, y: baseY), font, .left)
-        cursorX += widths[i] + gap
+        draw(text, CGPoint(x: centerX - totalWidth / 2 + fitted.offsets[i], y: baseY), font, .left)
       }
     }
   }
 
   // MARK: - 인코딩
 
-  private func outputURL(named name: String) -> URL {
-    let tempDir = FileManager.default.temporaryDirectory
-    return tempDir.appendingPathComponent("\(name).mp4")
+  private func outputURL(named name: String) throws -> URL {
+    // 홈과 보관함 FRD §2-3: 완성 파일은 임시 공간 정리로 사라지면 안 된다.
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let directory = try LocalClipStorage.prepare(in: documents)
+    return directory.appendingPathComponent("\(name).mp4")
+  }
+
+  // 각 slot은 한 worker만 쓰고, 합류 후 renderQueue에서 읽는다.
+  private final class FrameSlot {
+    var buffer: CVPixelBuffer?
+    var error: Error?
+    var rasterSeconds = 0.0
+    var copySeconds = 0.0
   }
 
   private func writeClip(
     preset: RoutePreset,
-    projectedPoints: [CGPoint],
+    projectedPoints: [RouteVertex],
     cumulativeDistances: [Double],
     totalDistance: Double,
     background: UIImage,
+    videoSource: VideoBackgroundSource?,
     stamp: RenderClipOptionsInput,
     to outputURL: URL,
-    generation: Int
+    job: RenderJob
   ) throws {
+    let drawingOverlay = makeDrawingOverlay(stamp.handDrawing)
+    // 실제 미터로 구간을 나누고 변형된 캔버스에는 비율만 대응한다. 프레임마다 GPS를 계산하지 않는다.
+    let recordedMeters = stamp.distanceMeters
+    let meters = recordedMeters.isFinite && recordedMeters > 0 ? recordedMeters
+      : (self.cumulativeDistances(stamp.points).last ?? 0)
+    let unit = segmentUnitMeters(meters)
+    let count = preset == .segmentLighting && meters.isFinite && meters > 0 ? Int(ceil(meters / unit)) : 0
+    let lightingBounds = (0..<count).map { index in
+      (start: Double(index) * unit / meters, end: min(meters, Double(index + 1) * unit) / meters)
+    }
     if FileManager.default.fileExists(atPath: outputURL.path) {
       try? FileManager.default.removeItem(at: outputURL)
+    }
+
+    var completed = false
+    defer {
+      if !completed { try? FileManager.default.removeItem(at: outputURL) }
     }
 
     guard let writer = try? AVAssetWriter(outputURL: outputURL, fileType: .mp4) else {
@@ -1123,73 +1664,136 @@ public class RouteRendererModule: Module {
     }
     writer.add(writerInput)
 
-    writer.startWriting()
+    guard writer.startWriting() else { throw writer.error ?? RouteRendererError.writerSetupFailed }
     writer.startSession(atSourceTime: .zero)
-
-    // 배경은 프레임마다 안 바뀐다 — 화면 크기로 한 번만 크롭·스케일해 둔다.
-    // (매 프레임 원본을 다시 그리면 디코딩·스케일 비용 + 임시 버퍼가 쌓인다.)
-    let preparedBackground = self.prepareBackground(background)
-
-    var thrown: Error?
-    for frameIndex in 0..<ClipSpec.totalFrames {
-      // 각 프레임의 임시 할당(UIImage·CGImage·CoreGraphics 그림자 버퍼)을 즉시 반환한다.
-      // 이게 없으면 360프레임 × 수십 MB가 메서드가 끝날 때까지 쌓여 jetsam이 앱을 죽인다.
-      autoreleasepool {
-        // export-and-share FRD §2-3·F2: 취소하면 그 즉시 멈추고 미완성 파일을 지운다.
-        // generation 불일치는 "취소 버튼"이 아니라 "더 새 renderClip 요청이 이걸
-        // 대체했다"는 뜻 — 둘 다 조용히 멈추고 미완성 파일을 지우는 건 같지만,
-        // 후자는 사용자가 취소한 게 아니므로 실패 알림을 띄우면 안 된다(아래
-        // RouteRendererError.cancelled를 JS가 똑같이 "조용한 종료"로 처리해 준다).
-        if self.isCancelled || self.currentGeneration != generation {
-          thrown = RouteRendererError.cancelled
-          return
+    let start = CFAbsoluteTimeGetCurrent()
+    var rasterSeconds = 0.0, copySeconds = 0.0, waitSeconds = 0.0
+    var renderedFrames = 0
+    do {
+      let backgroundStart = CFAbsoluteTimeGetCurrent()
+      let preparedBackground = prepareBackground(background)
+      let backgroundPreparationSeconds = CFAbsoluteTimeGetCurrent() - backgroundStart
+      // renderer별 컨텍스트를 재사용하며 기존 format/scale은 유지한다.
+      let budget = ParallelRenderBudget()
+      let size = CGSize(width: ClipSpec.width, height: ClipSpec.height)
+      var renderers = [UIGraphicsImageRenderer(size: size)]
+      var completedFrame: CVPixelBuffer?
+      var frameIndex = 0
+      var parallelBatches = 0
+      var serialBatches = 0
+      var renderScale: CGFloat = 0
+      while frameIndex < ClipSpec.totalFrames {
+        try autoreleasepool {
+          try job.checkCancellation()
+          guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
+          let batchStart = frameIndex
+          let isHoldingStill = videoSource == nil && completedFrame != nil
+          let remainingToDraw = (videoSource == nil ? ClipSpec.drawFrames + 1 : ClipSpec.totalFrames) - frameIndex
+          // 영상 압축 픽셀 차이는 제품 적용 노트에 기록하고, 자원 상황에 따라 직렬 전환한다.
+          let canRenderParallel = budget.allowsParallel
+          let count = isHoldingStill ? 1 : min(canRenderParallel ? 2 : 1, remainingToDraw)
+          if count == 2, renderers.count == 1 {
+            renderers.append(UIGraphicsImageRenderer(size: size))
+          } else if count == 1, renderers.count == 2 {
+            renderers.removeLast()
+          }
+          renderScale = (renderers[0].format as? UIGraphicsImageRendererFormat)?.scale ?? 0
+          let slots = (0..<count).map { _ in FrameSlot() }
+          if isHoldingStill {
+            slots[0].buffer = completedFrame
+          } else {
+            // 영상 reader는 시간순으로 한 큐에서만 읽는다. immutable 장면만 worker에 전달한다.
+            var backgrounds: [UIImage] = []
+            for lane in 0..<count {
+              try job.checkCancellation()
+              if let videoSource,
+                 let scene = try videoSource.image(atClipTime: Double(batchStart + lane) / Double(ClipSpec.fps)) {
+                backgrounds.append(UIImage(cgImage: scene))
+              } else {
+                backgrounds.append(preparedBackground)
+              }
+            }
+            let scenes = backgrounds
+            let pool = adaptor.pixelBufferPool
+            let lanes = renderers
+            let draw: (Int) -> Void = { lane in
+              autoreleasepool {
+                do {
+                  try job.checkCancellation()
+                  let rasterStart = CFAbsoluteTimeGetCurrent()
+                  let image = self.drawFrame(
+                    preset: preset, background: scenes[lane], projectedPoints: projectedPoints,
+                    cumulativeDistances: cumulativeDistances, totalDistance: totalDistance,
+                    progressFraction: min(1, Double(batchStart + lane) / Double(ClipSpec.drawFrames)),
+                    lightingBounds: lightingBounds, drawingOverlay: drawingOverlay, stamp: stamp, renderer: lanes[lane]
+                  )
+                  slots[lane].rasterSeconds = CFAbsoluteTimeGetCurrent() - rasterStart
+                  try job.checkCancellation()
+                  let copyStart = CFAbsoluteTimeGetCurrent()
+                  guard let buffer = self.pixelBuffer(from: image, pool: pool) else {
+                    throw RouteRendererError.pixelBufferPoolMissing
+                  }
+                  slots[lane].buffer = buffer
+                  slots[lane].copySeconds = CFAbsoluteTimeGetCurrent() - copyStart
+                  try job.checkCancellation()
+                } catch { slots[lane].error = error }
+              }
+            }
+            if count == 2 {
+              parallelBatches += 1
+              DispatchQueue.concurrentPerform(iterations: count, execute: draw)
+            } else {
+              serialBatches += 1
+              draw(0)
+            }
+            for slot in slots { if let error = slot.error { throw error } }
+          }
+          // writer와 진행률은 renderQueue에서만 다루며 입력 순서를 유지한다.
+          for lane in 0..<count {
+            try job.checkCancellation()
+            let index = batchStart + lane
+            let slot = slots[lane]
+            guard let buffer = slot.buffer else { throw RouteRendererError.encodingFailed }
+            let waitStart = CFAbsoluteTimeGetCurrent()
+            while !writerInput.isReadyForMoreMediaData {
+              try job.checkCancellation()
+              guard writer.status == .writing else { throw writer.error ?? RouteRendererError.encodingFailed }
+              Thread.sleep(forTimeInterval: 0.002)
+            }
+            waitSeconds += CFAbsoluteTimeGetCurrent() - waitStart
+            try job.checkCancellation()
+            guard adaptor.append(buffer, withPresentationTime: CMTime(value: Int64(index), timescale: ClipSpec.fps)) else {
+              throw writer.error ?? RouteRendererError.encodingFailed
+            }
+            if !isHoldingStill {
+              renderedFrames += 1
+              rasterSeconds += slot.rasterSeconds
+              copySeconds += slot.copySeconds
+            }
+            if videoSource == nil, index == ClipSpec.drawFrames { completedFrame = buffer }
+            slot.buffer = nil
+            if index % 6 == 0 { reportProgress(index, job: job) }
+          }
+          frameIndex += count
         }
-        // 매 프레임 보내면 브리지에 과할 수 있어 6프레임(30fps 기준 5회/초)마다.
-        if frameIndex % 6 == 0 {
-          self.sendEvent("onRenderProgress", ["progress": Double(frameIndex) / Double(ClipSpec.totalFrames)])
-        }
-
-        let progressFraction: Double
-        if frameIndex < ClipSpec.drawFrames {
-          progressFraction = Double(frameIndex) / Double(ClipSpec.drawFrames)
-        } else {
-          progressFraction = 1.0 // 정지 구간: 완성된 경로 유지 (§5-3)
-        }
-        let frameImage = self.drawFrame(
-          preset: preset,
-          background: preparedBackground,
-          projectedPoints: projectedPoints,
-          cumulativeDistances: cumulativeDistances,
-          totalDistance: totalDistance,
-          progressFraction: progressFraction,
-          stamp: stamp
-        )
-
-        guard let pixelBuffer = self.pixelBuffer(from: frameImage, pool: adaptor.pixelBufferPool) else {
-          thrown = RouteRendererError.pixelBufferPoolMissing
-          return
-        }
-
-        while !writerInput.isReadyForMoreMediaData && !self.isCancelled && self.currentGeneration == generation {
-          Thread.sleep(forTimeInterval: 0.01)
-        }
-        let presentationTime = CMTime(value: Int64(frameIndex), timescale: ClipSpec.fps)
-        adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
       }
-
-      if let error = thrown {
-        writer.cancelWriting()
-        try? FileManager.default.removeItem(at: outputURL)
-        throw error
-      }
+      NSLog("[encoding-batches] parallel=%d serial=%d", parallelBatches, serialBatches)
+      writerInput.markAsFinished()
+      let semaphore = DispatchSemaphore(value: 0)
+      writer.finishWriting { semaphore.signal() }
+      while semaphore.wait(timeout: .now() + 0.05) == .timedOut { try job.checkCancellation() }
+      try job.checkCancellation()
+      guard writer.status == .completed else { throw writer.error ?? RouteRendererError.encodingFailed }
+      completed = true
+      NSLog("[encoding-performance] total=%.3f raster=%.3f copy=%.3f wait=%.3f background=%.4f video=%.3f rendered=%d encoded=%d scale=%.1f",
+            CFAbsoluteTimeGetCurrent() - start, rasterSeconds, copySeconds, waitSeconds,
+            backgroundPreparationSeconds, videoSource?.readSeconds ?? 0, renderedFrames, ClipSpec.totalFrames,
+            renderScale)
+    } catch {
+      if writer.status == .writing { writer.cancelWriting() }
+      try? FileManager.default.removeItem(at: outputURL)
+      throw error
     }
-
-    writerInput.markAsFinished()
-    let semaphore = DispatchSemaphore(value: 0)
-    writer.finishWriting {
-      semaphore.signal()
-    }
-    semaphore.wait()
   }
 
   private func pixelBuffer(from image: UIImage, pool: CVPixelBufferPool?) -> CVPixelBuffer? {
@@ -1201,7 +1805,7 @@ public class RouteRendererModule: Module {
     CVPixelBufferLockBaseAddress(pixelBuffer, [])
     defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
 
-    let context = CGContext(
+    guard let context = CGContext(
       data: CVPixelBufferGetBaseAddress(pixelBuffer),
       width: ClipSpec.width,
       height: ClipSpec.height,
@@ -1209,11 +1813,89 @@ public class RouteRendererModule: Module {
       bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
       space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
-    )
+    ) else { return nil }
 
     guard let cgImage = image.cgImage else { return nil }
-    context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: ClipSpec.width, height: ClipSpec.height))
+    context.draw(cgImage, in: CGRect(x: 0, y: 0, width: ClipSpec.width, height: ClipSpec.height))
 
     return pixelBuffer
+  }
+}
+
+// 자유 색상은 불투명 sRGB 6자리만 허용한다. 기존 팔레트도 같은 경로로 읽는다.
+private func routeHexColor(_ value: String) -> UIColor? {
+  guard value.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil,
+    let rgb = UInt32(value.dropFirst(), radix: 16) else { return nil }
+  return UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+    green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+}
+
+// 시스템 선택 UI를 앱의 완료·취소 시트 안에 둔다.
+final class RouteColorPickerView: ExpoView, UIColorPickerViewControllerDelegate {
+  let onColorChange = EventDispatcher()
+  private let picker = UIColorPickerViewController()
+  private var hasInitialColor = false
+  private var receivedSelectionEvent = false
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+    picker.overrideUserInterfaceStyle = .dark
+    clipsToBounds = true
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    attachPickerIfReady()
+    if window == nil, picker.parent != nil {
+      picker.willMove(toParent: nil)
+      picker.view.removeFromSuperview()
+      picker.removeFromParent()
+    }
+  }
+
+  private func attachPickerIfReady() {
+    if window != nil, hasInitialColor, picker.parent == nil {
+      var owner: UIResponder? = self.next
+      while owner != nil, !(owner is UIViewController) { owner = owner?.next }
+      if let parent = owner as? UIViewController {
+        parent.addChild(picker)
+        addSubview(picker.view)
+        picker.view.frame = bounds
+        picker.didMove(toParent: parent)
+      }
+    }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if picker.isViewLoaded { picker.view.frame = bounds }
+  }
+
+  func setColor(_ hex: String) {
+    guard let color = routeHexColor(hex) else { return }
+    // 뷰 생성과 초기 색 설정은 사용자의 선택으로 전달하지 않는다.
+    picker.delegate = nil
+    picker.selectedColor = color
+    picker.supportsAlpha = false
+    if #available(iOS 26.0, *) { picker.maximumLinearExposure = 0 }
+    hasInitialColor = true
+    attachPickerIfReady()
+    picker.delegate = self
+  }
+
+  func colorPickerViewController(_ viewController: UIColorPickerViewController, didSelect color: UIColor, continuously: Bool) {
+    // 기존 delegate의 selectedColor 조회 대신 시스템이 전달한 후보를 사용한다.
+    guard hasInitialColor, window != nil,
+      let space = CGColorSpace(name: CGColorSpace.sRGB),
+      let converted = color.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
+      let components = converted.components, components.count >= 3 else { return }
+    let rgb = components.prefix(3).map { Int((max(0, min(1, $0)) * 255).rounded()) }
+    let firstEvent = !receivedSelectionEvent
+    receivedSelectionEvent = true
+    // iOS 26 초기화는 화면의 시작 색과 다른 검정을 첫 비연속 이벤트로 통지한다.
+    // 해당 첫 이벤트만 제외하고 실제 선택과 이후 확정 이벤트는 모두 받는다.
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26,
+      firstEvent, !continuously, rgb == [0, 0, 0] { return }
+    onColorChange(["color": String(format: "#%02X%02X%02X", rgb[0], rgb[1], rgb[2])])
   }
 }

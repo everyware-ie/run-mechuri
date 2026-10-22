@@ -11,7 +11,7 @@ struct RunRecordPayload: Record {
   @Field var durationSeconds: Double = 0
   @Field var averagePaceSecPerKm: Double = 0
   @Field var averageHeartRate: Double?
-  // §2-2: 워크아웃은 있어도 좌표가 없을 수 있다. 목록에는 보여주되 고를 수 없다고 알린다.
+  // §2-2: 좌표 없는 워크아웃은 목록에서 빼고 집계로 알린다.
   @Field var hasRoute: Bool = false
 }
 
@@ -41,31 +41,14 @@ enum HealthKitBridgeError: Error, LocalizedError {
 
 public class HealthKitBridgeModule: Module {
   private let healthStore = HKHealthStore()
+  @MainActor private var authorizationTask: Task<Bool, Error>?
 
   public func definition() -> ModuleDefinition {
     Name("HealthKitBridge")
 
-    // 공통 규칙 §1-2: 목록을 열려 할 때 묻는다. 앱을 열자마자가 아니다.
+    // 공통 규칙 §1-3: 목록을 열 때 아직 응답하지 않은 항목만 요청한다.
     AsyncFunction("requestAuthorization") { () async throws -> Bool in
-      guard HKHealthStore.isHealthDataAvailable() else {
-        throw HealthKitBridgeError.notAvailable
-      }
-
-      let readTypes: Set<HKObjectType> = [
-        HKObjectType.workoutType(),
-        HKSeriesType.workoutRoute(),
-        HKObjectType.quantityType(forIdentifier: .heartRate)!
-      ]
-
-      return try await withCheckedThrowingContinuation { continuation in
-        self.healthStore.requestAuthorization(toShare: nil, read: readTypes) { success, error in
-          if let error = error {
-            continuation.resume(throwing: error)
-          } else {
-            continuation.resume(returning: success)
-          }
-        }
-      }
+      try await self.ensureAuthorization()
     }
 
     // §2-1: 실외 달리기만. §2-3: 목록 항목(날짜·거리·시간·페이스·심박).
@@ -128,6 +111,42 @@ public class HealthKitBridgeModule: Module {
       }
       return payload
     }
+  }
+
+  @MainActor private func ensureAuthorization() async throws -> Bool {
+    if let authorizationTask { return try await authorizationTask.value }
+    let store = healthStore
+    let task = Task<Bool, Error> {
+      guard HKHealthStore.isHealthDataAvailable() else {
+        throw HealthKitBridgeError.notAvailable
+      }
+
+      let readTypes: Set<HKObjectType> = [
+        HKObjectType.workoutType(),
+        HKSeriesType.workoutRoute(),
+        HKObjectType.quantityType(forIdentifier: .heartRate)!
+      ]
+
+      return try await withCheckedThrowingContinuation { continuation in
+        store.getRequestStatusForAuthorization(toShare: [], read: readTypes) { status, error in
+          if let error { continuation.resume(throwing: error); return }
+          // Unnecessary means the user has answered, including refusal. It does
+          // not reveal read permission. Always proceed to the data query.
+          if status == .unnecessary { continuation.resume(returning: true); return }
+          guard status == .shouldRequest else {
+            continuation.resume(throwing: NSError(domain: "HealthKitBridge", code: 1,
+              userInfo: [NSLocalizedDescriptionKey: "건강 데이터 권한 요청 상태를 확인하지 못했어요."])); return
+          }
+          store.requestAuthorization(toShare: nil, read: readTypes) { success, error in
+            if let error { continuation.resume(throwing: error) }
+            else { continuation.resume(returning: success) }
+          }
+        }
+      }
+    }
+    authorizationTask = task
+    defer { authorizationTask = nil }
+    return try await task.value
   }
 
   // MARK: - 내부 쿼리 헬퍼

@@ -2,6 +2,31 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-10-19: 잠금화면 제어와 자체 기록 편집 내부 배포
+
+사용자 요청으로 [PR #114](https://github.com/everyware-ie/run-mechuri/pull/114)를 CI 통과 뒤 main에 머지했다. 배포 소스는 `cbd2007695851e2ce5904b56e42383516418dc92`다. 머지 후 main CI도 통과했다. 개인 설정을 제외한 별도 체크아웃에 잠금 파일대로 의존성을 설치하고 `internal-tracking` 프로필로 클라우드 빌드를 요청했다.
+
+잠금화면에서 일시정지·즉시 재개·종료 저장, GPS 준비를 따로 누르지 않는 시작, 시작 전 위치 표시를 포함한다. 완료한 Runary 기록으로 경로 그림을 만들고 결과물 상세에서 영상 재생과 탐색을 할 수 있다. 사용자가 확인한 실제 5.41km 러닝과 워치 연동은 기존 검증 근거로 유지한다. Jest 359개, 측정·저장 Swift 133개, 잠금화면 30개, 구간 Swift 6개와 영상 보관·미리보기·설정·타입·린트·문서 검사를 통과했다. 린트는 오류 0개와 기존 경고 30개다.
+
+새 잠금화면 확장의 App Store 프로파일이 없어 첫 요청은 빌드 시작 전에 멈췄다. 번호 40은 예약됐지만 실제 빌드나 Apple 업로드는 없다. 기존 배포 인증서를 재사용해 `RunaryLiveActivity`의 프로파일 `LUV99367XT`를 생성하고 EAS에 연결했다. EAS SDK의 관리 API 인증을 사용했으며 개인키를 파일로 내보내지 않았다. 인증서 생성·폐기와 기기 등록은 하지 않았다.
+
+- 버전: `1.0.0(41)`.
+- EAS 빌드: `21395909-1d31-4a90-8c1b-23144ad4fe12`.
+- 빌드 프로필과 채널: `internal-tracking`, `RUNARY_INTERNAL_TRACKING=1`.
+- 빌드 결과: `FINISHED`. 클라우드 빌드 시간은 약 7분 49초다.
+- 제출 ID: `a03ec906-7a18-4656-88b3-885533c123ec`, EAS 제출 결과 `FINISHED`.
+- Apple 상태: `VALID / IN_BETA_TESTING`, 미만료. App Store Connect 조회로 내부 테스터의 설치 가능 상태를 확인했다.
+
+제출한 IPA를 내려받아 아이폰·워치·잠금화면 확장의 버전이 모두 `1.0.0(41)`인 것을 확인했다. 아이폰의 `RunaryInternalTracking`과 `NSSupportsLiveActivities`, 위치 백그라운드 모드 및 워치 동봉도 확인했다. 새 TestFlight 바이너리를 실기기에 설치해 다시 러닝한 것은 아니며 앞서 확인한 개발 앱의 사용자 QA와 구분한다.
+
+빌드 서버의 Expo Doctor는 21개 중 19개 검사를 통과했다. 권장 패치와 다른 패키지 22개, 정적·동적 앱 설정의 차이를 보고했다. `app.config.js`가 실제로 `app.json`을 복사한 뒤 내부 빌드 설정을 추가하는 코드를 확인했고 일반·내부 설정 회귀 검사도 통과했다. 검증한 잠금 파일을 유지해 빌드를 진행하며, 패치 업데이트는 별도 회귀 검증 대상으로 남긴다.
+
+내부 테스터용 배포다. 외부 공개 그룹과 정식 심사 제출은 이번 작업에서 변경하지 않는다.
+
+팀 공유 문안:
+
+> Runary TestFlight 1.0.0(41) 업데이트했습니다. 내부 테스터는 지금 설치할 수 있어요. 잠금화면에서 러닝 일시정지·재개·종료, Runary 측정 기록으로 영상 만들기, 결과물 상세의 재생 버튼과 탐색바를 확인해 주세요.
+
 ## 1. 개발 중 — JS/TS만 고쳤을 때
 
 **JS/TS 코드(화면, 컴포넌트, 로직)만 바꿨다면 이것만 있으면 된다.** 네이티브 재빌드 필요 없음.
@@ -13,6 +38,33 @@ npx expo start
 - 이미 기기에 설치된 앱(개발 빌드)이 켜져 있으면 자동으로 새 코드를 받는다.
 - 화면이 이상하게 안 바뀌면 캐시 문제일 수 있다 — `npx expo start -c` (캐시 클리어).
 - 앱이 아예 안 켜져 있으면, 기기에서 앱을 직접 실행해 Metro(`expo start`)에 연결한다.
+
+### 흔들어도 개발 메뉴가 나오지 않을 때
+
+**TestFlight 앱에서는 개발 메뉴가 열리지 않는다.** 흔들기는 이미 설치된 개발용 앱에서 메뉴를 여는 동작이지, TestFlight를 개발용으로 바꾸는 동작이 아니다. [Expo 개발용 빌드 안내](https://docs.expo.dev/develop/development-builds/use-development-builds/).
+
+이 프로젝트는 개발용과 TestFlight의 bundle ID가 모두 `com.mechuri.runmechuri`다. 같은 아이폰에서는 나중에 설치한 버전으로 교체된다. TestFlight 업데이트 후 로컬 QA로 돌아오려면 개발용 앱을 다시 빌드·설치하고 개발 서버를 실행한다. 앱을 먼저 삭제할 필요는 없다.
+
+```bash
+npx expo start --dev-client --lan --port 8081
+```
+
+개발용 앱의 서버 선택 화면에서 연결하거나 Metro에 나온 QR 코드로 연다. LAN 연결은 Mac과 아이폰이 같은 네트워크에 있어야 한다. 개발용 앱이 연결된 뒤에는 Metro 터미널의 `m`으로도 개발 메뉴를 열 수 있다. [Expo 디버깅 도구 안내](https://docs.expo.dev/debugging/tools/).
+
+**설치 완료가 떴는데도 서버에 붙지 않으면 폰에 깔린 앱부터 본다.** 2026-10-03에 `expo run:ios`가 설치 완료를 출력했는데, 폰에는 TestFlight 빌드 25가 그대로 있었다. 개발용 앱이 아니니 서버 목록도 흔들기 메뉴도 나오지 않았다. 빌드 번호로 구분한다. 개발용은 `1`, TestFlight는 배포 번호(예: `25`)다.
+
+```bash
+xcrun devicectl device info apps --device <UDID> --bundle-id com.mechuri.runmechuri
+```
+
+TestFlight 번호가 보이면 이미 만든 개발용 앱을 직접 설치하고, 개발 서버 주소로 바로 연다. `<맥 IP>`는 `ipconfig getifaddr en0`으로 확인한다.
+
+```bash
+xcrun devicectl device install app --device <UDID> ~/Library/Developer/Xcode/DerivedData/<프로젝트>/Build/Products/Debug-iphoneos/app.app
+xcrun devicectl device process launch --device <UDID> --terminate-existing --payload-url "exp+mechuri://expo-development-client/?url=http%3A%2F%2F<맥 IP>%3A8081" com.mechuri.runmechuri
+```
+
+`CI=1`을 붙여 띄운 개발 서버는 코드를 고쳐도 다시 불러오지 않는다. 바로 반영되게 하려면 위의 `npx expo start --dev-client --lan`으로 띄운다.
 
 ## 2. 네이티브 쪽을 바꿨을 때 (새 패키지·설정·bridge 모듈)
 
@@ -26,7 +78,8 @@ npx expo prebuild            # ios/ 프로젝트 재생성 (+ pod install 겸함
 ```
 
 - `prebuild`는 `ios/`, `android/` 폴더를 설정 기준으로 다시 만든다. 기존 `ios/`가 있으면 덮어쓸지 물어본다.
-- 앱 표시 이름이 한글("메추리")이라 프로젝트 파일명이 `app.xcodeproj`/`app.xcworkspace`로 나오는 게 정상(알려진 특이사항).
+- **`ios/`에서 `pod install`만 다시 돌릴 때 `Unicode Normalization not appropriate for ASCII-8BIT` 오류가 나면** 터미널 문자 인코딩 문제다. `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`로 돌린다 (2026-10-03, 영상 배경 작업 중 확인).
+- 현재 표시 이름은 `Runary`다. 새로 prebuild한 iOS 프로젝트는 `Runary.xcworkspace`를 사용한다. 이름 변경 전에 생성한 로컬 프로젝트에는 `app.xcworkspace`가 남아 있을 수 있으므로 실제 파일명과 scheme을 확인한다.
 
 ## 3. 실기기/시뮬레이터에서 직접 확인 (Xcode)
 
@@ -50,7 +103,7 @@ Run 후 앱이 켜지면, 그 앱은 자동으로 Metro(`npx expo start`)를 찾
 `eas.json`에 `production` 빌드/제출 프로필이 이미 설정돼 있음(`ascAppId: 6807295594`).
 
 ```bash
-# 1) 빌드 — Apple 클라우드에서 빌드, 완료까지 보통 10~20분
+# 1) 빌드 — Expo EAS 클라우드에서 빌드
 npx eas-cli build --platform ios --profile production --non-interactive --no-wait
 
 # 위 명령이 출력하는 빌드 ID(또는 아래로 조회)로 진행 상황 확인
@@ -67,6 +120,35 @@ npx eas-cli submit --platform ios --profile production --non-interactive --id <B
 - `autoIncrement: true`(eas.json)라 빌드 번호는 자동으로 올라간다 — 버전 번호를 직접 안 올려도 됨.
 - 확인 링크: `https://appstoreconnect.apple.com/apps/6807295594/testflight/ios`
 
+### 클라우드 무료 한도가 소진됐을 때: 로컬 배포 빌드
+
+2026-09-13 PR #53은 EAS 무료 iOS 빌드 한도 때문에 이 경로로 배포했다. 유료 구독을 추가하지 않았다. 생성된 IPA도 EAS Submit으로 제출할 수 있다.
+
+```bash
+brew install fastlane  # 이 맥에 없을 때 한 번만. Xcode·CocoaPods도 필요
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer npx eas-cli build \
+  --platform ios --profile production --local --non-interactive --output /private/tmp/mechuri-production.ipa
+npx eas-cli submit --platform ios --profile production \
+  --path /private/tmp/mechuri-production.ipa --non-interactive --no-wait
+npx eas-cli submit:status --platform ios --profile production --json --non-interactive
+```
+
+- 머지된 커밋의 깨끗한 체크아웃에서 실행한다. 작업 중 변경이나 개인 파일을 배포에 섞지 않는다.
+- 로컬 빌드도 원격 인증서와 원격 빌드 번호를 사용한다. 실패한 빌드 번호는 건너뛸 수 있다.
+- 이 날짜의 EAS CLI에서 `--what-to-test` 자동 등록은 Enterprise 플랜 제한으로 제출이 거절됐다. 해당 옵션 없이 제출하고 팀 테스트 안내는 PR에 남겼다.
+- `submit` 완료는 Apple 업로드 완료다. `submit:status`의 해당 빌드가 `VALID` / `IN_BETA_TESTING`인지 확인해야 내부 테스트 가능 상태를 확정할 수 있다.
+- **1.0.0(17)**: PR #53, merge `be7483b`, Apple 제출 `65bc740a-d749-4105-9405-316d0f4861e9`. 2026-09-13 내부 테스트 가능 상태 확인. 미리보기 원인·해결·측정은 [미리보기 성능 노트](../product/features/preview-performance.md)에 있다.
+
+
+### 2026-09-13 인코딩·각인 후속 배포 — 1.0.0(18)
+
+- 소스: [PR #54](https://github.com/everyware-ie/run-mechuri/pull/54), merge `5b704ce212e018bfdd4a8490135df8f8067b40a4`.
+- 변경: 앱 전환·화면 잠금 중 인코딩과 보관함 저장, 완성 프레임 재사용, 최초 코너·최근 선택 각인 기본값. 시스템 진행 안내의 자동 숨김은 공개 API 제약으로 미적용.
+- 로컬 production 빌드 성공. IPA의 `1.0.0(18)`·bundle ID·processing 모드·continued processing 식별자·JS 번들 포함 확인.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/964812d4-36be-461a-9f36-49b682735c44): `FINISHED`. 2026-09-13 Apple 조회에서 `VALID` / `IN_BETA_TESTING`, 미만료 상태 확인. 등록된 내부 테스터가 TestFlight에서 업데이트할 수 있다.
+- IPA SHA-256: `903bb27553b818b7ce7e9f903672f4d3d8ff62a25f6109ecf7bcb0c4d03f6db4`.
+- 구현·검증·제약은 [인코딩 성능 노트](../product/features/encoding-performance.md), [각인 편집 노트](../product/features/result-editing.md)에 기록한다. 개발 기기에서 약 28.4% 단축과 전체 360프레임 픽셀 일치를 확인했으며, 모든 기기·입력에 같은 속도를 보장하지 않는다.
+
 ## 5. 자주 쓰는 확인 명령 (커밋 전)
 
 ```bash
@@ -82,3 +164,418 @@ xcrun swiftc -parse modules/route-renderer/ios/RouteRendererModule.swift
 ```
 
 `No such module 'ExpoModulesCore'` 에러는 무시해도 된다 — CocoaPods로만 링크되는 모듈이라 이 명령으로는 못 찾는 게 정상이고, 문법 자체(괄호 짝, 타입 등)만 확인하는 용도다. 실제 컴파일 확인은 Xcode Run으로.
+
+
+## 2026-09-20: Runary 개발 앱 설치
+
+표시 이름을 Runary로 바꾸고 첫 실행 안내·홈에 개인정보 처리방침 링크를 추가했다. iPhone Debug 빌드 성공 후 연결된 개발 아이폰에 설치했다. Expo app.json과 로컬 생성 iOS Info.plist의 CFBundleDisplayName·건강 권한 안내를 맞췄다. 배포 빌드는 app.json 설정을 사용한다. 번들 ID는 com.mechuri.runmechuri로 유지했다.
+
+오늘 편집 QA 수정은 사용자가 확인 완료했다. 이 설치 시점에는 로컬 QA용이었고, 이후 PR #62·#63을 머지해 아래의 빌드 23으로 TestFlight 내부 배포를 완료했다. 기능 근거와 검증은 [처리방침 링크](../product/features/privacy-policy-link.md), [제품명 반영](../product/features/runary-display-name.md)에 기록했다.
+
+
+## 2026-09-20: 출시 준비 배포 1.0.0(23)
+
+### 소스와 변경
+
+- [PR #62](https://github.com/everyware-ie/run-mechuri/pull/62): 경로 선택 박스의 이동·확대·회전 동기화, 원라인 기본 너비 보정, 러닝 데이터 크기 슬라이더, 항목별 터치 영역, 이동 후 되튀는 현상 제거, 전체 미리보기에서 대상 전환 시 접힘 상태 유지.
+- [PR #63](https://github.com/everyware-ie/run-mechuri/pull/63): Runary 표시 이름·화면 문구, 첫 실행·홈의 처리방침 링크, 공개 Notion 이름과 새 허브 주소 반영.
+- 배포 소스: `a280271a38a2d2b3b1450631218360957c95babe`. 머지된 main의 별도 깨끗한 체크아웃에서 기존 잠금 파일로 의존성을 설치하고 로컬 production 빌드를 실행했다.
+
+### 검증
+
+사용자가 오늘 편집 QA 항목을 확인 완료했다. 타입, 미리보기·편집 회귀 검사, 문서 검사와 diff 공백 검사가 통과했다. iOS Debug 빌드·개발 기기 설치도 완료했다. 전체 린트에는 기존 오류 16개·경고 5개가 남아 있으며 이번 변경에서 추가된 오류는 없다.
+
+빌드 중 Expo Doctor는 최신 권장 패치와 다른 의존성 21개를 보고했다. 배포 직전 의존성 변경을 추가하지 않고 검증한 잠금 파일을 유지했다. [확인 필요] 패치 업데이트는 별도 작업에서 호환성·회귀 검증 후 진행한다.
+
+### 제출 상태
+
+로컬 production 빌드가 성공했다. IPA의 표시 이름 `Runary`, 버전 `1.0.0(23)`, 기존 bundle ID `com.mechuri.runmechuri`, processing 모드·JS 번들 포함을 확인했다. macOS 신뢰 저장소 접근이 가능한 환경에서 `codesign --verify --deep --strict`가 통과했다.
+
+- IPA SHA-256: `06832392975d0a685ed4dc994949caf93358f56abcd71e68fb130f434fd7470b`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/55e05c3c-b903-4336-a06b-9ea5b1e44431): `FINISHED`, 2026-09-20 22:46 KST Apple 업로드 완료.
+- 2026-09-20 Apple 조회에서 빌드 `23`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+
+### 9월 22일 외부 공개 인계
+
+2026-09-20 Apple 조회에서 기존 빌드 `1.0.0(18)`은 `BETA_APPROVED`, 빌드 `1.0.0(22)`는 `READY_FOR_BETA_SUBMISSION`이었다. 이전 빌드 승인을 이번 빌드의 외부 배포 완료로 간주하지 않는다.
+
+사용자는 외부 베타 공개 설정을 다른 팀원에게 요청하거나 다음에 진행하기로 했다. 앱 관리 Apple 계정으로 [App Store Connect의 TestFlight](https://appstoreconnect.apple.com/apps/6807295594/testflight/ios)에 로그인하여 이번 빌드를 외부 베타 그룹에 추가하고, 표시되는 베타 심사·테스트 시작 절차를 진행한다. 공개 링크에서 새 빌드를 설치할 수 있는지 확인한 뒤 출시 안내에 사용한다. 이번 작업에서는 공개 링크 변경이나 스레드·지인 대상 메시지를 보내지 않았다.
+
+
+## 2026-09-22: 빌드 23을 외부 베타에 공개 (출시)
+
+**지민이 회의 중에 빌드 `1.0.0(23)`을 외부 베타 그룹에 추가했고, 베타 심사 없이 바로 공개됐다.** 위 "9월 22일 외부 공개 인계"에 남긴 절차를 그대로 수행한 것이다.
+
+심사를 다시 받을 것으로 예상했으나 그러지 않았다. 빌드 18과 23이 둘 다 `1.0.0`이고 18이 9/13에 승인받았기 때문으로 보인다. **결정과 배경은 [공개 링크를 열었다](../decisions/2026-09-22-public-launch.md)에 있다.**
+
+현황은 App Store Connect 앱에서 조회할 수 있다.
+
+
+## 2026-09-22: 아이콘 배포 1.0.0(25)
+
+### 소스와 변경
+
+- [PR #68](https://github.com/everyware-ie/run-mechuri/pull/68): 아이콘과 스플래시를 Runary R 마크로 교체. 코드 변경 없이 자산 4개뿐이다.
+- 배포 소스: `19e8d38` (main).
+
+### 빌드 번호가 24를 건너뛴다
+
+첫 시도에서 클라우드 빌드가 실패했는데 그 과정에서 번호를 하나 먹었다. **24는 존재하지 않는다.**
+
+### 클라우드 빌드를 못 써서 로컬로 빌드했다
+
+```
+This account has used its iOS builds from the Free plan this month
+```
+
+**EAS 무료 플랜의 이번 달 iOS 빌드 한도가 소진됐다.** 2026-10-01에 초기화된다. 그래서 `--local`로 이 맥에서 빌드했다.
+
+```bash
+npx eas-cli build --platform ios --profile production --local --non-interactive
+```
+
+산출물은 같은 `.ipa`이므로 제출에는 차이가 없다. 다만 **클라우드 빌드보다 오래 걸리고(약 20분) 맥의 Xcode 상태에 좌우된다.**
+
+### Xcode 경로 문제
+
+`xcode-select`가 Xcode가 아니라 CommandLineTools를 가리키고 있어 `xcodebuild`가 동작하지 않았다.
+
+```
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer
+directory '/Library/Developer/CommandLineTools' is a command line tools instance
+```
+
+**이번에는 환경변수로 우회했다.** 바꾸려면 `sudo`가 필요해서 작업자 확인 없이는 못 고친다.
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
+`[확인 필요]` **근본적으로는 한 번 고쳐 두는 편이 낫다.** 로컬 빌드를 계속 쓸 것이라면 매번 환경변수를 붙이게 된다.
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+### 검증
+
+빌드된 `.ipa`를 풀어 확인했다.
+
+| | |
+|---|---|
+| 버전 | `1.0.0` 빌드 `25` |
+| 표시 이름 | `Runary` |
+| 번들 ID | `com.mechuri.runmechuri` |
+| 아이콘 | 120×120 `AppIcon60x60@2x.png`, **알파 채널 없음** |
+| 크기 | 59.2 MB |
+
+**아이콘에 알파가 있으면 애플이 반려한다.** 원본 SVG를 PNG로 변환할 때 알파 채널이 남길래 직접 걷어냈다.
+
+### 제출 상태
+
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/cf674177-011d-49bb-83ba-7124b1d3d616): 2026-09-22 Apple 업로드 완료.
+- **내부 테스터는 애플 자동 처리(5~10분) 후 설치할 수 있다.**
+- 제출 시점에는 외부 그룹에 넣지 않았다. 다음 날 바뀌었다(아래).
+
+### 2026-09-23: 공개 링크를 빌드 25로 바꿨다
+
+**지민이 빌드 `1.0.0(25)`로 공개 링크를 열었다.** 9/22에 연 것은 아직 메추리 아이콘이던 빌드 23이었으므로, **공개 링크에서 받는 앱이 이제 R 마크를 단다.**
+
+`[확인 필요]` **베타 심사를 거쳤는지는 확인되지 않았다.** 빌드 23은 같은 `1.0.0`이라 심사가 생략됐는데, 25는 아이콘과 스플래시가 바뀌어서 다를 수 있다. App Store Connect에서 빌드 25의 외부 상태를 보면 알 수 있다. (2026-09-23 phs00)
+
+
+## 2026-10-03: 영상 배경 배포 1.0.0(26)
+
+### 소스와 변경
+
+- [PR #73](https://github.com/everyware-ie/run-mechuri/pull/73): 갤러리에서 고른 영상을 배경으로 쓴다. 사진처럼 확대·이동하고, 미리보기에서 소리 없이 재생하며, 결과 영상에서도 배경이 움직인다. 새 네이티브 모듈 expo-video가 들어갔다.
+- 배포 소스: `90d3ab6` (main). 머지한 main을 별도 사본으로 받아 `npm ci` 후 빌드했다.
+
+구현과 실기기 확인은 [영상 배경 노트](../product/features/video-backgrounds.md)에 있다.
+
+### 클라우드 빌드로 돌아왔다
+
+10/1에 EAS 무료 한도가 초기화돼서 **이번에는 클라우드 빌드가 됐다.** 대기 약 30초, 빌드 약 6분이 걸렸다. 지난번 로컬 빌드(약 20분)보다 빠르고 맥 상태와 상관없다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/98ac53cb-0ff4-4e95-9aae-8a1d6a5a749e): `FINISHED`, 빌드 번호 `26`, 커밋 `90d3ab6`
+
+### 제출 상태
+
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/4cadc4ed-dbef-4915-a892-c374655406b0): 2026-10-03 Apple 업로드 완료.
+- 2026-10-03 Apple 조회에서 빌드 `26`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. **등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.** 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- **내부 테스터에게만 배포한다.** 공개 링크는 빌드 25 그대로다.
+
+### 공개 링크는 아직 25다
+
+**영상 배경은 개인정보 처리방침과 FAQ가 다루는 범위를 넓힌다.** 그래서 두 문서를 먼저 고쳤다([공개 문서 기록](public-docs-log.md)). 공개 링크를 26 이후 빌드로 바꾸는 일은 지민이 한다(2026-10-03 사용자).
+
+
+## 2026-10-04: 스토리형 편집 1단계 배포 1.0.0(27)
+
+### 소스와 변경
+
+사용자가 1단계 핵심 QA를 마친 뒤 이 완료본을 먼저 배포하고 2단계를 이어 진행하도록 요청했다. 배포 소스는 `3cf64d9d3881998a25561ce31dcff90c126c1ebc`(main, PR #89 포함)다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 production 클라우드 빌드를 요청했다. 개인 설정과 측정용 앱 진입점은 포함하지 않는다.
+
+- [PR #75](https://github.com/everyware-ie/run-mechuri/pull/75)·[PR #76](https://github.com/everyware-ie/run-mechuri/pull/76): 사진·영상 결과물의 두 프레임 병렬 생성. 출력 규격·인코더 설정 유지, 메모리·발열 보호 시 직렬 전환. 영상의 측정된 압축 픽셀 차이는 사용자 수용 범위와 함께 [성능 노트](../product/features/export-parallel-rendering.md)에 남겼다.
+- [PR #78](https://github.com/everyware-ie/run-mechuri/pull/78)·[PR #79](https://github.com/everyware-ie/run-mechuri/pull/79): 스토리형 편집 1단계, 자유 문구·도구·시트·세로 크기 슬라이더·숨기기·되돌리기와 옛 저장분 호환.
+- PR #80~#86: 되돌리기, 핀치 후 실수로 숨기기 방지, 배경 변경·초안 저장·보관함 저장/삭제·사진 앱 저장·인스타그램 공유의 오류와 겹친 요청 처리.
+- [PR #87](https://github.com/everyware-ie/run-mechuri/pull/87)~[PR #89](https://github.com/everyware-ie/run-mechuri/pull/89): 공유 카드도 편집한 전체 내용 기준으로 표시, 완료 전 문구·크기 자동 저장, 문구 탭 재편집과 슬라이더 일시 정지 보완.
+
+### 검증
+
+[1단계 묶음 QA](../product/features/story-editor-stage1-qa-wrapup.md)의 실제 기기·생성 영상 확인과 사용자 직접 확인을 완료했다. 테스트 21개 묶음·195개 항목, 타입·린트·문서·CI 통과(린트 오류 0개, 기존 경고 32개). 큰 글자·다른 기기, 실제 인스타그램 공유·복귀와 최신 Release 기기 통합 확인은 내부 테스트의 남은 항목이며 완료로 처리하지 않는다.
+
+### 빌드와 제출
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/5e913f00-f7ef-4475-ac5c-d4f675fe1923): `FINISHED`. 버전 `1.0.0`, 빌드 `27`, 커밋 `3cf64d9` 확인. IPA의 표시 이름·번들 ID·processing 모드·백그라운드 식별자·JS 번들과 앱·프레임워크 서명 검증 통과.
+- IPA SHA-256: `f732b7054ab25e5b5e8db4715f8ff1231e871670c869b9c33eb90efb2de0b63e`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c59f0d9e-d8c5-4d71-a338-be7088e6d1fa): `FINISHED`, 2026-10-04 12:49 KST Apple 업로드 완료. 2026-10-04 Apple 조회에서 빌드 `27`이 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크는 빌드 25다.
+- 내부 테스터용 배포다. 공개 링크 변경은 기존처럼 지민에게 인계하며 이번 작업에서 바꾸지 않는다. 다음 작업은 편집 2단계(선 색·두께, 폰트·글자 색)다.
+
+## 2026-10-04: 편집 2단계·구간 점등 배포 1.0.0(29)
+
+### 소스와 변경
+
+사용자가 배포를 요청해 최신 main `5b40441b42511f12df6928d7ea0eba010174f93f`의 깨끗한 별도 체크아웃으로 production 빌드를 완료했다. 개인 설정 `.claude/launch.json`은 포함하지 않는다.
+
+- [PR #92](https://github.com/everyware-ie/run-mechuri/pull/92): 경로 그림의 색·두께와 러닝 데이터·문구의 폰트·글자 색 선택. 초안·다시 편집·되돌리기·미리보기·영상에 같은 값을 연결한다.
+- [PR #93](https://github.com/everyware-ie/run-mechuri/pull/93): 화면상의 선 길이가 아니라 실제 기록 거리로 구간을 나눈다. 거리 경계와 완주 끝점을 표시한다.
+- [PR #95](https://github.com/everyware-ie/run-mechuri/pull/95): 큰 검정 테두리 대신 경로색의 작은 발광 표식을 사용한다. 구간 도달 순간 짧게 밝아지며 미리보기·썸네일·새 영상에 같은 표현을 적용한다.
+
+### 검증과 남은 범위
+
+최신 코드의 CI(타입·린트·테스트·문서)는 통과했다. 구현 단계에서 테스트 222개/26개 묶음, 린트 오류 0개(기존 경고 32개), iOS Debug 빌드와 iPhone 11 Pro의 미리보기·새 영상 검증을 완료했다. 민트색 새 영상은 1080×1920·30fps·12초·360프레임 전체 디코딩을 확인했다. 상세 범위는 [편집 2단계](../product/features/story-editor-stage2.md), [구간 거리 표시](../product/features/segment-lighting-markers.md), [발광 표식](../product/features/segment-lighting-glow.md)에 있다.
+
+다른 화면 크기·큰 글자 설정·모든 사진/영상 배경 조합·실제 인스타그램 공유·복귀는 이번 검증 범위에 포함하지 않았다. 기존 백그라운드 인코딩 안내 배너의 글자 대비는 [QA 기록](qa-log.md)의 후속 항목이다. 기존 MP4는 바뀌지 않고 새로 생성한 영상부터 수정 사항이 들어간다.
+
+### 빌드와 제출
+
+첫 시도는 Expo 인증서 준비 단계의 일시적인 `Service Unavailable`로 종료됐다. 원격 번호 28만 소모됐고 빌드·Apple 업로드는 생성되지 않았다. 재시도에서 번호 29를 배정받았다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/be1c4b50-7acd-41c1-9af5-a5ed03d357a3): `FINISHED`. 버전 `1.0.0`, 빌드 `29`, 소스 커밋 `5b40441` 확인. IPA의 표시 이름·번들 ID·processing 모드·백그라운드 식별자·JS 번들과 앱·프레임워크 서명 검증 통과.
+- IPA SHA-256: `bc42c969e6b8a5ccbc44827388e91a598d2be8facd9ba1a85c5c5664ddffc0c5`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c2af5c11-d310-4172-b1d5-c43ec435c43b): `FINISHED`, 2026-10-04 17:51 KST Apple 업로드 완료. 2026-10-04 17:54 KST Apple 조회에서 빌드 `29`가 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- 내부 테스터용 배포다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.
+
+
+## 2026-10-04: 손그림·내 스타일과 편집 도구 배포 1.0.0(30)
+
+### 소스와 변경
+
+사용자가 TestFlight 배포를 요청해 [PR #100](https://github.com/everyware-ie/run-mechuri/pull/100)을 main에 머지했다. 배포 소스는 `52513c89260c0ad896c232eded659734a305030b`다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 production 클라우드 빌드를 요청했다. 개인 설정 `.claude/launch.json`과 진단용 파일은 포함하지 않는다.
+
+- [PR #98](https://github.com/everyware-ie/run-mechuri/pull/98): 펜·형광·네온 손그림, 내 스타일 저장·적용·삭제와 다듬기 값 보관, 선택색을 유지하는 불빛 러너의 밝은 중심·주변 발광. 미리보기·썸네일·새 영상에 함께 적용한다.
+- [PR #100](https://github.com/everyware-ie/run-mechuri/pull/100): 손그림 획별 선택·이동·크기·붓·색·굵기 수정·삭제. 경로와 러닝 데이터 프리셋을 상단에 두고 아래에는 세부 조절을 남긴다. 그리기 진입 시 캔버스 흔들림과 빈 손그림 안내를 제거했다. 원형 화살표 되돌리기를 통일하고 경로·러닝 데이터의 배치 복원은 더 보기 메뉴로 옮겼다.
+
+### 검증과 남은 범위
+
+배포 소스의 main CI에서 타입·린트·전체 테스트·문서 검사가 통과했다. 최종 테스트는 31개 묶음·249개, 린트 오류 0개·기존 경고 30개다. 구현 중 iOS Debug 빌드와 iPhone 11 Pro에서 핵심 편집 흐름을 확인했고, 사용자가 획 이동·핀치·크기 슬라이더가 정상이라고 확인했다.
+
+PR #98의 새 민트 영상은 1080×1920·30fps·12초·360프레임 디코딩과 손그림 합성을 확인했다. 후속 획 이동·크기 변환의 새 영상 픽셀 비교는 아직 하지 않았다. 다른 기기 크기·큰 글자 설정·사진/영상 배경의 모든 조합, 러닝 데이터 프리셋의 직접 좌우 스와이프는 남은 내부 QA다. 자세한 확인 범위는 [편집 3단계](../product/features/story-editor-stage3.md), [손그림 획 편집](../product/features/hand-stroke-editing.md), [편집 도구 상단 선택](../product/features/editor-context-toolbar.md)에 있다. 기존 MP4는 바뀌지 않는다.
+
+### 빌드와 제출
+
+EAS의 소스·버전·빌드 번호와 Apple의 처리 상태를 확인했다. IPA CDN 다운로드가 반복해서 멈춰 로컬 IPA 전체 무결성·서명 확인은 마치지 못했다. 이 검증은 완료로 처리하지 않는다.
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/0cf511c5-39d6-4ebe-8ad9-9a09d9e17e6d): 빌드 번호 `30`, 버전 `1.0.0`, 커밋 `52513c8`를 확인했고 `FINISHED`다.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/c55aca58-72bf-45e2-9449-64afc576217e): Apple 업로드 완료. 2026-10-04 22:24 KST 업로드된 빌드 `30`이 Apple 조회에서 `VALID` / `IN_BETA_TESTING`, 미만료 상태임을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+- 내부 테스터용 배포다. 이번 작업에서 외부 공개 설정은 바꾸지 않았다. 같은 조회에서 빌드 `29`의 외부 상태는 `IN_BETA_TESTING`이었다. 외부 공개 링크 변경·베타 심사·공개 링크 확인은 기존 지민 인계 범위를 유지한다.
+
+## 2026-10-05: 색상 선택과 자체 러닝 측정 내부 배포
+
+### 소스와 변경
+
+사용자가 PR 머지 후 TestFlight 제출까지 요청했다. 배포 소스는 `544dfa86b83004449fd2c068bf7a3aa1f680506b`(main)다. 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci` 후 `internal-tracking` 프로필로 클라우드 빌드를 요청했다. 개인 설정 `.claude/launch.json`은 포함하지 않는다.
+
+- [PR #104](https://github.com/everyware-ie/run-mechuri/pull/104): 경로 자유 색상 선택, HEX 입력과 저장 연결, 색상 선택·되돌리기·내 스타일 적용과 영상 보관 안정성 개선.
+- [PR #105](https://github.com/everyware-ie/run-mechuri/pull/105): 자체 러닝 측정, Apple 지도, 선택적 워치 운동 세션·심박·제어, 내부 기록 저장·복구와 권한 화면. 상태 조회·GPS 준비·저장 실패·워치 연결의 안정성 보완을 함께 포함한다.
+
+`internal-tracking`은 `RUNARY_INTERNAL_TRACKING=1`을 적용해 자체 측정 진입·위치 백그라운드 모드·워치 앱을 포함한다. 일반 `production`에는 자체 측정 진입이 없다. 이 빌드는 팀 내부 테스트용이며 공개 링크·외부 베타 그룹 배포 대상이 아니다.
+
+### 서명 준비
+
+첫 시도는 EAS의 워치 HealthKit 자동 등록에서 Apple API 요청 형식 오류로 종료됐다. [Apple 공식 capability 생성 API](https://developer.apple.com/documentation/appstoreconnectapi/bundleidcapabilitycreaterequest/data-data.dictionary/attributes-data.dictionary)를 사용해 새 `com.mechuri.runmechuri.watch` 식별자의 HealthKit을 등록했다. 이어서 유효한 기존 아이폰 배포 인증서를 재사용하고, 별도 워치 App Store 배포 프로파일을 생성해 EAS에 연결했다. 새 배포 인증서를 만들거나 기존 인증서를 폐기하지 않았다.
+
+준비 중 번호 `31`~`33`을 소모했지만 클라우드 빌드·Apple 업로드는 생성되지 않았다. `34`부터 실제 클라우드 빌드를 실행했다. 워치 **배포** 프로파일 준비와 이전에 막혔던 **개발** 프로파일·워치 실기기 QA 완료는 서로 다르다.
+
+### 검증과 남은 범위
+
+배포 소스의 두 PR CI에서 타입·린트·테스트·문서 검사가 통과했다. 구현 단계의 앱 테스트 39개 묶음·299개, Swift 합성 검사 44개, 공개/내부 설정 검사와 아이폰·워치 전체 무서명 Debug 컴파일을 통과했다. 린트는 오류 0개·기존 경고 30개다. 실기기에서 지도 탐색·위치 복귀·일시정지·종료 저장·기록 재진입을 확인했다.
+
+실제 워치 설치·심박 전달과 야외 GPS 정확도·이동 중 잠금/백그라운드 수신·배터리 소모는 아직 확인하지 않았다. 내부 측정 기록을 기존 결과물 편집으로 연결하는 기능도 이번 범위 밖이다. 세부 확인 범위는 [자체 측정 구현 노트](../product/features/internal-run-tracking.md)와 [내부 측정 QA](internal-run-tracking-qa.md)에 있다.
+
+### 빌드와 제출
+
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/43203e2d-5365-4553-a4f4-b1a4c3d9fb58): `FINISHED`. 버전 `1.0.0`, 빌드 `34`, 소스 `544dfa8`, 프로필·채널 `internal-tracking`을 확인했다.
+- IPA에서 아이폰 `com.mechuri.runmechuri`와 동봉 워치 `com.mechuri.runmechuri.watch`의 버전·빌드 번호 `1.0.0(34)` 일치, 내부 측정 플래그·위치/processing 모드·워치 workout-processing 모드·JS 번들을 확인했다. 워치 프로파일의 팀 `BT2KSYYPDF`와 HealthKit 권한, 배포용 `get-task-allow=false`도 확인했다. 아이폰·워치 `codesign --verify --deep --strict` 검사가 통과했다.
+- IPA SHA-256: `25e871c0a4004deb559a7678922afb96d3cc67efb581a7cbf75e6ad8fdd84932`.
+- [EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/7130d14e-040d-4338-9140-61850cb77183)은 대기열에서 시작되지 않아 `CANCELED`를 확인한 뒤 직접 업로드로 전환했다. EAS 제출 완료로 기록하지 않는다.
+- [Apple 공식 업로드 도구](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)인 Xcode `altool`의 사전 검증이 `VERIFY SUCCEEDED`로 통과했다. 같은 IPA·배포 API 인증으로 업로드를 진행하며 임시 인증 파일은 사용 후 제거한다. 2026-10-05 22:49 KST `UPLOAD SUCCEEDED`를 확인했다. Delivery UUID는 `22de49b0-d120-4de0-b1a3-2924cb1a5779`다. 임시 인증 파일도 제거됐다. 2026-10-05 22:55 KST Apple 조회에서 빌드 `34`의 `VALID` / `IN_BETA_TESTING`, 미만료 상태를 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다.
+- 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다. 이번 작업에서 공개 링크·외부 그룹 배정은 변경하지 않았다. 자체 측정 빌드는 팀 내부 테스트로 제한한다.
+- EAS의 상태 조회가 빌드 번호로 연결한 제출 ID는 취소된 요청에도 표시될 수 있다. 이번 실제 업로드 증거는 위 Apple Delivery UUID와 Apple 빌드 처리 상태이며 EAS 제출의 `FINISHED`를 뜻하지 않는다.
+
+
+## 2026-10-07: 건강 앱 심박·자동 워치 상태 갱신 개발 설치
+
+- 작업 브랜치: `phs00/fix/health-heart-permissions`, 현재 작업 변경에서 로컬 Debug 빌드. PR·커밋·TestFlight 제출은 이번 설치에서 생성하지 않았다.
+- 아이폰·워치 동봉 개발 앱 `1.0.0(1)`에 건강 앱 심박 고정·권한 요청 제어·워치 표시를 반영했다. 사용자 승인으로 등록한 Apple Watch SE와 기존 인증서·개발 프로파일을 사용했다. 새 인증서 생성·폐기는 하지 않았다.
+- 후속 개발 사본 `1.0.0(2)`에서 자동 상태 갱신·워치 시작 요청·빈 값 `-`·운동 세션 없는 워치 실행 요청을 확인했다. iOS 실행 성공 콜백과 실제 워치 자동 전면 미표시를 구분했다.
+- 최종 개발 사본은 아이폰·워치 빌드 번호를 `1.0.0(3)`으로 맞춰 설치 버전을 구분한다. 기존 개발 자격으로 두 앱을 서명하고 깊은 서명 검증을 통과했다. 이 번호는 로컬 QA 사본의 번호이며 EAS 배포 번호를 바꾸지 않는다.
+- 검증: Swift 90개·전체 Jest 308개·타입·설정·문서·diff·아이폰/워치 Debug 빌드 통과. 린트 오류 0개·기존 경고 30개. 미러링에서 GPS 준비·시작·종료 저장·건강 앱 옵션 없음·하이픈을 확인했다.
+- 개발 서버는 내부 플래그를 켠 LAN 8081에서 실행하고 `packager-status:running`을 확인했다. 기존 앱을 삭제하지 않고 업데이트한다.
+- 남은 확인: 최신 워치 빌드의 실제 응답, 워치 시작·종료·새 시작의 양방향 반영, 다른 운동 앱 세션 유지와 심박 지연. 자동 전면 표시는 실기기에서 미통과이며 `startWatchApp`는 Apple 문서상 백그라운드 실행 요청이다. [구현·실기기 결과](../product/features/health-heart-permissions.md#건강-앱-읽기를-유지한-워치-실행-탐색), [QA](internal-run-tracking-qa.md#2026-10-07-워치-상태-갱신과-실행-요청-검증).
+
+
+### 후속: 워치 개발 앱 실제 직접 설치
+
+2026-10-07 23:20 KST, 새 워치 기기 정보에서 개발자 모드·개발 서비스 사용 가능을 확인하고 기존 서명 워치 앱 `1.0.0(3)`을 CoreDevice로 직접 업데이트 설치했다. 워치의 실제 앱 조회에서 빌드 `3`을 확인했고 직접 실행 후 아이폰 러닝 로그에 최신 워치의 응답이 들어왔다. 개발 기기 등록·인증서·프로파일을 새로 만들지 않았다. 아이폰 앱과 진행 중인 기록도 유지했다. Xcode의 별도 기기 화면 캡처 채널은 시간 초과했으므로 직접 캡처는 완료하지 못했다. 세부 근거와 남은 실제 화면 검증은 [구현 노트](../product/features/health-heart-permissions.md#실제-워치-설치응답-확인)에 있다.
+
+## 2026-10-08: 워치 화면 복귀 실험 개발 설치
+
+사용자가 작업 재개를 요청했다. 내부 플래그·LAN 8081 개발 서버를 재개하고 iOS 번들을 확인했다. 기존 개발 자격으로 서명한 위치 세션 실험 워치 앱을 직접 설치했다. 사용자가 자동 화면 복귀 미통과를 확인해 이 실험은 제품에 넣지 않는다.
+
+사용자가 Runary 운동 세션 검증을 선택한 뒤 운동 실험 워치를 동봉한 개발 사본 `1.0.0(4)`의 아이폰 업데이트 설치를 완료했다. 워치 직접 설치는 제어 채널 준비 단계의 시간 초과로 실패했다. 사용자가 이전 `GPS 실험 시작` 버튼이 남아 있음을 확인했으므로 워치 4번 설치를 완료로 기록하지 않는다.
+
+일반 러닝 제어를 뺀 단일 버튼 운동 실험의 개발 사본 `1.0.0(5)`을 준비했다. 워치 컴파일과 아이폰·워치 깊은 서명 검증은 통과했지만 기기 설치는 아직 수행하지 않았다. 기존 프로파일·인증서를 재사용했으며 앱 삭제·기기 초기화·새 개발 기기 등록·TestFlight 제출은 없다. 실제 설치와 화면 복귀는 워치 개발 연결 복구 뒤 검증한다. [QA 기록](internal-run-tracking-qa.md#2026-10-08-화면-복귀-실험과-설치-상태-확인).
+
+### 후속: 운동 실험 4번 확인과 건강 저장소 진단 6번 설치
+
+새 WatchConnectivity 응답과 세션 진단으로 운동 실험 워치 4번의 실제 반영·실행·3분 종료를 확인했다. 직접 설치 실패 뒤 아이폰 동봉 앱이 갱신된 결과와 이전 GPS 앱 잔류 제보를 구분한다. 사용자는 양방향 러닝 연동을 확인했지만 앱 목록 이후 자동 복귀는 미통과다.
+
+워치에서 건강 저장소의 심박과 수신 건수를 확인하는 임시 개발 사본 `1.0.0(6)`을 준비했다. 일반 러닝 제어를 유지하며 단일 버튼 5번은 설치하지 않았다. `/private/tmp/runary-workout-heart-store-probe.swift`를 임시 생성 소스에 적용해 워치 타깃 Debug 컴파일을 통과한 뒤 생성 소스·Info.plist를 복원했다. 기존 아이폰 4번 바이너리와 새 워치 바이너리를 동봉하고 두 앱을 6번으로 맞춰 기존 인증서·프로파일로 서명·깊은 검증했다. 제품의 워치 원본은 진단 코드로 바꾸지 않았다.
+
+2026-10-08 21:40 KST 미러링에서 진행 중인 러닝이 없음을 확인한 뒤 아이폰 업데이트 설치를 완료했고 앱 조회에서 `1.0.0(6)`을 확인했다. 워치 직접 설치는 20초 제한 안에 개발 제어 채널을 준비하지 못했다. 페어링 설치 완료와 워치의 새 심박 진단 결과는 확인 대기다. 새 기기 등록·인증서 생성·기록 삭제·TestFlight 제출은 없다. LAN 8081의 개발 서버 응답도 확인했다. [현재 QA 결과](internal-run-tracking-qa.md#후속-운동-세션-실행양방향-연동과-심박-진단).
+
+후속 사용자 확인에서 워치 앱을 종료·재실행하면 6번의 새 `워치 건강 심박` 항목이 나타났고 운동 실험 중 숫자·수신 건수가 나왔다. 새 워치 진단의 실제 반영과 저장소 읽기 확인을 완료했다. 직접 개발 채널 설치 실패와 페어링 경로의 실제 반영을 구분한다. 아이폰 개발 앱은 미러링에서 LAN 번들을 받아 실행됐고 기존 보관함 21개를 확인했다. 아이폰 심박 직접 전달은 아직 포함되지 않았다.
+
+### 건강 저장소 직접 전달 개발 사본 7번·QA 사본 8번
+
+사용자 승인 후 워치 건강 저장소 심박을 아이폰 기록으로 전달하는 제품 코드를 추가했다. 새 공통 Swift 파일을 기존 Pods 컴파일 목록에 반영하고 아이폰·워치 전체 Debug 빌드를 통과했다. 워치 생성 소스·읽기 설명·HealthKit capability도 플러그인과 맞췄다. 기존 프로파일·인증서로 제품 개발 사본 `1.0.0(7)`의 깊은 서명 검증을 완료했다. 이 사본은 운동 쓰기 설명과 workout-processing 모드를 포함하지 않는다.
+
+실기기 QA에는 같은 아이폰 수신 코드와 최대 3분 운동 실험 워치를 묶은 `1.0.0(8)`을 사용한다. 임시 QA 코드는 `/private/tmp`에만 보관하며 생성 워치 소스·Info.plist는 제품 기준으로 복원한다. 러닝 종료·잠금 확인 뒤 22:46 KST 아이폰 업데이트 설치를 완료하고 실제 앱 버전 8번·개발 서버 연결·보관함 유지를 확인했다.
+
+첫 테스트에서 워치에는 6번이 남아 있어 직접 전달 검증은 통과하지 않았다. QA 종료 후 23:04 KST 새 워치 8번의 직접 업데이트 설치가 성공했고, 후속 조회에서 실제 버전 8번·직접 실행을 확인했다. 최신 8번의 전달 검증은 설치 확인 뒤 별도 수행한다. 새 인증서·기기 등록·기록 삭제·TestFlight 제출은 없다. [실제 QA 범위](internal-run-tracking-qa.md#건강-심박-직접-전달-구현과-개발-앱-8번).
+
+## 2026-10-08~09: 건강 심박·권한 보완 내부 TestFlight 제출
+
+사용자가 현재 구현으로 TestFlight 제출 후 작업을 마무리하고 미진한 부분은 다음에 이어가도록 요청했다. Swift 123개·Jest 310개·타입·설정·문서·아이폰/워치 빌드와 실제 심박 직접 전달을 확인한 소스를 커밋 `859320c`로 확정했다. 개인 `.claude/launch.json`과 임시 운동 실험 코드는 제외했다. GitHub 푸시는 자동 승인 검토가 저장소·브랜치로의 명시적인 코드 푸시 승인 부족을 이유로 거절했다. 원격 푸시·PR·머지는 수행하지 않고 로컬 확정 커밋의 깨끗한 배포 사본에서 진행한다. 원격 반영은 후속 작업이다.
+
+- 빌드 35: [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/095ebce5-d771-42fa-b006-025338ba2441), `internal-tracking` 프로필·STORE 배포·소스 `859320c15aaa3ad4e4f8f25b279799f5697bd388`, 빌드 완료. 아이폰·워치 `1.0.0(35)` 일치·내부 플래그·실험 UI/운동 배경 모드 제외·깊은 서명 검증 확인. IPA SHA-256 `e0fe15c595070a446333e2b5b45ef378219bf001a97c2cbadfad975dd0b7e239`.
+- [35번 EAS 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/df70dcdf-d93f-44ee-8ed1-b4d7f9fbe0d7)의 `FINISHED`를 확인했지만 Apple 내부 테스트 가능 상태는 아직 확인되지 않았다. Apple 공식 `altool` 사전 검증은 아이폰·워치의 `NSHealthUpdateUsageDescription` 누락(90683)을 보고했다. 직접 업로드 대안은 이 검증 실패로 실행하지 않았고 임시 Apple 키 파일은 제거했다.
+- 기능과 권한 요청은 바꾸지 않고 건강 데이터 연동의 실제 용도·새 기록 쓰기/수정 비사용 설명을 두 번들 설정에 추가했다. 설정·문서·diff 검사를 통과하고 커밋 `adec8410f7e0a0cd3e34390c7ccb464ab19bb41d`로 확정했다.
+- 빌드 36: [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/29b0df22-4994-4d08-b023-bb7743d99265), 같은 내부 프로필·소스 `adec841`, 2026-10-09 자동 제출 요청. [제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/10dc9d27-ff9c-4d21-a921-eed502c21eda). 완료·Apple 처리 결과는 아래에 이어 기록한다. 외부 공개 링크·베타 그룹 배정·정식 심사 제출은 변경하지 않는다.
+
+지역 개발 앱은 실험 UI 없는 9번 사본으로 아이폰 업데이트를 완료했다. 워치 9번 직접 업데이트는 다시 개발 연결 준비 시간 초과로 실패했다. 마지막 실제 워치 개발 설치 확인은 QA 8번이며 진행 중인 두 QA 기록은 모두 종료·저장됐다. TestFlight 배포에는 제품 원본만 포함한다.
+
+### 최종 제출: 1.0.0(36)
+
+빌드 36은 `FINISHED`이며 아이폰·워치 버전 `1.0.0(36)` 일치·내부 측정 플래그·두 건강 API 설명 키·실험 UI/운동 배경 모드 제외를 확인했다. 깊은 서명 검증도 통과했다. IPA SHA-256은 `ad2ec8d862570165a7473baea1b712472b273cc4ea84c305c39db5839ab28eb8`이다.
+
+2026-10-09 Apple 공식 `altool` 검증의 `VERIFY SUCCEEDED with no errors`를 확인했다. 36번 EAS 자동 제출은 빌드 완료 뒤에도 `IN_QUEUE`·로그 0건이어서 같은 IPA의 직접 Apple 업로드로 전환했다. 원래 제출의 `CANCELED`를 확인한 뒤 업로드했으며 EAS 제출 완료로 기록하지 않는다. 00:31:58 KST `UPLOAD SUCCEEDED with no errors`, Delivery UUID `de2be86f-c180-47ca-9181-06ab4ed770fe`를 확인했다. 기존 EAS Apple API 키를 재사용했고 임시 키 파일은 제거했다.
+
+마지막 App Store Connect 조회에는 새 36번이 아직 목록에 반영되지 않았다. Apple 업로드 완료와 내부 테스터 설치 가능 상태를 구분하며 `VALID / IN_BETA_TESTING`은 아직 확인되지 않았다. Apple 처리·목록 반영은 대기 중이다. 사용자 요청대로 추가 개선을 멈추고 제출 기록과 미진한 항목을 남긴다. 후속 확인은 이 빌드 번호로 이어간다.
+
+마무리 전 후속 Apple 조회에서 빌드 `1.0.0(36)`의 `VALID / IN_BETA_TESTING`·미만료를 확인했다. 위 목록 반영 대기 상태는 이 확인으로 갱신한다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 이번 작업에서 외부 공개·베타 심사·공개 링크 설정은 변경하지 않았다.
+
+## 2026-10-12: 정식 제출 준비용 하트 샘플 개발 앱
+
+사용자가 하트를 선택하고 로컬 미러링 확인을 먼저 요청했다. 구현 소스는 `e790bc97907a5b1c474415f355569ccadca0dbb5`다. `phs00/feature/app-store-v1`을 로컬 심사 보관 브랜치로 사용하고, 실제 TF 업로드 때 최종 소스 커밋과 빌드 번호를 추가한다.
+
+일반 설정으로 iOS 프로젝트를 재생성해 측정 플래그 `false`, 워치 앱 없음, 백그라운드 모드 `processing`만 있는 Debug 앱을 만들었다. Xcode 계정 자동 서명으로 기존 프로파일을 찾지 못해, 이미 등록된 아이폰을 포함하는 유효한 `Mechuri App Dev` 프로파일과 일치하는 기존 개발 인증서를 생성 Debug 대상에 명시했다. 새 인증서·프로파일 생성이나 기기 등록은 하지 않았다. 생성 프로젝트와 서명 자료는 커밋하지 않는다.
+
+Debug 빌드와 `codesign --verify --deep --strict`가 통과했다. IPA 배포 빌드가 아닌 `1.0.0(1)` 개발 앱을 연결된 아이폰에 기존 앱 위로 설치했다. Metro는 `env -u RUNARY_INTERNAL_TRACKING node_modules/.bin/expo start --dev-client --lan --port 8081`로 실행하며 현재 LAN 주소는 `192.168.0.7:8081`이다. 앱 실행과 홈→샘플→배경 선택을 미러링에서 확인했다.
+
+사용자 확인을 위해 현재 하트 샘플의 배경 선택을 열어 뒀다. 타입·문서·관련 회귀 41개가 통과했고 린트는 오류 0개·기존 경고 30개다. 영상 생성·기기 저장·초안 복구는 사용자 확인 전이다. TestFlight 업로드·공개 링크 변경·정식 심사 제출을 실행하지 않았다. 상세 내용은 [샘플 구현 노트](../product/features/sample-record-experience.md)에 있다.
+
+## 2026-10-13: 새 공개 도메인과 아이콘 제출 빌드
+
+회의 중 요청으로 새 공개 URL `https://runary.notion.site/privacy`와 최종 리뷰의 네이티브 보완을 일반 빌드에 반영했다. [PR #111](https://github.com/everyware-ie/run-mechuri/pull/111)에서 도메인·CI 초기화 검사·공개 문서 개정과 아이콘을 함께 정리한다. 사용자 회의 안건과 개인 launch 파일은 포함하지 않았다.
+
+### 아이콘 변경 전: 1.0.0(38)
+
+- 소스: `2eda0635db3001bdb96a076b5aff2657dae24518`
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/3e8481ac-0e46-4dae-bc35-f9465cff45e9): `FINISHED`, production/STORE, 6분 56초
+- IPA SHA-256: `9b924dc91988b6b03543b05fd4496d57aef15eb2562486cb11c0a4572f7f60e8`
+- Apple Delivery UUID: `323268fb-d00c-4929-8ad9-4e953e602002`
+- Apple 사전 검증·업로드 성공, `VALID / IN_BETA_TESTING` 확인. 임시 키 파일은 제거했다.
+
+### 새 아이콘 최종 후보: 1.0.0(39)
+
+- 소스: `fbb07ad7c5fa6bb76d75e04d10a7cccc49f459ff`
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/37019a4c-ab91-4b1d-a8d5-591a934bb09f): `FINISHED`, production/STORE, 7분 32초
+- IPA SHA-256: `79c7dbef89f887fd68b768f98f1c1802965015a748a23859c0c7391118ffe70f`
+- 제공된 `r-mark 4.png`가 원본과 동일하게 소스에 포함되어 있고, 배포 Assets.car에는 1024×1024 불투명 아이콘이 있다. 실제 배포 아이콘도 시각적으로 확인했다.
+- 새 개인정보 URL·하트 샘플·백업 제외 코드·내부 측정 false·워치 앱 없음·processing 모드·production 채널·12개 개인정보 매니페스트와 서명을 확인했다.
+
+39번의 Apple 사전 검증과 업로드가 오류 없이 통과했다. 업로드 완료는 21:19 KST이고 Delivery UUID는 `6c17a0da-7bee-4967-a6d0-c81bd9d08abf`다. 임시 제출 키 파일은 사용 후 제거했다. 21:26 KST 조회에서 `VALID / IN_BETA_TESTING`, 미만료 상태를 확인했다. 내부 테스터는 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 그룹·링크는 변경하지 않았다.
+
+38번과 제품 파일을 비교하면 아이콘만 다르며, 사용자가 38번에서 샘플 영상 생성·사진 앱 저장·재실행 후 다시 편집이 정상이라고 확인했다. iPad는 Release 빌드·설치·프로세스 실행까지만 확인했고 화면 조작 검증은 연결 지연으로 완료하지 못했다. 정확한 소스는 `runary-appstore-1.0.0-39` 태그로 보존한다.
+
+세부 기록과 심사 메모는 [제출 준비 기록](app-store-release-2026-10-13.md)과 [심사 메모 초안](app-store-review-notes.md)에 있다. 이 등록과 정식 심사 요청을 구분하며 최종 제출 빌드는 39번으로 선택한다.
+
+## 2026-10-13: 최종 리뷰의 네이티브 보완
+
+앱 보관 영상의 백업 제외와 내부 워치 권한 안내를 수정했다. 일반 iOS 무서명 Debug 빌드와 파일 보존·제외 속성 검사를 통과했다. [최종 검토](app-store-final-review-2026-10-13.md)에 제출 전 남은 작업을 기록했다.
+
+네이티브 수정은 37번에 포함되지 않는다. 이 변경을 정식 제출하려면 새 `production` 빌드를 만들고 확인해야 한다. 37번을 새 수정의 배포 완료로 기록하지 않으며 기존 정확한 소스 태그는 보존한다. 이번 리뷰에서는 새 TestFlight 업로드나 정식 심사 요청을 하지 않았다.
+
+작업은 [PR #110](https://github.com/everyware-ie/run-mechuri/pull/110)으로 정리했다. 샘플·실제 기록 동시 선택 보완과 322개 회귀 검사도 포함한다. 반려 대응용 `phs00/feature/app-store-v1` 브랜치와 정확한 37번 태그를 원격에 보관했다.
+
+## 2026-10-12: 정식 심사 준비용 하트 샘플 TestFlight 빌드 37
+
+문서 정리 후 사용자가 정식 심사 준비용 빌드를 TestFlight에 등록하도록 요청했다. 로컬 심사 보관 브랜치의 확정 소스를 별도 깨끗한 체크아웃으로 복사하고 기존 잠금 파일로 의존성을 설치했다. 개인 `.claude/launch.json`과 개발 앱의 생성 iOS 프로젝트는 배포에 포함하지 않았다.
+
+| 항목 | 값 |
+|---|---|
+| 버전과 빌드 | `1.0.0(37)` |
+| 소스 | `29caba1770f066ae778f2493e439fe7251a818a0` |
+| 로컬 심사 보관 브랜치 | `phs00/feature/app-store-v1` |
+| 프로필과 채널 | `production` |
+| [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/145421fb-23b6-46ea-ada6-6c8b562c3ba3) | `FINISHED` |
+| Apple Delivery UUID | `f88f615b-85ee-4267-a06b-c89680e12c32` |
+| IPA SHA-256 | `74453448cfb2e07f114e006d3afa1e0abea1df27fc2c1fe23ca9662806e2179e` |
+
+### 확인
+
+타입 검사와 전체 Jest 43개 묶음의 320개 테스트가 통과했다. 린트는 오류 0개와 기존 경고 30개다. 생성 iOS 프로젝트를 준비한 뒤 일반/내부 설정과 워치 타깃 생성 검사도 통과했다. 문서 검사와 공백 검사도 수행했다.
+
+배포 IPA에서 하트 샘플 표식, `RunaryInternalTracking=false`, `processing` 배경 모드, 워치 앱 없음, `production` 업데이트 채널과 `1.0.0(37)` 일치를 확인했다. 개인정보 매니페스트 12개와 선언된 Required Reason API 사유가 있으며, iPhone 기기군이다. 이것만으로 App Privacy 설문이나 정식 심사 준비 전체가 완료됐다고 간주하지 않는다.
+
+배포 서명의 깊은 검증이 통과했다. App Store 배포 프로파일과 Mach-O 서명에 포함된 XML 권한에서 팀 `BT2KSYYPDF`, HealthKit 권한과 `get-task-allow=false`를 확인했다. 로컬 `codesign`의 권한 출력에서는 경고가 나와 출력만으로 판단하지 않고 실제 서명 영역을 읽었다. Apple 사전 검증도 오류 없이 통과했다.
+
+### 업로드
+
+기존 Apple API 자격을 재사용해 Xcode `altool`로 사전 검증과 직접 업로드를 수행했다. `VERIFY SUCCEEDED with no errors`와 `UPLOAD SUCCEEDED with no errors`를 확인했다. 임시 Apple 키 파일은 사용 후 삭제됐다. EAS Submit 요청을 별도로 만들지 않았으며, 중복 업로드도 하지 않았다.
+
+2026-10-12 Apple 조회에서 `1.0.0(37)`의 `VALID / IN_BETA_TESTING`, 미만료 상태와 비면제 암호화 미사용을 확인했다. 등록된 내부 테스터는 TestFlight에서 업데이트할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이다.
+
+외부 공개 그룹과 공개 초대 링크, 정식 심사 요청은 변경하지 않았다. [팀 카톡 공유 문구](testflight-37-team-message.md)는 작성만 했으며 직접 발송하지 않았다.
+
+
+## 2026-10-19: 잠금화면 현황 개발 앱 실기기 설치
+
+`codex/feature/run-live-activity`의 구현 커밋 `87f4509`에서 내부 개발 앱 `1.0.0(1)`을 빌드해 iPhone 11 Pro에 업데이트 설치했다. 아이폰·워치·Live Activity 확장의 전체 iphoneos Debug 빌드와 `codesign --verify --deep --strict`를 통과했다. 동봉한 세 타깃의 버전은 모두 `1.0.0(1)`이며, 아이폰의 실제 앱 조회에서도 설치 버전 1번을 확인했다.
+
+기존 개발 인증서와 등록된 아이폰·워치를 사용했다. Xcode 계정 로그인이 없어 자동 서명은 실패했고, 사용자의 명시적 승인으로 기존 팀 API 키를 일시 재사용해 아이폰·잠금화면 확장의 개발 프로파일을 준비했다. 워치는 기존 `Runary Watch Development QA 2026-10-07` 프로파일을 재사용했다. 잠금화면 확장의 앱 식별자를 등록했으며 새 인증서나 개발 기기는 등록하지 않았다. API 개인키의 임시 사본은 프로파일 준비 후 삭제했다. 생성 iOS 프로젝트의 수동 서명 설정과 프로파일은 저장소에 넣지 않는다.
+
+Metro는 `RUNARY_INTERNAL_TRACKING=1 node_modules/.bin/expo start --dev-client --lan --port 8081`로 실행했다. 이번 LAN 주소는 `192.168.0.27:8081`이며 서버 응답과 iOS 번들 생성을 확인했다. 미러링에서 개발 앱의 홈과 보관함 25개 유지, `frontend://internal-run`의 러닝 준비 화면 진입을 확인했다. 러닝은 시작하지 않았다.
+
+워치 앱 동봉·서명은 확인했지만 실제 워치의 업데이트 반영과 잠금화면 카드 생성·일시정지·즉시 재개·종료 저장은 별도 실기기 확인이 남아 있다. TestFlight 업로드는 하지 않았다.
+
+## 2026-10-19: 아이폰 러닝 시작 버튼 간소화
+
+같은 개발 브랜치에서 아이폰의 시작을 시간 즉시 측정으로 변경했다. 기존 DerivedData와 개발 프로파일을 재사용해 `1.0.0(1)`의 아이폰·워치·잠금화면 확장 전체 Debug 빌드와 `codesign --verify --deep --strict`를 통과했다. 서명 검증은 시스템 키체인에 접근 가능한 환경에서 수행했다. API 키를 다시 가져오거나 기기를 추가 등록하지 않았다.
+
+CoreDevice로 업데이트를 전송하던 중 연결 중단(3002 / IXRemoteErrorDomain 6)으로 실패했고 기기 목록에서도 아이폰이 `unavailable`로 표시됐다. 미러링의 연결 중단도 확인해 사용자에게 기기 연결을 요청했다. 당시에는 설치 완료와 앱 화면 확인을 보류했다. 이후 사용자가 아이폰을 재연결한 뒤 앱 조회에서 개발 앱 `1.0.0(1)`을 확인했다. 새 네이티브 `startImmediately`에 연결되는 시작 버튼이 실제 표시되고, 한 번 누르면 준비 없이 측정 화면으로 전환됐다. 12초 화면에서 실제 위치와 거리 0.00km를 확인했고 26초에 종료·저장했다. 초기 전송 오류만으로 아이폰 앱 반영 실패를 확정하지 않으며 실제 설치 상태와 기능 실행 결과로 보완한다. 워치 실제 업데이트 반영과 야외 정확도는 확인하지 않았다. TestFlight 업로드는 하지 않았다.
+
+## 2026-10-19: 시작 전 GPS 위치 표시 갱신
+
+`codex/feature/run-live-activity`에서 기존 개발 앱 `1.0.0(1)`과 8081 Metro를 그대로 사용했다. 시작 전 현재 위치 표시는 기존 네이티브 `prepare`·`mapSnapshot` API를 재사용하는 JavaScript 변경으로 반영했다. 새 네이티브 빌드나 재설치, TestFlight 업로드는 수행하지 않았다.
+
+미러링에서 개발 메뉴의 Reload로 갱신한 뒤 시작 전 실제 위치 표시와 앱 복귀 시 재연결을 확인했다. 러닝은 시작하지 않았으며 GPS가 연결되는 동안에도 시작 버튼은 활성 상태다.
+
+## 2026-10-19: 자체 측정 기록 편집 연결 설치
+
+`codex/feature/runary-record-editing`에서 기존 내부 개발 앱 `1.0.0(1)`에 자체 기록 선택과 경로 구간 렌더링을 추가했다. 새 Swift 소스 반영을 위해 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행하고 기존 DerivedData·개발 프로파일로 아이폰·워치·위젯 전체 iphoneos Debug 빌드를 완료했다. `codesign --verify --deep --strict`를 통과한 앱을 CoreDevice로 iPhone 11 Pro에 업데이트 설치했다. API 키나 새 기기 등록은 사용하지 않았다.
+
+8081 Metro에 연결한 미러링에서 실제 Runary 5.41km 기록 선택, 경로 편집, 영상 생성·사진 저장, 보관함에서 다시 편집을 확인했다. 워치 실제 업데이트 반영은 확인하지 않았으며 자체 기록 선택은 아이폰에서 검증했다. TestFlight 제출과 PR 머지는 수행하지 않았다. 자세한 결과는 [구현 노트](../product/features/runary-record-editing.md)에 둔다.

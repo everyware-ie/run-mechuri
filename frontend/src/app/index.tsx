@@ -1,15 +1,18 @@
 import { router, useFocusEffect } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { InternalRunEntry } from '@/components/internal-run-entry';
+import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
 import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
+import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // 홈과 보관함 FRD §1: 홈은 결과물 목록이다.
@@ -17,10 +20,13 @@ import { useCreationFlow } from '@/state/creation-flow';
 // 결과물 목록(있으면) → 쇼케이스(§4, 여유 시라 v0는 생략)
 //
 // 디자인: "3안" 시안 S1 — "메추리 / ARCHIVE · N" 헤더 + 최근 결과물 큰 카드(하단
-// 오버레이 + ▶) + "내가 만든 것" 2열 그리드. 시안의 하단 탭(보관함/가져오기)은
+// 메타정보 + ▶) + "내가 만든 것" 2열 그리드. 시안의 하단 탭(보관함/가져오기)은
 // 2026-08-25 결정("하단 탭을 쓰지 않는다")으로 빠지고, "새로 만들기"가 그 자리를 맡는다.
 
 export default function HomeScreen() {
+  const { width } = useWindowDimensions();
+  const heroSize = Math.max(1, width - 48);
+  const gridSize = Math.max(1, (heroSize - Spacing.sm) / 2);
   const [results, setResults] = useState<SavedResult[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [checkedConnection, setCheckedConnection] = useState(false);
@@ -75,9 +81,13 @@ export default function HomeScreen() {
           text: '확인',
           onPress: () => {
             loadDraft({
+              backgroundImagePath: null,
+              backgroundPhoto: undefined,
               selectedRun: draft.run,
               track: draft.track,
               preset: draft.preset,
+              routeStyle: draft.routeStyle,
+              handDrawing: draft.handDrawing,
               transform: draft.transform,
               smoothOptions: draft.smoothOptions,
               stampConfig: draft.stampConfig,
@@ -92,7 +102,10 @@ export default function HomeScreen() {
       selectedRun: draft.run,
       track: draft.track,
       backgroundImagePath: draft.backgroundImagePath,
+      backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
+      routeStyle: draft.routeStyle,
+      handDrawing: draft.handDrawing,
       transform: draft.transform,
       smoothOptions: draft.smoothOptions,
       stampConfig: draft.stampConfig,
@@ -117,10 +130,11 @@ export default function HomeScreen() {
         columnWrapperStyle={rest.length > 0 ? styles.row : undefined}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={<View><InternalRunEntry /><PrivacyPolicyLink /></View>}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>메추리</Text>
+              <Text style={styles.title}>Runary</Text>
               <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
             </View>
 
@@ -129,7 +143,7 @@ export default function HomeScreen() {
                 <View>
                   <Text style={styles.draftLabel}>이어서 만들기</Text>
                   <Text style={styles.draftMeta}>
-                    {(draft.run.distanceMeters / 1000).toFixed(2)}km · {draft.run.date.slice(0, 10)}
+                    {isSampleRun(draft.run) ? '샘플 기록 · ' : ''}{(draft.run.distanceMeters / 1000).toFixed(2)}km · {draft.run.date.slice(0, 10)}
                   </Text>
                 </View>
                 <Text style={styles.draftChevron}>→</Text>
@@ -138,26 +152,25 @@ export default function HomeScreen() {
 
             {hero ? (
               <Pressable style={styles.heroCard} onPress={() => router.push(`/result/${hero.id}`)}>
-                {/* 실기기 피드백(2026-09-02): run/stampConfig을 넘기면 RouteThumbnail이
-                    사용자가 고른 각인 프리셋을 원래 크기·자리 그대로 그려서, 바로
-                    아래 heroOverlay(이 화면 전용, 항상 같은 자리에 거리+날짜만
-                    보여주는 고정 표시)와 겹쳐 두 개의 서로 다른 스타일 텍스트가
-                    같이 보였다("위에껀 km+날짜인데 밑에껀 작은 글씨로 km만"도 이
-                    두 표시가 겹친 것). 각인은 편집·공유 화면에서 보여줄 대상이라
-                    홈 목록에서는 안 넘긴다 — 경로 선만 그려진다. */}
                 <RouteThumbnail
                   points={hero.track.coordinates}
+                  preset={hero.preset}
+                  routeStyle={hero.routeStyle} handDrawing={hero.handDrawing}
                   transform={hero.transform}
                   smoothOptions={hero.smoothOptions}
-                  size={HERO_SIZE}
+                  size={heroSize}
+                  run={hero.run}
+                  stampConfig={hero.stampConfig}
+                  backgroundImagePath={hero.backgroundImagePath}
+                  framing="content"
                 />
-                <View style={styles.heroOverlay}>
+                <View style={styles.heroMeta}>
                   <View>
                     <Text style={styles.heroDistance}>
                       {(hero.distanceMeters / 1000).toFixed(2)}
                       <Text style={styles.heroUnit}> km</Text>
                     </Text>
-                    <Text style={styles.heroDate}>{hero.runDate.slice(0, 10)}</Text>
+                    <Text style={styles.heroDate}>{isSampleRun(hero.run) ? '샘플 기록 · ' : ''}{hero.runDate.slice(0, 10)}</Text>
                   </View>
                   <View style={styles.playButton}>
                     <Text style={styles.playIcon}>▶</Text>
@@ -167,7 +180,7 @@ export default function HomeScreen() {
             ) : (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyTitle}>아직 만든 결과물이 없어요</Text>
-                <Text style={styles.emptySub}>가져온 러닝 기록 하나만 있으면 됩니다.</Text>
+                <Text style={styles.emptySub}>러닝 기록을 가져오거나 샘플로 먼저 만들어 보세요.</Text>
               </View>
             )}
 
@@ -175,24 +188,30 @@ export default function HomeScreen() {
 
             {rest.length > 0 && (
               <View style={styles.sectionRow}>
-                <Text style={styles.sectionLabel}>내가 만든 것</Text>
-                <Text style={styles.sectionLabelEn}>MY DRAWINGS</Text>
+                <Text style={styles.sectionLabel}>MY RUNARY</Text>
               </View>
             )}
           </View>
         }
         renderItem={({ item }) => (
-          <Pressable style={styles.cell} onPress={() => router.push(`/result/${item.id}`)}>
+          <Pressable style={{ width: gridSize }} onPress={() => router.push(`/result/${item.id}`)}>
             <View style={styles.gridThumb}>
-              {/* 위 heroCard와 같은 이유로 run/stampConfig 안 넘김 — gridLabel(항상
-                  km만)과 각인이 겹쳐 보이지 않게. */}
               <RouteThumbnail
                 points={item.track.coordinates}
+                preset={item.preset}
+                routeStyle={item.routeStyle} handDrawing={item.handDrawing}
                 transform={item.transform}
                 smoothOptions={item.smoothOptions}
-                size={GRID_SIZE}
+                size={gridSize}
+                run={item.run}
+                stampConfig={item.stampConfig}
+                backgroundImagePath={item.backgroundImagePath}
+                framing="content"
               />
+            </View>
+            <View style={styles.gridMeta}>
               <Text style={styles.gridLabel}>{(item.distanceMeters / 1000).toFixed(2)} km</Text>
+              <Text style={styles.gridDate}>{isSampleRun(item.run) ? '샘플 기록 · ' : ''}{item.runDate.slice(0, 10)}</Text>
             </View>
           </Pressable>
         )}
@@ -202,16 +221,15 @@ export default function HomeScreen() {
 }
 
 const HERO_SIZE = 330;
-const GRID_SIZE = 168;
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   list: { paddingHorizontal: 24, paddingBottom: 40, gap: Spacing.sm },
   headerBlock: { gap: Spacing.md, paddingTop: 8 },
   titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  title: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
+  title: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
   archiveCount: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
@@ -226,29 +244,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
-  draftLabel: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 13.5, color: Colors.accent },
-  draftMeta: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted, marginTop: 3 },
+  draftLabel: { fontFamily: Fonts.sansBold, fontSize: 13.5, color: Colors.accent },
+  draftMeta: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 3 },
   draftChevron: { color: Colors.accent, fontSize: 15 },
   heroCard: {
-    height: HERO_SIZE,
     borderRadius: Radius.card,
     overflow: 'hidden',
     backgroundColor: Colors.bgCard,
     alignItems: 'center',
   },
-  heroOverlay: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    bottom: 18,
+  heroMeta: {
+    width: '100%',
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
   },
-  heroDistance: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 34, color: Colors.text, letterSpacing: -1.2 },
-  heroUnit: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
+  heroDistance: { fontFamily: Fonts.sansBold, fontSize: 34, color: Colors.text, letterSpacing: -1.2 },
+  heroUnit: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.textMuted, letterSpacing: 0 },
   heroDate: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1,
     color: Colors.textMuted,
@@ -273,23 +288,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  emptyTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 16, color: Colors.text },
-  emptySub: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
+  emptyTitle: { fontFamily: Fonts.sansBold, fontSize: 16, color: Colors.text },
+  emptySub: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
   sectionRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   sectionLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
-  sectionLabelEn: {
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     letterSpacing: 1.4,
     color: Colors.textMuted,
   },
   row: { gap: Spacing.sm },
-  cell: { flex: 1 },
   gridThumb: {
     width: '100%',
     aspectRatio: 1,
@@ -299,11 +307,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  gridMeta: { paddingTop: 8, paddingBottom: 8, gap: 3 },
+  gridDate: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted },
   gridLabel: {
-    position: 'absolute',
-    left: 12,
-    bottom: 10,
-    fontFamily: 'JetBrainsMono_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 10,
     color: Colors.text,
   },

@@ -1,31 +1,48 @@
+import { HandStrokeBrushes, HandStrokeControls } from '@/components/hand-stroke-controls';
+import { HandDrawingEditor, type HandDrawingPreview } from '@/components/hand-drawing-editor';
+import { MyStyleSheet } from '@/components/my-style-sheet';
+import { constrainHandStroke, hitHandStroke, EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
+import { applyMyStyle, type MyStyle } from '@/lib/my-style-store';
+import { RouteStyleControls, TextStyleControls } from '@/components/editor-style-controls';
+import { normalizeRouteStyle, type RouteStyle } from '@/lib/editor-style';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
-import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { router, useFocusEffect, useIsFocused } from 'expo-router';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSharedValue } from 'react-native-reanimated';
 import {
+  ActionSheetIOS,
+  Alert,
   Animated,
   Image,
   Keyboard,
   PanResponder,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
+  useWindowDimensions,
   type GestureResponderEvent,
-  type KeyboardEvent,
   type LayoutChangeEvent,
   type PanResponderGestureState,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CroppedBackgroundVideo } from '@/components/background-video';
+import { CaptionEditor } from '@/components/caption-editor';
 import {
+  computeCaptionHitRects,
   computeFitTransform,
-  computeStampBounds,
-  CYCLE_SECONDS,
+  computeRouteLocalBounds,
+  computeStampHitRects,
   IDENTITY_TRANSFORM,
+  migrateLegacyCaption,
   RoutePreview,
-  STAMP_LAYOUTS,
+  type CanvasRect,
+  type CaptionItem,
   type RoutePreset,
   type RouteTransform,
   type StampConfig,
@@ -33,11 +50,25 @@ import {
   type StampLayout,
 } from '@/components/route-preview';
 import { ScreenHeader } from '@/components/screen-header';
+import { isSampleRun, SAMPLE_PLACE_NAME } from '@/lib/sample-run';
 import { Slider } from '@/components/slider';
+import { StampPresetSelector } from '@/components/stamp-preset-selector';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Radius, Spacing } from '@/constants/theme';
-import { saveDraft } from '@/lib/draft-store';
+import { VerticalSlider } from '@/components/vertical-slider';
+import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
+import { useCaptionEditing } from '@/hooks/use-caption-editing';
+import { EditDropGesture } from '@/lib/edit-drop-gesture';
+import { dragTargetFor, dropZoneFor, selectedTarget, tapActionFor, type EditTarget, type SheetTarget, type TextHit } from '@/lib/edit-gesture';
+import type { EditSnapshot } from '@/lib/edit-history';
+import { useEditHistory } from '@/hooks/use-edit-history';
+import { useBackgroundApply } from '@/hooks/use-background-apply';
+import { useDraftAutosave } from '@/hooks/use-draft-autosave';
+import { fitPortraitPreview } from '@/lib/preview-layout';
+import { CANVAS_HEIGHT, CANVAS_WIDTH } from '@/lib/route-projection';
 import type { SmoothOptions } from '@/lib/route-smoothing';
+import { captionItems } from '@/lib/stamp-caption';
 import {
   formatDistanceKm,
   formatDuration,
@@ -45,27 +76,48 @@ import {
   formatPace,
   formatStampDate,
 } from '@/lib/stamp-format';
+import { rememberStampLayout } from '@/lib/stamp-preference';
 import { useCreationFlow } from '@/state/creation-flow';
 
-// FRD: docs/specs/frd/result-editing.md
-// 프리셋 선택(§3), 드로잉 크기·위치·회전 제스처+초기화(§4), 미리보기 재생 규칙(§2-1),
-// 다듬기 세기(§5), 각인 편집(§7)까지 구현. 속도·색은 여전히 여유 시라 이후(목업 구현 3/6).
-//
-// 2026-09: 미리보기를 화면 전체로 키우고 아래 컨트롤은 드래그로 접었다 펼 수 있는
-// 바텀시트로 뺐다(실기기 피드백 — 작은 카드 안에 눌려 있던 걸 크게 보고 싶다는 것,
-// 그리고 그 카드가 ScrollView 안에 있어서 드래그 제스처가 스크롤과 경합하던 문제도
-// 이 구조에선 아예 없어진다 — 미리보기 영역을 감싸는 스크롤 컨테이너가 없다).
+// FRD: docs/specs/frd/result-editing.md (2026-10-04 스토리형 편집 개정)
+// §1 화면 구조: 평소에는 화면 전체가 결과물이고, 오른쪽 도구를 누를 때만 시트가 올라온다.
+// §4-1 손댄 것을 만진다: 문구 > 러닝 데이터 > 경로 그림 순으로 잡는다.
+// §4-3 되돌리기와 초기화, §7-2 끌어서 숨기기. 구현 노트: docs/product/features/story-editor-stage1.md
 
 // 시안 S6 "넣을 것" 순서. 칩에는 실제 값도 함께 보여준다(stampChipLabel).
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
-const PRESETS: { id: RoutePreset; label: string }[] = [
-  { id: 'default-drawing', label: '기본 드로잉' },
-  { id: 'light-runner', label: '불빛 러너' },
-  { id: 'segment-lighting', label: '구간 점등' },
+const PRESETS: { id: RoutePreset; label: string; shortLabel: string; symbol: SymbolViewProps['name'] }[] = [
+  { id: 'default-drawing', label: '기본 경로 그림', shortLabel: '기본', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'light-runner', label: '불빛 러너', shortLabel: '불빛', symbol: 'sparkles' },
+  { id: 'segment-lighting', label: '구간 점등', shortLabel: '구간', symbol: 'point.3.connected.trianglepath.dotted' },
 ];
 
-const SHEET_EXPANDED_HEIGHT = 372;
+type Tool = 'background' | 'route' | 'stamp' | 'style' | 'ink';
+// 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
+const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
+  { id: 'background', label: '배경', symbol: 'photo' },
+  { id: 'route', label: '경로', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
+  { id: 'caption', label: '문구', symbol: 'textformat' },
+  { id: 'draw', label: '그리기', symbol: 'pencil.tip' },
+  { id: 'style', label: '내 스타일', symbol: 'square.stack' },
+];
+
+type DragTarget = EditTarget;
+// 크기 슬라이더 범위(%). 1/3배~3배로 대칭이라 기본 크기(100%)가 슬라이더 가운데에 온다.
+// 러닝 데이터·문구는 핀치도 같은 범위다. 경로 그림은 FRD가 상한을 두지 않아(§4-4) 핀치로는
+// 더 키울 수 있다.
+const SIZE_MIN = 100 / 3;
+const SIZE_MAX = 300;
+
+// §2 미리보기: 평소에 반복 재생한다. 2026-09-02에는 반복 재생 중 조작이 느려서 멈춰 두고
+// 재생 버튼을 눌러야 그렸다. 실기기에서 다시 느려지면 false로 두고 재생 버튼을 되살린다.
+const LOOP_PREVIEW = true;
+
+// §7-2 숨기기 자리. 러닝 데이터를 끄는 동안 화면 아래에 나타난다.
+const HIDE_ZONE = 60;
+const BOTTOM_BAR_HEIGHT = 64;
 
 function touchDistance(t1: { pageX: number; pageY: number }, t2: { pageX: number; pageY: number }) {
   return Math.hypot(t2.pageX - t1.pageX, t2.pageY - t1.pageY);
@@ -75,35 +127,85 @@ function touchAngleDeg(t1: { pageX: number; pageY: number }, t2: { pageX: number
   return (Math.atan2(t2.pageY - t1.pageY, t2.pageX - t1.pageX) * 180) / Math.PI;
 }
 
+const contains = (rect: CanvasRect, x: number, y: number) =>
+  x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+const clampScale = (value: number) => Math.min(SIZE_MAX / 100, Math.max(SIZE_MIN / 100, value));
+
 export default function EditScreen() {
   const {
     draft,
     setPreset: commitPreset,
     setTransform: commitTransform,
+    setRouteStyle: commitRouteStyle,
+    setHandDrawing: commitHandDrawing,
     setSmoothOptions: commitSmoothOptions,
     setStampConfig: commitStampConfig,
+    setBackground,
+    loadDraft,
     resetTransform,
   } = useCreationFlow();
-
-  // §4-1: 편집 대상은 각인 시트가 열려 있는 동안만 '각인'(끌어서 위치 이동), 그 외엔 '드로잉'.
-  // "3안" 시안 S7에는 드로잉/각인 토글이 없다 — [각인] 버튼이 시트(S6)를 연다.
-  const [stampSheetOpen, setStampSheetOpen] = useState(false);
-  // §7-1 안전 영역 가이드 — 실기기 피드백(2026-09): 항상 떠 있으면 거슬린다는
-  // 지적으로 기본 숨김·버튼으로 토글하는 방식으로 바꿨다.
-  const [showSafeGuide, setShowSafeGuide] = useState(false);
-  // 실기기 피드백(2026-09-02): "재생 중엔 경로·각인 조작이 계속 느리다" — 재생과
-  // 편집이 동시에 안 겹치도록, 기본은 정지(완성된 모습)로 두고 재생 버튼을 눌러야만
-  // 그려지는 과정을 보여준다. 한 번 누르면 한 사이클(그리기+정지 유지, CYCLE_SECONDS)
-  // 만 재생하고 자동으로 다시 정지 상태로 돌아온다 — RoutePreview 내부에서 정확히
-  // 재는 대신 여기서 타이머로 넉넉히(+0.3초) 맞춘다. 몇 ms 어긋나도 티가 안 나는
-  // 용도라 이 정도 근사로 충분하고, RoutePreview 쪽에 별도 콜백을 안 늘려도 된다.
-  const [isPlaying, setIsPlaying] = useState(false);
-  useEffect(() => {
-    if (!isPlaying) return;
-    const t = setTimeout(() => setIsPlaying(false), (CYCLE_SECONDS + 0.3) * 1000);
-    return () => clearTimeout(t);
-  }, [isPlaying]);
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
+  const isFocused = useIsFocused();
+
+  const [tool, setTool] = useState<Tool | null>(null);
+  const toolRef = useRef<Tool | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const [drawingPreview, setDrawingPreview] = useState<HandDrawingPreview | null>(null);
+  const [selectedInkId, setSelectedInkId] = useState<string | null>(null);
+  const selectedInkRef = useRef<string | null>(null);
+  const inkRef = useRef(draft.handDrawing ?? EMPTY_HAND_DRAWING);
+  useEffect(() => { inkRef.current = draft.handDrawing ?? EMPTY_HAND_DRAWING; }, [draft.handDrawing]);
+  const inkX = useSharedValue(0), inkY = useSharedValue(0), inkScaleShared = useSharedValue(1);
+  const baseInk = useRef<HandStroke | null>(null);
+  const inkPinchRatio = useRef(1);
+  const [inkWidthPreview, setInkWidthPreview] = useState<number | null>(null);
+  const commitInk = (next: HandStroke[]) => { inkRef.current = next; commitHandDrawing(next); };
+  const clearInkSelection = () => { selectedInkRef.current = null; setSelectedInkId(null); setInkWidthPreview(null); };
+  const patchInk = (patch: Partial<Pick<HandStroke, 'brush' | 'color' | 'width'>>) => {
+    const id = selectedInkRef.current;
+    if (!id) return;
+    commitInk(inkRef.current.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
+  const [applyingStyle, setApplyingStyle] = useState(false);
+  const applyingStyleRef = useRef(false);
+  const styleOperation = useRef(0);
+  const cancelStyleApply = useCallback(() => {
+    styleOperation.current++;
+    applyingStyleRef.current = false;
+    setApplyingStyle(false);
+  }, []);
+  const [stampTab, setStampTab] = useState<'items' | 'style'>('items');
+  const [routeTab, setRouteTab] = useState<'drawing' | 'style'>('drawing');
+  const [routeStyle, setRouteStyle] = useState<RouteStyle>(() => normalizeRouteStyle(draft.routeStyle));
+  const [routeColorPreview, setRouteColorPreview] = useState<string | null>(null);
+  const routeStyleRef = useRef(routeStyle);
+  const updateRouteStyle = (value: RouteStyle) => {
+    const next = normalizeRouteStyle(value);
+    routeStyleRef.current = next;
+    setRouteStyle(next);
+  };
+  const handleRouteStyleCommit = (value: RouteStyle) => {
+    updateRouteStyle(value);
+    commitRouteStyle(normalizeRouteStyle(value));
+    setIsInteracting(false);
+  };
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const { pendingId: applyingBackground, apply: applyDefaultBackground,
+    cancel: cancelBackgroundApply, isPending: isBackgroundPending } = useBackgroundApply({
+    prepare: persistDefaultBackground,
+    onApply: (path) => setBackground(path, undefined),
+    onError: () => Alert.alert('배경을 바꾸지 못했어요', '다시 시도해 주세요.'),
+  });
+  // 스택에 편집 화면이 남아 있어도 갤러리·홈 등으로 떠난 뒤 늦은 작업은 반영하지 않는다.
+  useFocusEffect(useCallback(() => () => { cancelBackgroundApply(); cancelStyleApply(); }, [cancelBackgroundApply, cancelStyleApply]));
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const [transform, setTransformState] = useState<RouteTransform>(draft.transform);
   const transformRef = useRef(transform);
@@ -112,18 +214,16 @@ export default function EditScreen() {
     setTransformState(t);
   };
 
-  // §5: 기본은 한 축("다듬기 세기"). 고급 설정을 열면 직선(smooth)·코너(corner)를 따로 만진다.
+  // §5: 직선(smooth)·코너(corner) 두 축을 경로 시트에 함께 보여준다.
   const [smoothOptions, setSmoothOptionsState] = useState<SmoothOptions>(draft.smoothOptions);
   const smoothOptionsRef = useRef(smoothOptions);
   const updateSmoothOptions = (opts: SmoothOptions) => {
     smoothOptionsRef.current = opts;
     setSmoothOptionsState(opts);
   };
-  // applySmoothing(route-smoothing.ts)은 이동평균 + RDP 단순화 + 모서리 라운딩을
-  // 원본 GPS 점 전체에 매번 다시 돌린다 — 실기기 피드백(2026-09): 슬라이더를 끄는
-  // 동안 이게 손가락이 움직이는 raw 터치 이벤트마다(프레임보다 훨씬 잦게) 그대로
-  // 불려서 버벅였다. 최신값은 ref에 바로 반영해 시각적 반응은 즉시 유지하되, 실제
-  // 무거운 재계산(state 갱신 → useMemo)은 화면 프레임당 한 번으로 묶는다.
+  // applySmoothing(route-smoothing.ts)은 원본 GPS 점 전체에 매번 다시 돈다 — 실기기
+  // 피드백(2026-09): 슬라이더를 끄는 raw 터치 이벤트마다 불려서 버벅였다. 최신값은 ref에
+  // 바로 반영하고 실제 재계산(state 갱신 → useMemo)은 화면 프레임당 한 번으로 묶는다.
   const pendingSmoothRef = useRef<SmoothOptions | null>(null);
   const smoothRafRef = useRef<number | null>(null);
   const flushPendingSmooth = () => {
@@ -149,39 +249,106 @@ export default function EditScreen() {
     }
   };
   const handleSmoothCommit = () => {
+    setIsInteracting(false);
     flushPendingSmooth();
     commitSmoothOptions(smoothOptionsRef.current);
   };
+  // §2-1: 슬라이더를 잡고 있는 동안은 미리보기를 멈춘다. 다듬기는 선 모양 차이라 멈춰야 보인다.
+  const handleSlidingStart = () => setIsInteracting(true);
 
-  // §7: 각인 넷은 하나의 묶음 — 위치·크기 하나씩만 갖는다(2026-09-02: 원래 §4-2는
-  // "크기·회전 없음, 끌기만 반응"이었는데, 화면에서 직접 탭해 고르는 김에 크기
-  // 조정도 요청받아 scale을 추가했다 — 회전은 그대로 없음).
-  const [stampConfig, setStampConfigState] = useState<StampConfig>(draft.stampConfig);
+  // §7: 러닝 데이터 묶음과 자유 문구(lib/stamp-caption.ts). 옛 저장분은 들어올 때 프리셋 안에 있던
+  // 문구를 원래 자리·크기 근처의 자유 문구로 바꾼다(migrateLegacyCaption).
+  const [stampConfig, setStampConfigState] = useState<StampConfig>(() => migrateLegacyCaption(draft.selectedRun, draft.stampConfig));
   const stampConfigRef = useRef(stampConfig);
   const updateStampConfig = (c: StampConfig) => {
     stampConfigRef.current = c;
     setStampConfigState(c);
   };
-  const handleStampItemToggle = (item: StampItem) => {
-    const next = { ...stampConfigRef.current, enabled: { ...stampConfigRef.current.enabled, [item]: !stampConfigRef.current.enabled[item] } };
+  const commitStamp = (next: StampConfig) => {
     updateStampConfig(next);
     commitStampConfig(next);
   };
-  // 시안 S6 "한 줄 문구".
-  const handleCaptionChange = (text: string) => {
-    const next = { ...stampConfigRef.current, caption: text };
-    updateStampConfig(next);
-    commitStampConfig(next);
+  const handleStampItemToggle = (item: StampItem) => {
+    const current = stampConfigRef.current;
+    commitStamp({ ...current, enabled: { ...current.enabled, [item]: !current.enabled[item] } });
+  };
+  // §7 문구: 인스타처럼 화면에서 바로 쓰고 여러 개다(components/caption-editor.tsx). 새 문구는 화면
+  // 가운데에 놓인다. 다 지우고 마치면 그 문구는 빠진다.
+  const captionEditing = useCaptionEditing(stampConfig, commitStamp, draft.stampConfig);
+  const editingCaption = captionEditing.editing;
+  const updateCaptions = (update: (items: CaptionItem[]) => CaptionItem[]) =>
+    commitStamp({ ...stampConfigRef.current, captions: update(captionItems(stampConfigRef.current)) });
+  const startNewCaption = () => {
+    closeTool();
+    captionEditing.startNew();
+  };
+  const startEditCaption = (id: string) => {
+    closeTool();
+    captionEditing.startEdit(id);
+  };
+  const finishEditingCaption = () => {
+    Keyboard.dismiss();
+    captionEditing.finish();
   };
   const handleLayoutSelect = (layout: StampLayout) => {
-    const next = { ...stampConfigRef.current, layout };
-    updateStampConfig(next);
-    commitStampConfig(next);
+    rememberStampLayout(layout);
+    commitStamp({ ...stampConfigRef.current, layout });
+  };
+  // §4-3 배치 복원: 그 도구의 배치만 돌린다. 켠 항목·프리셋·문구는 그대로 둔다.
+  const handleStampReset = () => {
+    commitStamp({ ...stampConfigRef.current, position: { x: 0, y: 0 }, scale: 1 });
+  };
+  const handleRouteReset = () => {
+    updateTransform(IDENTITY_TRANSFORM);
+    resetTransform();
+  };
+  const showLayoutMenu = (target: 'route' | 'stamp') => {
+    const title = target === 'route' ? '경로 배치' : '러닝 데이터 배치';
+    const message = target === 'route'
+      ? '위치·크기·회전을 기본 배치로 돌려요. 프리셋과 선 스타일은 유지돼요.'
+      : '위치·크기를 기본 배치로 돌려요. 항목과 글자 스타일은 유지돼요.';
+    const restore = target === 'route' ? handleRouteReset : handleStampReset;
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({ title, message, options: ['배치 복원', '취소'],
+        cancelButtonIndex: 1, userInterfaceStyle: 'dark' }, index => { if (index === 0) restore(); });
+    } else {
+      Alert.alert(title, message, [{ text: '취소', style: 'cancel' }, { text: '배치 복원', onPress: restore }]);
+    }
   };
 
-  // '장소' 각인 값 — 트랙 좌표(가운데 점)를 역지오코딩해 한 번 채운다. 실패하면
-  // 그냥 비워 둔다(칩은 "장소"로만 보이고, 켜도 아무것도 안 그린다).
+  // §4-3: 값이 같은 조작과 자동 장소 채우기는 단계를 만들지 않는다.
+  const editSnapshot = useMemo<EditSnapshot>(() => ({
+    backgroundImagePath: draft.backgroundImagePath,
+    backgroundPhoto: draft.backgroundPhoto,
+    preset: draft.preset,
+    transform: draft.transform,
+    routeStyle: draft.routeStyle,
+    handDrawing: draft.handDrawing,
+    smoothOptions: draft.smoothOptions,
+    stampConfig: draft.stampConfig,
+  }), [draft.backgroundImagePath, draft.backgroundPhoto, draft.preset, draft.transform, draft.routeStyle, draft.handDrawing, draft.smoothOptions, draft.stampConfig]);
+  const { history, skipNextChange, popHistory } = useEditHistory(editSnapshot, !drawing);
+  const snapshotRef = useRef(editSnapshot);
+  useEffect(() => { snapshotRef.current = editSnapshot; }, [editSnapshot]);
+
+  // 옛 저장분의 문구를 자유 문구로 바꾼 것(위 migrateLegacyCaption)을 초안에도 바로 반영해 두되
+  // 되돌리기 단계로는 쌓지 않는다. 쌓이면 첫 되돌리기가 문구를 프리셋 안으로 되돌린다.
   useEffect(() => {
+    // 문구 목록이 이미 있으면 바꿀 것이 없다. 옛 저장분과 개발 중 쓰던 문구 하나짜리 형식만 바꾼다.
+    if (draft.stampConfig.captions) return;
+    skipNextChange();
+    commitStampConfig(stampConfigRef.current);
+    // 들어올 때 한 번만.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // '장소' 러닝 데이터 값 — 트랙 좌표(가운데 점)를 역지오코딩해 한 번 채운다. 실패하면 비워 둔다.
+  useEffect(() => {
+    // 샘플은 실제 장소가 아니다. 초안 복구·스타일 적용에도 외부 조회하지 않는다.
+    if (isSampleRun(draft.selectedRun)) {
+      if (!(stampConfigRef.current.placeName ?? '').length) commitStamp({ ...stampConfigRef.current, placeName: SAMPLE_PLACE_NAME });
+      return;
+    }
     if ((stampConfigRef.current.placeName ?? '').length > 0) return;
     const coords = draft.track?.coordinates;
     if (!coords || coords.length === 0) return;
@@ -193,9 +360,7 @@ export default function EditScreen() {
         const p = res[0];
         const name = p?.district || p?.city || p?.subregion || p?.name || '';
         if (!name) return;
-        const next = { ...stampConfigRef.current, placeName: name };
-        updateStampConfig(next);
-        commitStampConfig(next);
+        commitStamp({ ...stampConfigRef.current, placeName: name });
       })
       .catch(() => {});
     return () => {
@@ -203,46 +368,45 @@ export default function EditScreen() {
     };
     // 트랙이 바뀔 때만 한 번 — commit/update는 안정적이지 않아 넣으면 매 편집마다 재지오코딩된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.track]);
+  }, [draft.track, draft.selectedRun?.id]);
 
   const [isInteracting, setIsInteracting] = useState(false);
+  // 끄는 중인 대상. 손가락이 실제로 움직였을 때만 정한다. 탭할 때 점선이 깜빡이지 않게 한다.
+  const [dragging, setDragging] = useState<DragTarget | null>(null);
+  const [overHideZone, setOverHideZone] = useState(false);
+  const dropGestureRef = useRef(new EditDropGesture());
+
+  // 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 끄는 동안은 React state가 아니라
+  // SharedValue에 바로 쓰고(RoutePreview가 UI 스레드에서 읽는다) 손을 뗄 때만 커밋한다.
   const baseTransform = useRef<RouteTransform>(transform);
-  // 실기기 피드백(2026-09-02): "경로 이동이 뚝뚝 끊긴다" — 예전엔 끌기·핀치 중에
-  // 매 터치 이벤트마다 updateTransform(React state)을 불러서 RoutePreview 전체가
-  // 다시 렌더됐다(그 렌더 자체·Skia로의 새 값 전달 왕복이 비용). 이제 이 네
-  // SharedValue에 직접 쓴다 — RoutePreview가 Skia Group transform을 이 값들의
-  // .value만 읽어 만들게 해뒀으므로(transformShared), 리렌더 없이 네이티브
-  // 쪽에서만 갱신된다(불빛 러너 진행률과 같은 경로). 손을 뗄 때만 이 값들을
-  // transform(state)에 한 번 커밋한다.
   const transformXShared = useSharedValue(transform.x);
   const transformYShared = useSharedValue(transform.y);
   const transformScaleShared = useSharedValue(transform.scale);
   const transformRotationShared = useSharedValue(transform.rotationDeg);
-  // transform(state)이 드래그가 아닌 다른 경로(초기화 버튼 등)로 바뀔 때도 이
-  // SharedValue들을 같이 맞춰 둔다 — 안 그러면 다음 드래그가 옛 값에서 이어진다.
   useEffect(() => {
     transformXShared.value = transform.x;
     transformYShared.value = transform.y;
     transformScaleShared.value = transform.scale;
     transformRotationShared.value = transform.rotationDeg;
   }, [transform, transformXShared, transformYShared, transformScaleShared, transformRotationShared]);
+  // 러닝 데이터와 문구도 같은 방식이다. 드래그와 저장 후 표시가 같은 절대 위치를 쓴다.
   const baseStampPosition = useRef(stampConfig.position);
   const baseStampScale = useRef(stampConfig.scale ?? 1);
-  // 실기기 피드백(2026-09-02): 각인을 한 손가락으로 끌 때(위치만 바뀌는 경우)도
-  // stampConfig(React state) RAF 스로틀만으로는 여전히 렉이 있었다 — 이 클래식
-  // Animated.Value 두 개(useNativeDriver:true)에 직접 .setValue()를 불러서
-  // 진짜로 리렌더 없이 네이티브 쪽에서 위치만 움직인다(바텀시트 드래그와 같은
-  // 방식). 두 손가락(핀치 크기 조정)은 계속 RAF 스로틀 경로를 쓴다 — 크기까지
-  // 이 값으로 감당하려면 폰트 재계산과 별개로 다뤄야 해서 복잡도가 커지고,
-  // 핀치는 위치 드래그보다 훨씬 짧고 드문 제스처라 우선순위가 낮다.
-  const stampDragX = useRef(new Animated.Value(0)).current;
-  const stampDragY = useRef(new Animated.Value(0)).current;
+  const stampPositionX = useSharedValue(stampConfig.position.x);
+  const stampPositionY = useSharedValue(stampConfig.position.y);
+  useEffect(() => {
+    stampPositionX.set(stampConfig.position.x);
+    stampPositionY.set(stampConfig.position.y);
+  }, [stampConfig.position, stampPositionX, stampPositionY]);
+  // 끌고 있는 문구 하나의 자리. 끌기 시작할 때 그 문구의 자리로 맞춘다.
+  const baseCaptionPosition = useRef({ x: 0, y: 0 });
+  const baseCaptionScale = useRef(1);
+  const captionPositionX = useSharedValue(0);
+  const captionPositionY = useSharedValue(0);
+
   const gestureStart = useRef<{ distance: number; angle: number } | null>(null);
-  // 실기기 피드백(2026-09-02): 각인을 끌 때 손가락 이동마다(raw 터치 이벤트, 화면
-  // 프레임보다 훨씬 잦다) updateStampConfig를 그대로 부르면 RoutePreview가 매번
-  // 다시 렌더되며 stampLayoutDescriptors(포맷팅 함수들 + 8개 레이아웃 분기 계산)를
-  // 다시 돈다 — smoothOptions 슬라이더 때와 같은 종류의 버벅임. 같은 방식(ref에
-  // 최신값 반영은 즉시, 실제 state 반영은 화면 프레임당 한 번)으로 묶는다.
+  // 실기기 피드백(2026-09-02): 핀치 중 손가락 이동마다 state를 바꾸면 RoutePreview가 매번
+  // 다시 렌더된다. 다듬기 슬라이더와 같은 방식(ref 즉시, state는 프레임당 한 번)으로 묶는다.
   const pendingStampConfigRef = useRef<StampConfig | null>(null);
   const stampConfigRafRef = useRef<number | null>(null);
   const flushPendingStampConfig = () => {
@@ -257,6 +421,7 @@ export default function EditScreen() {
   };
   const scheduleStampConfigUpdate = (next: StampConfig) => {
     pendingStampConfigRef.current = next;
+    stampConfigRef.current = next;
     if (stampConfigRafRef.current === null) {
       stampConfigRafRef.current = requestAnimationFrame(() => {
         stampConfigRafRef.current = null;
@@ -267,373 +432,488 @@ export default function EditScreen() {
       });
     }
   };
-  // draft.selectedRun은 이 화면에 들어오기 전에 이미 정해져 안 바뀌지만, panResponder는
-  // useRef라 첫 렌더 클로저를 그대로 들고 있으므로(아래) ref로 최신값을 보장한다.
+  const finishStampGesture = () => {
+    flushPendingStampConfig();
+    commitStamp({ ...stampConfigRef.current, position: { x: stampPositionX.value, y: stampPositionY.value } });
+  };
+  const finishCaptionGesture = (id: string) => {
+    flushPendingStampConfig();
+    const offset = { x: captionPositionX.value, y: captionPositionY.value };
+    updateCaptions((items) => items.map((c) => c.id === id ? { ...c, offset } : c));
+  };
+  // §7-2: 숨기거나 지운 직후 잠깐 되돌리기 안내를 띄운다. 실수해도 바로 되돌릴 수 있게 한다.
+  const [undoToast, setUndoToast] = useState<string | null>(null);
+  const undoToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showUndoToast = (message: string) => {
+    if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current);
+    setUndoToast(message);
+    undoToastTimerRef.current = setTimeout(() => setUndoToast(null), 3500);
+  };
+  useEffect(() => () => { if (undoToastTimerRef.current) clearTimeout(undoToastTimerRef.current); }, []);
+  // §7-2: 문구는 아래 휴지통에 놓으면 지운다.
+  const deleteCaption = (id: string) => {
+    flushPendingStampConfig();
+    updateCaptions((items) => items.filter((c) => c.id !== id));
+    showUndoToast('문구를 지웠어요');
+  };
+  // §7-2: 숨기기 자리에 놓으면 숨긴다. 숨기기 전 자리는 그대로 둔다. 다시 열면 그 자리로 돌아온다.
+  const hideStamp = () => {
+    flushPendingStampConfig();
+    const position = baseStampPosition.current;
+    stampPositionX.set(position.x);
+    stampPositionY.set(position.y);
+    commitStamp({ ...stampConfigRef.current, position, hidden: true });
+    showUndoToast('러닝 데이터를 숨겼어요');
+  };
+
+  // panResponder는 첫 렌더에서 한 번 만들어져 클로저가 고정되므로 바뀌는 값은 ref로 읽는다.
   const selectedRunRef = useRef(draft.selectedRun);
-  selectedRunRef.current = draft.selectedRun;
-  // previewArea의 실측 크기 — 아래 panResponder 클로저 안에서 각인 탭 히트테스트에 쓴다.
+  useEffect(() => { selectedRunRef.current = draft.selectedRun; }, [draft.selectedRun]);
   const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
   const previewSizeRef = useRef(previewSize);
-
-  // 실기기 피드백(2026-09-02): "각인 시트가 열려 있을 때만 각인을 옮길 수 있다"는
-  // 기존 규칙 대신, 드로잉처럼 화면을 직접 탭한 지점으로 대상을 고른다 — §4-1이
-  // 원래 요구하던 "화면에서 직접 탭해서도 고를 수 있게 한다"를 만족시킨다. 탭
-  // 지점이 각인의 대략적 영역(computeStampBounds, route-preview.tsx) 안이면 그
-  // 제스처는 각인을, 아니면 경로를 움직인다. 렌더 중에 읽지 않고 제스처 핸들러
-  // 안에서만 읽으므로 ref로 둔다. stampTargeted는 "지금 각인을 쥐고 있다"는 걸
-  // RoutePreview의 선택 점선 박스에 전달하는 용도라 state로 따로 둔다.
-  const editTargetRef = useRef<'drawing' | 'stamp'>('drawing');
-  const [stampTargeted, setStampTargeted] = useState(false);
-  // 이번 제스처(grant~release) 동안의 fitScale — 뷰 픽셀 dx/dy를 캔버스 좌표로
-  // 바꿀 때 쓴다(아래 move·release). grant에서 한 번만 계산해 담아 둔다.
   const gestureFitScaleRef = useRef(1);
+  const dragTargetRef = useRef<DragTarget | null>(null);
+  const gestureMovedRef = useRef(false);
+
+  // §4-1: 손가락이 닿은 글자. 겹친 곳은 문구가 러닝 데이터보다 위다. 무엇을 움직이고 탭하면 무엇을
+  // 할지는 lib/edit-gesture.ts가 정한다.
+  const textHitAt = (canvasX: number, canvasY: number): TextHit => {
+    const run = selectedRunRef.current;
+    const config = stampConfigRef.current;
+    if (!run) return null;
+    // 나중에 넣은 문구가 위에 그려지므로 뒤에서부터 본다.
+    const captions = computeCaptionHitRects(run, config);
+    for (let i = captions.length - 1; i >= 0; i--) {
+      if (contains(captions[i].rect, canvasX, canvasY)) return { kind: 'caption', id: captions[i].id };
+    }
+    if (!config.hidden && computeStampHitRects(run, config).some((rect) => contains(rect, canvasX, canvasY))) return { kind: 'stamp' };
+    const inkId = hitHandStroke(inkRef.current, { x: canvasX, y: canvasY }, 12 / Math.max(.1, gestureFitScaleRef.current));
+    return inkId ? { kind: 'ink', id: inkId } : null;
+  };
+  const textHitRef = useRef<TextHit>(null);
+
+  // 경로 그림을 탭했는지. 끌기는 글자가 아닌 곳 어디서나 경로 그림을 움직이지만, 탭은 경로 그림의
+  // 영역(점선 상자) 안일 때만 경로 시트를 연다. 그 밖의 빈 곳을 탭하면 열린 시트를 닫는다.
+  const routeBounds = useMemo(() => computeRouteLocalBounds(draft.track?.coordinates ?? []), [draft.track]);
+  const routeBoundsRef = useRef(routeBounds);
+  useEffect(() => { routeBoundsRef.current = routeBounds; }, [routeBounds]);
+  const tapPointRef = useRef({ x: 0, y: 0 });
+  const isOnRoute = ({ x, y }: { x: number; y: number }) => {
+    const bounds = routeBoundsRef.current;
+    if (!bounds) return false;
+    // route-preview.tsx groupTransform의 역변환: 가운데 기준으로 이동 → 회전 → 크기를 되돌린다.
+    const t = transformRef.current;
+    const dx = x - CANVAS_WIDTH / 2 - t.x;
+    const dy = y - CANVAS_HEIGHT / 2 - t.y;
+    const angle = (-t.rotationDeg * Math.PI) / 180;
+    const localX = (dx * Math.cos(angle) - dy * Math.sin(angle)) / t.scale + CANVAS_WIDTH / 2;
+    const localY = (dx * Math.sin(angle) + dy * Math.cos(angle)) / t.scale + CANVAS_HEIGHT / 2;
+    return Math.abs(localX - bounds.cx) <= bounds.width / 2 && Math.abs(localY - bounds.cy) <= bounds.height / 2;
+  };
+
+  // §7-2 숨기기·지우기 자리는 결과물 밖, 맨 아래 띠(평소 완료 버튼 자리) 가운데에 둔다. 실기기 확인
+  // (2026-10-04)에서 "위치를 움직이다가 사라지게 만드는 경우가 꽤 있을 것"이라는 지적을 받았다. 예전에는
+  // 결과물 안(시트가 열려 있으면 시트 바로 위)에 나와, 아래쪽 프리셋을 옮기다 지나가기 쉬웠다. 이제
+  // 손가락이 결과물 아래 띠까지 내려가야만 숨겨진다.
+  const hideZoneBottom = insets.bottom + (BOTTOM_BAR_HEIGHT - HIDE_ZONE) / 2;
+  const hideZoneRef = useRef({ centerX: 0, barTop: 0 });
+  useEffect(() => {
+    hideZoneRef.current = { centerX: window.width / 2, barTop: window.height - insets.bottom - BOTTOM_BAR_HEIGHT };
+  }, [window.width, window.height, insets.bottom]);
+  const isOverHideZone = (touch: { pageX: number; pageY: number }) => {
+    const { centerX, barTop } = hideZoneRef.current;
+    return touch.pageY >= barTop && Math.abs(touch.pageX - centerX) < HIDE_ZONE * 1.2;
+  };
+
+  // §1: 시트는 아래로 끌어서도 닫는다. 손가락을 따라 내려가다가 충분히 내리거나 빠르게 밀면 닫히고,
+  // 조금만 내리면 제자리로 돌아간다. 슬라이더는 잡는 순간 응답을 가져가고 놓지 않아서 시트가
+  // 끌리지 않는다. 칩처럼 누르기만 하는 것 위에서 시작한 세로 끌기는 시트가 가져온다.
+  const sheetDragY = useRef(new Animated.Value(0)).current;
+  const sheetHeightRef = useRef(0);
+  const sheetPanResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_evt, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.5,
+    onPanResponderMove: (_evt, gesture) => sheetDragY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderRelease: (_evt, gesture) => {
+      if (gesture.dy > Math.min(120, sheetHeightRef.current * 0.35) || gesture.vy > 0.9) {
+        Animated.timing(sheetDragY, { toValue: sheetHeightRef.current || 400, duration: 160, useNativeDriver: true })
+          .start(() => {
+            closeTool();
+            sheetDragY.setValue(0);
+          });
+      } else {
+        Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start();
+      }
+    },
+    onPanResponderTerminate: () => Animated.spring(sheetDragY, { toValue: 0, useNativeDriver: true, bounciness: 0 }).start(),
+  })).current;
+
+  // §7-2: 끄는 동안은 시트를 아래로 치워 결과물 전체를 보이게 한다. 손을 떼면 다시 올라온다.
+  const sheetAway = dragging !== null && tool !== null;
+  useEffect(() => {
+    Animated.timing(sheetDragY, {
+      toValue: sheetAway ? sheetHeightRef.current + 24 : 0,
+      duration: sheetAway ? 140 : 180,
+      useNativeDriver: true,
+    }).start();
+  }, [sheetAway, sheetDragY]);
+
+  const openTool = (next: Tool) => {
+    if (next !== 'ink') clearInkSelection();
+    if (next !== 'style') cancelStyleApply();
+    Keyboard.dismiss();
+    flushPendingSmooth();
+    flushPendingStampConfig();
+    // §7-2: 숨긴 러닝 데이터는 러닝 데이터 도구를 다시 열면 돌아온다.
+    if (next === 'stamp' && stampConfigRef.current.hidden) commitStamp({ ...stampConfigRef.current, hidden: false });
+    toolRef.current = next;
+    setTool(next);
+  };
+  const closeTool = () => {
+    clearInkSelection();
+    cancelStyleApply();
+    Keyboard.dismiss();
+    toolRef.current = null;
+    setTool(null);
+  };
+  // §4-1: 탭하면 그 도구가 열리며 선택된다. 실기기 확인(2026-10-04)에서 러닝 데이터를 탭하면
+  // 프리셋이 넘어가던 것이 "선택이 아니라 다른 프리셋으로 바뀐다"는 지적을, 경로 그림을 탭해도
+  // 아무 일이 없던 것이 "경로는 선택이 안 된다"는 지적을 받아 바꿨다.
+  const selectInk = (id: string) => {
+    const stroke = inkRef.current.find(s => s.id === id);
+    if (!stroke) return;
+    inkX.set(stroke.offset?.x ?? 0); inkY.set(stroke.offset?.y ?? 0); inkScaleShared.set(stroke.scale ?? 1);
+    selectedInkRef.current = id; setSelectedInkId(id); setInkWidthPreview(null);
+    openTool('ink');
+  };
+  const deleteInk = (id: string) => {
+    commitInk(inkRef.current.filter(s => s.id !== id));
+    closeTool(); showUndoToast('손그림을 지웠어요');
+  };
+  const handleTap = () => {
+    const action = tapActionFor(textHitRef.current, isOnRoute(tapPointRef.current), toolRef.current !== null);
+    if (action.kind === 'open') openTool(action.tool);
+    else if (action.kind === 'editInk') selectInk(action.id);
+    else if (action.kind === 'editCaption') startEditCaption(action.id);
+    else if (action.kind === 'close') closeTool();
+  };
 
   const panResponder = useRef(
     PanResponder.create({
-      // 미리보기 영역 안에서 시작한 터치만 잡는다 — 이 responder는 previewArea
-      // 경계에 딱 맞는 뷰 하나에만 붙어 있어서(§ 아래 JSX), 그 바깥 터치(바텀시트,
-      // 헤더 등)는애초에 이 콜백 자체가 안 불린다.
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt: GestureResponderEvent) => {
         setIsInteracting(true);
-
-        // 뷰 픽셀 ↔ 캔버스 좌표 변환에 쓰는 fitScale — 히트테스트뿐 아니라 이번
-        // 제스처 동안의 모든 dx/dy 변환(아래 move·release)에서 재사용한다.
-        // previewSize는 드래그 도중 안 바뀌므로 grant에서 한 번만 계산해 ref에
-        // 담아 두면 충분하다(매 move마다 다시 계산할 필요 없음). 미리보기는
-        // 가이드 on/off와 무관하게 항상 'cover'라(아래 JSX) fit도 그대로 맞춘다 —
-        // 다르면 탭 위치·드래그 이동량이 실제 화면과 어긋난다.
+        dropGestureRef.current.start(evt.nativeEvent.touches.length);
+        setOverHideZone(false);
         const { fitScale, offsetX, offsetY } = computeFitTransform(
-          previewSizeRef.current.width,
-          previewSizeRef.current.height,
-          'cover',
-          SHEET_EXPANDED_HEIGHT + insets.bottom
-        );
+          previewSizeRef.current.width, previewSizeRef.current.height, 'contain');
         gestureFitScaleRef.current = fitScale;
+        const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
+        tapPointRef.current = { x: (touch.locationX - offsetX) / fitScale, y: (touch.locationY - offsetY) / fitScale };
+        textHitRef.current = textHitAt(tapPointRef.current.x, tapPointRef.current.y);
+        // 글자를 직접 짚지 않은 끌기는 선택된 대상을 움직인다(선택된 러닝 데이터를 끌다 경로가 움직이지 않게).
+        // 선택된 것이 없으면 경로 그림 영역 안일 때만 경로 그림을 움직인다.
+        const target = dragTargetFor(textHitRef.current, toolRef.current === 'ink' && selectedInkRef.current ? { kind: 'ink', id: selectedInkRef.current } : selectedTarget(toolRef.current), isOnRoute(tapPointRef.current));
+        dragTargetRef.current = target;
+        gestureMovedRef.current = evt.nativeEvent.touches.length > 1;
 
-        // 탭 지점(뷰 픽셀) → 캔버스 좌표로 역변환해 각인 영역 히트테스트.
-        const run = selectedRunRef.current;
-        const bounds = run ? computeStampBounds(run, stampConfigRef.current) : null;
-        let isStamp = false;
-        if (bounds) {
-          const touch = evt.nativeEvent.touches[0] ?? evt.nativeEvent;
-          const canvasX = (touch.locationX - offsetX) / fitScale;
-          const canvasY = (touch.locationY - offsetY) / fitScale;
-          isStamp =
-            canvasX >= bounds.x &&
-            canvasX <= bounds.x + bounds.width &&
-            canvasY >= bounds.y &&
-            canvasY <= bounds.y + bounds.height;
-        }
-        editTargetRef.current = isStamp ? 'stamp' : 'drawing';
-        setStampTargeted(isStamp);
-
-        const touches = evt.nativeEvent.touches;
-        if (isStamp) {
-          baseStampPosition.current = stampConfigRef.current.position;
-          baseStampScale.current = stampConfigRef.current.scale ?? 1;
-          // 방어적 초기화 — 정상적으로는 이전 드래그의 release에서 이미
-          // 0으로 돌아가 있지만, 제스처가 중간에 끊기는 등의 경우를 대비한다.
-          stampDragX.setValue(0);
-          stampDragY.setValue(0);
+        const config = stampConfigRef.current;
+        if (!target) {
+          // 빈 곳. 끌어도 아무것도 움직이지 않고, 탭만 받는다.
+        } else if (target.kind === 'ink') {
+          const stroke = inkRef.current.find(s => s.id === target.id);
+          baseInk.current = stroke ?? null;
+          inkPinchRatio.current = 1;
+          if (stroke?.id === selectedInkRef.current || evt.nativeEvent.touches.length > 1) {
+            inkX.set(stroke?.offset?.x ?? 0); inkY.set(stroke?.offset?.y ?? 0); inkScaleShared.set(stroke?.scale ?? 1);
+          }
+        } else if (target.kind === 'stamp') {
+          baseStampPosition.current = config.position;
+          baseStampScale.current = config.scale ?? 1;
+          stampPositionX.set(config.position.x);
+          stampPositionY.set(config.position.y);
+        } else if (target.kind === 'caption') {
+          const caption = captionItems(config).find((c) => c.id === target.id);
+          baseCaptionPosition.current = caption?.offset ?? { x: 0, y: 0 };
+          baseCaptionScale.current = caption?.scale ?? 1;
+          captionPositionX.set(baseCaptionPosition.current.x);
+          captionPositionY.set(baseCaptionPosition.current.y);
         } else {
           baseTransform.current = transformRef.current;
-          // 방어적 동기화 — 보통은 위 useEffect가 이미 맞춰 놨겠지만, 만에 하나
-          // 어긋나 있어도 이번 드래그는 항상 최신 커밋 값에서 시작하게 한다.
           transformXShared.value = baseTransform.current.x;
           transformYShared.value = baseTransform.current.y;
           transformScaleShared.value = baseTransform.current.scale;
           transformRotationShared.value = baseTransform.current.rotationDeg;
         }
-        if (touches.length === 2) {
-          gestureStart.current = {
-            distance: touchDistance(touches[0], touches[1]),
-            angle: touchAngleDeg(touches[0], touches[1]),
-          };
-        } else {
-          gestureStart.current = null;
-        }
+        const touches = evt.nativeEvent.touches;
+        gestureStart.current = touches.length === 2
+          ? { distance: touchDistance(touches[0], touches[1]), angle: touchAngleDeg(touches[0], touches[1]) }
+          : null;
+        if (gestureMovedRef.current && target) setDragging(target);
       },
       onPanResponderMove: (evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const touches = evt.nativeEvent.touches;
-        if (editTargetRef.current === 'stamp') {
-          // 각인은 끌기(위치) + 두 손가락 핀치(크기)만 반응한다 — 회전은 없음.
+        if (!gestureMovedRef.current && (touches.length > 1 || Math.abs(gestureState.dx) >= 6 || Math.abs(gestureState.dy) >= 6)) {
+          gestureMovedRef.current = true;
+          if (dragTargetRef.current) setDragging(dragTargetRef.current);
+        }
+        const target = dragTargetRef.current;
+        if (!gestureMovedRef.current || !target) return;
+        const fitScale = gestureFitScaleRef.current;
+        if (touches.length === 2 && !gestureStart.current) {
+          gestureStart.current = { distance: touchDistance(touches[0], touches[1]), angle: touchAngleDeg(touches[0], touches[1]) };
+        }
+        const scaleDelta = touches.length === 2 && gestureStart.current
+          ? touchDistance(touches[0], touches[1]) / (gestureStart.current.distance || 1) : 1;
+
+        if (target.kind === 'ink') {
+          const base = baseInk.current;
+          if (!base) return;
+          if (touches.length === 2) inkPinchRatio.current = scaleDelta;
+          const next = constrainHandStroke(base, { x: (base.offset?.x ?? 0) + gestureState.dx / fitScale,
+            y: (base.offset?.y ?? 0) + gestureState.dy / fitScale }, (base.scale ?? 1) * inkPinchRatio.current);
+          inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+          const wasOver = dropGestureRef.current.overZone;
+          const over = dropGestureRef.current.move(touches.length, !!touches[0] && isOverHideZone(touches[0]));
+          if (wasOver !== over) { setOverHideZone(over); if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); }
+          return;
+        }
+        if (target.kind === 'stamp' || target.kind === 'caption') {
+          const isStamp = target.kind === 'stamp';
+          const base = isStamp ? baseStampPosition.current : baseCaptionPosition.current;
+          (isStamp ? stampPositionX : captionPositionX).set(base.x + gestureState.dx / fitScale);
+          (isStamp ? stampPositionY : captionPositionY).set(base.y + gestureState.dy / fitScale);
+          // 한 번 두 손가락을 썼으면 이번 조작이 끝날 때까지 숨기기·지우기를 막는다.
+          // 한 손가락을 먼저 떼도 아래 영역의 강조와 진동이 다시 켜지지 않는다.
+          const wasOver = dropGestureRef.current.overZone;
+          const over = dropGestureRef.current.move(touches.length, !!touches[0] && isOverHideZone(touches[0]));
+          if (over !== wasOver) {
+            setOverHideZone(over);
+            if (over) void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          }
           if (touches.length === 2) {
-            if (!gestureStart.current) {
-              gestureStart.current = {
-                distance: touchDistance(touches[0], touches[1]),
-                angle: touchAngleDeg(touches[0], touches[1]),
-              };
-              // 한 손가락 드래그 중 두 번째 손가락이 닿아 핀치로 넘어가는 순간 —
-              // 그 지점부터는 위치도 stampConfig(RAF 스로틀) 쪽이 다시 맡으므로,
-              // 네이티브 오프셋(stampDragX/Y)은 지금 값만큼 남아있으면 이중으로
-              // 더해져 튄다. 0으로 되돌린다.
-              stampDragX.setValue(0);
-              stampDragY.setValue(0);
-            }
-            const newDistance = touchDistance(touches[0], touches[1]);
-            const scaleDelta = newDistance / (gestureStart.current.distance || 1);
-            // 한 손가락 release 커밋과 같은 이유로 dx/dy(뷰 픽셀)를 fitScale로
-            // 나눠 캔버스 좌표로 바꾼다 — 안 그러면 핀치 중 위치도 짧게 움직인다.
-            scheduleStampConfigUpdate({
-              ...stampConfigRef.current,
-              position: {
-                x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
-                y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
-              },
-              scale: Math.min(3, Math.max(0.5, baseStampScale.current * scaleDelta)),
-            });
-          } else {
-            // 한 손가락 드래그 — stampConfig(React state)를 안 건드리고 이
-            // Animated.Value에 직접 쓴다. RoutePreview가 각인 Svg 전체를 이
-            // 값만큼 오프셋하므로(stampDragOffset) 리렌더 없이 네이티브 쪽에서
-            // 움직인다.
-            stampDragX.setValue(gestureState.dx);
-            stampDragY.setValue(gestureState.dy);
+            const config = stampConfigRef.current;
+            const scale = clampScale((isStamp ? baseStampScale.current : baseCaptionScale.current) * scaleDelta);
+            scheduleStampConfigUpdate(target.kind === 'caption'
+              ? { ...config, captions: captionItems(config).map((c) => c.id === target.id ? { ...c, scale } : c) }
+              : { ...config, scale });
           }
           return;
         }
-        if (touches.length === 2) {
-          if (!gestureStart.current) {
-            gestureStart.current = {
-              distance: touchDistance(touches[0], touches[1]),
-              angle: touchAngleDeg(touches[0], touches[1]),
-            };
-          }
-          const newDistance = touchDistance(touches[0], touches[1]);
-          const newAngle = touchAngleDeg(touches[0], touches[1]);
-          const scaleDelta = newDistance / (gestureStart.current.distance || 1);
-          const rotationDelta = newAngle - gestureStart.current.angle;
-          // 각인과 같은 이유(위 grant 주석) — dx/dy는 뷰 픽셀, transform.x/y는
-          // 캔버스 좌표(Skia Group transform이 fitScale 적용 "전" 단계에서 이
-          // 값을 쓴다)라 fitScale로 나눠야 미리보기와 커밋 위치가 일치한다.
-          transformXShared.value = baseTransform.current.x + gestureState.dx / gestureFitScaleRef.current;
-          transformYShared.value = baseTransform.current.y + gestureState.dy / gestureFitScaleRef.current;
+        // dx/dy는 뷰 픽셀, transform.x/y는 캔버스 좌표라 fitScale로 나눠야 미리보기와 커밋 위치가 맞는다.
+        transformXShared.value = baseTransform.current.x + gestureState.dx / fitScale;
+        transformYShared.value = baseTransform.current.y + gestureState.dy / fitScale;
+        if (touches.length === 2 && gestureStart.current) {
           transformScaleShared.value = Math.max(0.3, baseTransform.current.scale * scaleDelta);
-          transformRotationShared.value = baseTransform.current.rotationDeg + rotationDelta;
-        } else {
-          transformXShared.value = baseTransform.current.x + gestureState.dx / gestureFitScaleRef.current;
-          transformYShared.value = baseTransform.current.y + gestureState.dy / gestureFitScaleRef.current;
+          transformRotationShared.value = baseTransform.current.rotationDeg
+            + touchAngleDeg(touches[0], touches[1]) - gestureStart.current.angle;
         }
       },
-      onPanResponderRelease: (_evt, gestureState) => {
-        setIsInteracting(false);
-        setStampTargeted(false);
-        // gestureStart가 non-null이면 이 제스처 동안 핀치(두 손가락)로 넘어간
-        // 적이 있었다는 뜻 — 아래 reset 전에 먼저 읽어 둔다.
-        const wasStampPinching = gestureStart.current !== null;
-        gestureStart.current = null;
-        if (editTargetRef.current === 'stamp') {
-          if (wasStampPinching) {
-            // 핀치(위치+크기) 경로 — scheduleStampConfigUpdate가 이미 최신값을
-            // stampConfigRef에 반영해 두고 있다. 마지막으로 예약된(아직 화면엔 안
-            // 반영된) 값까지 확실히 반영한 다음 커밋 — 안 그러면 손을 뗀 마지막
-            // 프레임 분의 미세한 변화가 씹힐 수 있다.
-            flushPendingStampConfig();
-            commitStampConfig(stampConfigRef.current);
-          } else {
-            // 한 손가락 드래그 — stampConfig(state)는 이번 드래그 동안 안
-            // 건드렸다(stampDragX/Y로만 네이티브에서 움직였다). 최종 위치를 여기서
-            // 계산해 커밋하고, 오프셋은 0으로 되돌린다(안 그러면 다음 렌더에서
-            // 실제 위치 + 남은 오프셋이 겹쳐 보인다).
-            //
-            // 실기기 피드백(2026-09-02): "놓은 자리에 정확히 안 놓인다" — 드래그
-            // 중 미리보기는 gestureState.dx/dy(뷰 픽셀)를 그대로 오프셋으로 썼는데,
-            // stampConfig.position은 캔버스 좌표(1080x1920)라 단위가 다르다. 뷰
-            // 픽셀을 그대로 더하면 화면이 캔버스보다 작은 만큼(fitScale<1) 실제
-            // 캔버스 상 이동량보다 훨씬 작게 반영돼 미리보기보다 짧게 움직인
-            // 자리에 놓였다 — 탭 히트테스트(위 grant)와 같은 fitScale(이번 제스처
-            // 시작 시점에 계산해 둔 값)로 나눠 캔버스 좌표로 변환해야 미리보기와
-            // 정확히 같은 자리에 커밋된다.
-            const finalPosition = {
-              x: baseStampPosition.current.x + gestureState.dx / gestureFitScaleRef.current,
-              y: baseStampPosition.current.y + gestureState.dy / gestureFitScaleRef.current,
-            };
-            const next = { ...stampConfigRef.current, position: finalPosition };
-            updateStampConfig(next);
-            commitStampConfig(next);
-            // 실기기 피드백(2026-09-02): "놓고 나서 원래 자리로 갔다가 다시 놓은
-            // 자리로 이동한다" — updateStampConfig(React state)는 렌더를 거쳐야
-            // 새 position이 각인 Svg에 실제로 반영되는데, 바로 다음 줄에서 오프셋을
-            // 0으로 되돌리면(Animated.Value, 네이티브로 즉시 반영) 그게 더 빠르다.
-            // 그 사이 한두 프레임 동안 "오프셋 0 + 아직 안 바뀐 옛 position" =
-            // 드래그 시작 전 자리로 보였다가, 그다음 프레임에 새 position이 반영돼
-            // 다시 최종 자리로 튀어 보인다. 오프셋 리셋을 다음 프레임 이후로
-            // 미뤄서(requestAnimationFrame 두 번 — 한 번만으로는 커밋이 실제
-            // 페인트까지 안 끝난 기기가 있을 수 있어 여유를 둠) state 쪽 렌더가
-            // 먼저 자리 잡은 뒤에 오프셋을 지운다.
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                stampDragX.setValue(0);
-                stampDragY.setValue(0);
-              });
-            });
-          }
-        } else {
-          // 드래그 중엔 transform(state)을 안 건드렸다 — SharedValue에 마지막으로
-          // 쓰인 값(위 onPanResponderMove)이 곧 최종값이니 그걸 그대로 커밋한다.
-          const finalTransform: RouteTransform = {
-            x: transformXShared.value,
-            y: transformYShared.value,
-            scale: transformScaleShared.value,
-            rotationDeg: transformRotationShared.value,
-          };
-          updateTransform(finalTransform);
-          commitTransform(finalTransform);
+      onPanResponderRelease: () => {
+        const wasPinching = gestureStart.current !== null;
+        const over = dropGestureRef.current.finish();
+        endGesture();
+        const target = dragTargetRef.current;
+        if (!gestureMovedRef.current && !wasPinching) {
+          handleTap();
+          return;
         }
-        // 실기기 피드백(2026-09-02): 바텀시트 바깥(미리보기) 아무 데나 누르면
-        // 시트를 접어달라는 요청 — 실제로 끌거나 확대·회전한 게 아니라 그냥
-        // 짧게 탭한 경우에만(움직인 거리가 거의 0) 반응한다. 이 responder는
-        // previewArea에만 붙어 있어서(§ 아래 JSX) "시트 바깥"의 뜻 그대로다.
-        const isTap = Math.abs(gestureState.dx) < 6 && Math.abs(gestureState.dy) < 6;
-        if (isTap && sheetExpandedRef.current) {
-          animateSheetTo(false);
-        }
+        if (target) commitGesture(target, over);
+      },
+      onPanResponderTerminate: () => {
+        dropGestureRef.current.finish(true);
+        endGesture();
+        if (gestureMovedRef.current && dragTargetRef.current) commitGesture(dragTargetRef.current, false);
       },
     })
   ).current;
 
-  // 아래 컨트롤 패널(바텀시트) — 손잡이를 드래그해서 접었다 펼 수 있다. 접으면
-  // 미리보기가 화면 거의 전체로 보인다. 손잡이 영역에만 반응해서 슬라이더·버튼
-  // 터치와 겹치지 않는다.
-  // PanResponder는 useRef로 한 번만 만들어져서 그 콜백들이 첫 렌더의 클로저를
-  // 계속 들고 있다 — useState로 두면 갱신이 반영 안 되는 stale closure가 되므로 ref로 둔다.
-  const sheetExpandedRef = useRef(true);
-  // 실기기 피드백(2026-09-02): "손잡이만 남기고 살짝 접기"로는 편집 화면을
-  // 제대로 볼 수 없다 — 아예 화면 밖으로 완전히 숨겼다가 버튼으로 다시 부를 수
-  // 있게 해달라는 요청. sheetExpanded는 그 "완전히 숨겨졌나"를 JSX(숨김 버튼
-  // 표시 여부)에서 읽으려고 ref와 같이 둔 state 버전이다.
-  const [sheetExpanded, setSheetExpanded] = useState(true);
-  const sheetTranslateY = useRef(new Animated.Value(0)).current;
-  const sheetDragStart = useRef(0);
-  // 실기기 피드백(2026-09-02): 각인 시트의 "한 줄 문구" 입력창에 키보드가 뜨면
-  // 입력창을 그대로 가려서 뭘 쓰는지 안 보였다 — 키보드 높이만큼 시트를 더
-  // 밀어 올린다(끌기로 접고 펴는 sheetTranslateY와는 별개 축, 최종 위치는
-  // 두 값을 합쳐서 계산). keyboardWillShow/Hide(iOS 전용)는 키보드 자체
-  // 애니메이션 시작 전에 미리 알려줘서, 같은 duration으로 동시에 움직이면
-  // 자연스럽게 같이 올라가는 느낌이 난다. keyboardDidShow/Hide는 키보드가
-  // 다 뜬 다음에야 불려서 한 박자 늦게 따라가는 느낌이 났을 것이다.
-  const keyboardOffset = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const animateKeyboard = (e: KeyboardEvent, toValue: number) => {
-      Animated.timing(keyboardOffset, {
-        toValue,
-        duration: e.duration || 250,
-        useNativeDriver: true,
-      }).start();
-    };
-    const showSub = Keyboard.addListener('keyboardWillShow', (e) => animateKeyboard(e, e.endCoordinates.height));
-    const hideSub = Keyboard.addListener('keyboardWillHide', (e) => animateKeyboard(e, 0));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [keyboardOffset]);
-  // 시트를 끌 때도 미리보기 애니메이션을 멈춘다 — 안 멈추면 계속 도는 Skia 글로우
-  // 렌더링(RAF)과 시트 드래그의 JS 스레드 작업이 같이 돌면서 드래그가 버벅였다.
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
-  // 접었을 때 시트 전체(손잡이 포함)가 화면 밖으로 완전히 나가도록 내린다 —
-  // 예전엔 손잡이만 남기고 살짝 접었는데(SHEET_PEEK_HEIGHT), 그래도 편집
-  // 화면을 가린다는 피드백으로 아예 다 감추는 쪽으로 바꿨다. 시트의 실제
-  // 렌더 높이는 내용(각인 프리셋 8개가 줄바꿈되는 등)에 따라 달라져서
-  // SHEET_EXPANDED_HEIGHT는 못 믿는다 — 화면에서 이 시트보다 확실히 클
-  // 값(여기서는 previewArea 높이 전체 + 여유)만큼 내려서 내용이 얼마나
-  // 길어지든 항상 화면 밖으로 나가게 한다. insets는 화면이 떠 있는 동안 안
-  // 바뀌므로 여기서 한 번만 읽어도 안전하다(sheetPanResponder도 useRef라
-  // 마운트 시점 클로저를 쓴다).
-  const sheetCollapseDistance = Math.max(SHEET_EXPANDED_HEIGHT, previewSize.height) + insets.bottom + 60;
+  function endGesture() {
+    setIsInteracting(false);
+    setDragging(null);
+    gestureStart.current = null;
+    setOverHideZone(false);
+  }
+  function commitGesture(target: DragTarget, overDropZone: boolean) {
+    if (target.kind === 'ink') {
+      const stroke = baseInk.current;
+      if (overDropZone) deleteInk(target.id);
+      else if (stroke) {
+        const next = constrainHandStroke(stroke, { x: inkX.value, y: inkY.value }, inkScaleShared.value);
+        commitInk(inkRef.current.map(s => s.id === target.id ? next : s));
+        if (toolRef.current === 'ink') selectInk(target.id);
+      }
+    } else if (target.kind === 'stamp') {
+      if (overDropZone) hideStamp();
+      else finishStampGesture();
+    } else if (target.kind === 'caption') {
+      if (overDropZone) deleteCaption(target.id);
+      else finishCaptionGesture(target.id);
+    } else {
+      const finalTransform: RouteTransform = {
+        x: transformXShared.value,
+        y: transformYShared.value,
+        scale: transformScaleShared.value,
+        rotationDeg: transformRotationShared.value,
+      };
+      updateTransform(finalTransform);
+      commitTransform(finalTransform);
+    }
+  }
 
-  const animateSheetTo = (expanded: boolean) => {
-    sheetExpandedRef.current = expanded;
-    setSheetExpanded(expanded);
-    Animated.spring(sheetTranslateY, {
-      toValue: expanded ? 0 : sheetCollapseDistance,
-      useNativeDriver: true,
-      bounciness: 4,
-    }).start();
+  // §4-2: 시트를 열면 왼쪽에 크기 슬라이더가 나온다. 핀치와 같은 값을 쓴다.
+  // 문구 크기는 문구를 쓰는 화면의 슬라이더에서 바꾼다(caption-editor.tsx).
+  const sizeTarget: SheetTarget | null = selectedTarget(tool);
+  const selectedInk = (draft.handDrawing ?? EMPTY_HAND_DRAWING).find(s => s.id === selectedInkId);
+  const inkToolOpen = tool === 'ink' && !!selectedInk;
+  const committedSize = inkToolOpen ? Math.round((selectedInk.scale ?? 1) * 100) : sizeTarget === 'route' ? Math.round(transform.scale * 100) : Math.round((stampConfig.scale ?? 1) * 100);
+  // 손잡이는 슬라이더가 바로 그린다. 여기서는 경로 그림이면 SharedValue만 바꿔 다시 그리지 않는다.
+  const handleSizeChange = (percent: number) => {
+    if (inkToolOpen) { inkScaleShared.set(clampScale(percent / 100)); return; }
+    if (!sizeTarget) return;
+    const scale = percent / 100;
+    if (sizeTarget === 'route') transformScaleShared.value = scale;
+    else scheduleStampConfigUpdate({ ...stampConfigRef.current, scale });
+  };
+  const handleSizeCommit = (percent: number) => {
+    setIsInteracting(false);
+    const scale = percent / 100;
+    if (inkToolOpen && selectedInk) {
+      const next = constrainHandStroke(selectedInk, { x: inkX.value, y: inkY.value }, scale);
+      inkX.set(next.offset!.x); inkY.set(next.offset!.y); inkScaleShared.set(next.scale!);
+      commitInk(inkRef.current.map(s => s.id === next.id ? next : s));
+    } else if (sizeTarget === 'route') {
+      const next = { ...transformRef.current, scale };
+      updateTransform(next);
+      commitTransform(next);
+    } else if (sizeTarget) {
+      flushPendingStampConfig();
+      commitStamp({ ...stampConfigRef.current, scale });
+    }
   };
 
-  const sheetPanResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 2,
-      onPanResponderGrant: () => {
-        setIsSheetDragging(true);
-        sheetTranslateY.stopAnimation((value) => {
-          sheetDragStart.current = value;
-        });
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const next = sheetDragStart.current + gestureState.dy;
-        sheetTranslateY.setValue(Math.max(0, Math.min(sheetCollapseDistance, next)));
-      },
-      onPanResponderRelease: (_evt, gestureState) => {
-        setIsSheetDragging(false);
-        // 40px 이상 내리면 접고, 40px 이상 올리면 펼치고, 그 사이는 원래 상태로 되돌린다.
-        const dy = gestureState.dy;
-        if (dy > 40) animateSheetTo(false);
-        else if (dy < -40) animateSheetTo(true);
-        else animateSheetTo(sheetExpandedRef.current);
-      },
-    })
-  ).current;
-
-  // 홈과 보관함 FRD §3-1: "이어서 만들기"에 올라오는 건 마지막으로 편집한 것.
-  // 이 화면에 들어와 있는 것 자체가 "지금 이걸 만지고 있다"는 뜻이라, 진입 시점과
-  // 프리셋·변형값이 바뀔 때마다 초안을 저장해둔다. 완성되면 share.tsx에서 지운다.
-  useEffect(() => {
-    if (!draft.selectedRun || !draft.track || !draft.backgroundImagePath) return;
-    saveDraft({
+  // 홈과 보관함 FRD §3-1: "이어서 만들기"에 올라오는 건 마지막으로 편집한 것. 값이 바뀔 때마다
+  // 초안을 저장한다. 완성되면 share.tsx에서 지운다. 그래서 나가기는 확인 없이 홈으로 간다(§1).
+  const persistedDraft = useMemo(() => {
+    if (!draft.selectedRun || !draft.track || !draft.backgroundImagePath) return null;
+    return {
       run: draft.selectedRun,
       track: draft.track,
       backgroundImagePath: draft.backgroundImagePath,
+      backgroundPhoto: draft.backgroundPhoto,
       preset: draft.preset,
       transform: draft.transform,
+      routeStyle: draft.routeStyle,
+      handDrawing: draft.handDrawing,
       smoothOptions: draft.smoothOptions,
-      stampConfig: draft.stampConfig,
-    });
+      stampConfig: captionEditing.stampForSave,
+    };
   }, [
     draft.selectedRun,
     draft.track,
     draft.backgroundImagePath,
+    draft.backgroundPhoto,
     draft.preset,
     draft.transform,
+    draft.routeStyle,
+    draft.handDrawing,
     draft.smoothOptions,
-    draft.stampConfig,
+    captionEditing.stampForSave,
   ]);
+  const persistDraft = useDraftAutosave(persistedDraft, isFocused);
 
-  const handleReset = () => {
-    // §4-3: 되돌리는 단위는 드로잉 조작뿐. 프리셋·각인은 그대로 둔다.
-    updateTransform(IDENTITY_TRANSFORM);
-    resetTransform();
+  const commitAll = () => {
+    Keyboard.dismiss();
+    captionEditing.finish();
+    flushPendingSmooth();
+    flushPendingStampConfig();
+    commitTransform(transformRef.current);
+    commitRouteStyle(routeStyleRef.current);
+    commitSmoothOptions(smoothOptionsRef.current);
+    commitStampConfig(stampConfigRef.current);
+    if (persistedDraft) persistDraft({
+      ...persistedDraft,
+      transform: transformRef.current,
+      routeStyle: routeStyleRef.current,
+      smoothOptions: smoothOptionsRef.current,
+      stampConfig: stampConfigRef.current,
+    });
   };
-
-  const handlePresetSelect = (preset: RoutePreset) => {
-    commitPreset(preset);
-    // 실기기 피드백(2026-09-02): 재생이 기본 정지로 바뀐 뒤로, 프리셋을 눌러도
-    // 뭐가 달라지는지(불빛이 달리는지, 구간이 켜지는지) 안 보인다 — 프리셋을
-    // 고르는 그 순간만큼은 한 번 자동으로 재생해서 보여준다(누르면 한
-    // 사이클 후 자동으로 다시 정지, 위 isPlaying 타이머와 동일).
-    setIsPlaying(true);
-  };
-
-  const handleNext = () => {
+  const handleDone = () => {
+    if (isBackgroundPending() || applyingStyleRef.current) return;
+    commitAll();
     router.push('/share');
+  };
+  const handleClose = () => {
+    cancelStyleApply();
+    cancelBackgroundApply();
+    commitAll();
+    if (router.canDismiss()) router.dismissAll();
+    else router.replace('/');
+  };
+  const handleUndo = () => {
+    cancelStyleApply();
+    cancelBackgroundApply();
+    const previous = popHistory();
+    if (!previous) return;
+    Keyboard.dismiss();
+    flushPendingSmooth();
+    flushPendingStampConfig();
+    clearInkSelection();
+    if (toolRef.current === 'ink') closeTool();
+    skipNextChange();
+    // 장소 이름은 들어온 뒤 늦게 채워진다. 그 전 단계로 돌아가도 장소는 남긴다(다시 채우지 않는다).
+    const placeName = stampConfigRef.current.placeName || previous.stampConfig.placeName;
+    const restored = { ...previous, stampConfig: { ...previous.stampConfig, placeName } };
+    updateTransform(restored.transform);
+    updateRouteStyle(normalizeRouteStyle(restored.routeStyle));
+    updateSmoothOptions(restored.smoothOptions);
+    updateStampConfig(migrateLegacyCaption(draft.selectedRun, restored.stampConfig));
+    loadDraft(restored);
+  };
+
+  const handlePresetSelect = (preset: RoutePreset) => commitPreset(preset);
+  const startDrawing = () => { if (isBackgroundPending() || applyingStyleRef.current) return; commitAll(); closeTool(); setDrawing(true); };
+  const handleStyleApply = async (style: MyStyle): Promise<boolean> => {
+    if (applyingStyleRef.current) return false;
+    cancelBackgroundApply();
+    const operation = ++styleOperation.current;
+    applyingStyleRef.current = true;
+    setApplyingStyle(true);
+    try {
+      const bg = DEFAULT_BACKGROUNDS.find(b => b.id === style.backgroundId);
+      const path = bg ? await persistDefaultBackground(bg) : undefined;
+      if (operation !== styleOperation.current) return false;
+      const current = { ...snapshotRef.current, transform: transformRef.current, routeStyle: routeStyleRef.current,
+        smoothOptions: smoothOptionsRef.current, stampConfig: stampConfigRef.current };
+      const next = applyMyStyle(current, style, path);
+      updateRouteStyle(normalizeRouteStyle(next.routeStyle));
+      updateSmoothOptions(next.smoothOptions);
+      updateStampConfig(next.stampConfig);
+      loadDraft(next);
+      return true;
+    } catch (error) { if (operation === styleOperation.current) throw error; return false; }
+    finally { if (operation === styleOperation.current) { applyingStyleRef.current = false; setApplyingStyle(false); } }
+  };
+
+
+  // §1: 갤러리·카메라는 배경 선택 화면에서 구도를 잡고 돌아온다.
+  const openBackgroundPicker = (pick: 'gallery' | 'camera') => {
+    cancelBackgroundApply();
+    closeTool();
+    router.push({ pathname: '/background-selection', params: { returnTo: 'edit', pick } });
   };
 
   const handlePreviewLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
-    previewSizeRef.current = { width, height };
-    setPreviewSize({ width, height });
+    const next = fitPortraitPreview(width, height);
+    previewSizeRef.current = next;
+    setPreviewSize(next);
   };
-
-  const smoothLabel = (v: number) => (v === 0 ? '없음' : `${v} %`);
-  const cornerLabel = (v: number) => (v === 0 ? '각지게' : `${v} %`);
 
   if (!draft.track || !draft.backgroundImagePath || !draft.selectedRun) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.root}>
         <ScreenHeader title="편집" />
         <View style={styles.center}>
           <Text style={styles.hint}>기록이나 배경이 아직 안 골라졌어요.</Text>
@@ -644,10 +924,7 @@ export default function EditScreen() {
   }
 
   const run = draft.selectedRun;
-  const stampItems = STAMP_ITEMS.filter(
-    (item) => item !== 'heartRate' || run.averageHeartRate !== undefined
-  );
-  // 시안 S6: 칩에 항목명 + 실제 값을 함께 보여준다.
+  const stampItems = STAMP_ITEMS.filter((item) => item !== 'heartRate' || run.averageHeartRate !== undefined);
   const stampChipLabel = (item: StampItem): string => {
     switch (item) {
       case 'distance':
@@ -664,451 +941,367 @@ export default function EditScreen() {
         return `심박 ${run.averageHeartRate ? formatHeartRate(run.averageHeartRate) : ''}`;
     }
   };
-
-  // 끌기로 접고 펴는 위치(sheetTranslateY, 아래로 갈수록 +)에서 키보드가 뜬
-  // 만큼(keyboardOffset)을 뺀다 — 두 값이 각자 애니메이션되다가 최종
-  // translateY에서 합쳐진다.
-  const sheetY = Animated.subtract(sheetTranslateY, keyboardOffset);
-
+  const showChrome = dragging === null && !editingCaption && !drawing;
+  const selectionFor = (target: SheetTarget) => dragging ? dragging.kind === target : tool === target;
+  const sizeLabel = inkToolOpen ? '손그림 크기' : sizeTarget === 'route' ? '경로 그림 크기' : '러닝 데이터 크기';
+  const activeCaptionId = dragging?.kind === 'caption' ? dragging.id : null;
+  const dropZone = dragging ? dropZoneFor(dragging) : null;
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <ScreenHeader
-        title="편집"
-        right={
-          // 배경 선택 화면과 같은 이유(2026-09-02) — Text onPress 대신 Pressable
-          // hitSlop으로 탭 영역을 넓힌다.
-          <Pressable onPress={handleNext} hitSlop={12}>
-            <Text style={styles.headerAction}>완료</Text>
-          </Pressable>
-        }
-      />
+    <View style={styles.root}>
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        <View style={styles.stage} onLayout={handlePreviewLayout}>
+          {previewSize.width > 0 && (
+            <View style={[styles.previewFrame, previewSize]}>
+              {isVideoBackground(draft.backgroundPhoto)
+                ? <CroppedBackgroundVideo video={draft.backgroundPhoto} width={previewSize.width} height={previewSize.height} />
+                : <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />}
+              <View {...panResponder.panHandlers} style={StyleSheet.absoluteFill} pointerEvents={drawing ? 'none' : 'auto'}
+                accessibilityLabel="결과물 미리보기. 끌어서 옮기고 두 손가락으로 크기를 바꿔요">
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  <RoutePreview
+                    points={draft.track.coordinates}
+                    preset={draft.preset}
+                    transform={transform}
+                    routeStyle={routeColorPreview === null ? routeStyle : { ...routeStyle, color: routeColorPreview as `#${string}` }}
+                    handDrawing={drawing && drawingPreview ? drawingPreview.strokes : inkWidthPreview !== null ? (draft.handDrawing ?? EMPTY_HAND_DRAWING).map(s => s.id === selectedInkId ? { ...s, width: inkWidthPreview } : s) : draft.handDrawing}
+                    activeHandDrawing={drawing ? drawingPreview?.active : undefined}
+                    selectedHandStrokeId={dragging?.kind === 'ink' ? dragging.id : selectedInkId}
+                    handStrokeEditing={(dragging?.kind === 'ink' || inkToolOpen) ? { id: dragging?.kind === 'ink' ? dragging.id : selectedInkId!, x: inkX, y: inkY, scale: inkScaleShared } : undefined}
+                    transformShared={{
+                      x: transformXShared,
+                      y: transformYShared,
+                      scale: transformScaleShared,
+                      rotationDeg: transformRotationShared,
+                    }}
+                    smoothOptions={smoothOptions}
+                    run={draft.selectedRun}
+                    stampConfig={stampConfig}
+                    isInteracting={isInteracting || drawing}
+                    viewWidth={previewSize.width}
+                    viewHeight={previewSize.height}
+                    fit="contain"
+                    drawingSelected={selectionFor('route')}
+                    stampSelected={selectionFor('stamp') && !stampConfig.hidden}
+                    activeCaptionId={activeCaptionId}
+                    hiddenCaptionId={editingCaption && !editingCaption.isNew ? editingCaption.id : null}
+                    playing={LOOP_PREVIEW}
+                    stampPositionShared={{ x: stampPositionX, y: stampPositionY }}
+                    captionPositionShared={{ x: captionPositionX, y: captionPositionY }}
+                  />
+                </View>
+              </View>
 
-      {/* 미리보기 — 화면에서 헤더·바텀시트를 뺀 나머지 전부를 차지한다. 이 뷰 자체가
-          제스처 캡처 영역의 경계라, 시트나 헤더로 터치가 새 나갈 일이 없다. */}
-      <View style={styles.previewArea} onLayout={handlePreviewLayout}>
-        {previewSize.width > 0 && (
-          <>
-            <Image source={{ uri: draft.backgroundImagePath }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-            <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, isInteracting && styles.previewActive]}>
-              <RoutePreview
-                points={draft.track.coordinates}
-                preset={draft.preset}
-                transform={transform}
-                transformShared={{
-                  x: transformXShared,
-                  y: transformYShared,
-                  scale: transformScaleShared,
-                  rotationDeg: transformRotationShared,
-                }}
-                smoothOptions={smoothOptions}
-                run={draft.selectedRun}
-                stampConfig={stampConfig}
-                showSafeAreaGuide={showSafeGuide}
-                isInteracting={isInteracting || isSheetDragging}
-                viewWidth={previewSize.width}
-                viewHeight={previewSize.height}
-                // 실기기 피드백(2026-09-07): "편집 화면이랑 갤러리 저장 후가 완전
-                // 다르다" — 인스타그램 공유가 아직 없어서(4단계 예정) 지금 v0의
-                // 유일한 결과물 경로는 "기기에 저장"인데, cover-safe는 인스타에
-                // 올렸을 때 UI에 가려질 안전 영역 밖(위·아래 각 17%)을 편집
-                // 화면에서 아예 안 보여준다 — 정작 저장된 파일(사진 앱에서 보면
-                // 인스타 UI가 없으니)에는 그 부분이 그대로 다 나오니, 편집 중
-                // 본 것과 저장 후 본 것이 서로 다른 크롭으로 보였다. 인스타 공유가
-                // 실제로 붙기 전까지는 'cover'(캔버스 전체, 화면에 맞춰 잘라내되
-                // 안전 영역 같은 임의 여백은 없음)로 맞춰 저장 결과와 일치시킨다.
-                // "인스타 스토리 영역" 버튼은 그대로 남겨 인스타에 올렸을 때
-                // 어떻게 잘릴지 미리 보고 싶을 때만 확인하게 한다.
-                //
-                // 실기기 피드백(2026-09-02): 가이드 on/off로 fit을 바꿨더니(이전엔
-                // 'cover'↔'cover-safe' 전환) 그때마다 경로·각인까지 화면에서 훅
-                // 움직여 보였다("기존 배치가 내려간다") — 미리보기는 가이드 상태와
-                // 무관하게 항상 같은 fit(지금은 'cover')으로 고정한다. 가이드
-                // 자체(아바타·닫기·답장창)는 route-preview.tsx 안에서 이 fit과
-                // 별개의, 화면 전체 기준 고정 좌표로 그린다(아래 showSafeAreaGuide
-                // 참고) — 그래야 미리보기 크롭과 무관하게 항상 같은 자리에 뜬다.
-                fit="cover"
-                // previewArea가 flex:1이라 바텀시트(펼친 상태 기준, 접으면 더
-                // 보이니 안전한 쪽으로) 만큼까지 포함해서 높이가 잡힌다 — 그만큼
-                // 빼야 각인이 시트 뒤로 밀려 들어가지 않는다.
-                bottomInset={SHEET_EXPANDED_HEIGHT + insets.bottom}
-                stampSelected={stampTargeted}
-                playing={isPlaying}
-                stampDragOffset={{ x: stampDragX, y: stampDragY }}
-              />
+              {drawing && <HandDrawingEditor initial={draft.handDrawing ?? EMPTY_HAND_DRAWING} canvasSize={previewSize}
+                onPreviewChange={setDrawingPreview} onChange={commitHandDrawing}
+                onDone={() => { setDrawing(false); setDrawingPreview(null); }} />}
+
+              {showChrome && inkToolOpen && selectedInk && <View style={styles.inkHeader}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="손그림 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <HandStrokeBrushes brush={selectedInk.brush} onChange={brush => patchInk({ brush })} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="손그림 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && tool === 'route' && <View style={styles.inkHeader} testID="route-preset-toolbar">
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="경로 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <View style={styles.routePresetRow}>
+                  {PRESETS.map(p => {
+                    const selected = draft.preset === p.id;
+                    return <Pressable key={p.id} onPress={() => handlePresetSelect(p.id)}
+                      accessibilityRole="button" accessibilityLabel={`경로 프리셋 ${p.label}`} accessibilityState={{ selected }}
+                      style={[styles.routePreset, selected && styles.presetChipOn]}>
+                      <SymbolView name={p.symbol} size={17} tintColor={selected ? Colors.accentText : Colors.text} />
+                      <Text style={[styles.routePresetLabel, selected && styles.presetChipTextOn]}>{p.shortLabel}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="경로 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && tool === 'stamp' && <View style={[styles.inkHeader, styles.stampHeader]}>
+                <Pressable onPress={handleUndo} disabled={history.length === 0} style={[styles.roundButton, !history.length && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 되돌리기" accessibilityState={{ disabled: !history.length }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <StampPresetSelector value={stampConfig.layout ?? 'row'} onChange={handleLayoutSelect} />
+                <Pressable onPress={closeTool} style={styles.inkDone} accessibilityRole="button" accessibilityLabel="러닝 데이터 편집 완료">
+                  <Text style={styles.inkDoneText}>완료</Text>
+                </Pressable>
+              </View>}
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.topLeft} pointerEvents="box-none">
+                <Pressable onPress={handleClose} style={styles.roundButton} accessibilityRole="button" accessibilityLabel="편집 나가기">
+                  <SymbolView name="xmark" size={15} tintColor={Colors.text} />
+                </Pressable>
+                <Pressable onPress={handleUndo} disabled={history.length === 0}
+                  style={[styles.roundButton, history.length === 0 && styles.disabled]}
+                  accessibilityRole="button" accessibilityLabel="되돌리기" accessibilityState={{ disabled: history.length === 0 }}>
+                  <SymbolView name="arrow.counterclockwise" size={15} tintColor={Colors.text} />
+                </Pressable>
+              </View>}
+
+              {showChrome && !inkToolOpen && tool !== 'route' && tool !== 'stamp' && <View style={styles.toolRail} pointerEvents="box-none">
+                {TOOLS.map((t) => {
+                  const on = tool === t.id;
+                  return (
+                    <Pressable key={t.id} onPress={() => t.id === 'caption' ? startNewCaption() : t.id === 'draw' ? startDrawing() : on ? closeTool() : openTool(t.id)}
+                      style={styles.toolButton}
+                      accessibilityRole="button" accessibilityLabel={t.label} accessibilityState={{ selected: on }}>
+                      <Text style={styles.toolLabel}>{t.label}</Text>
+                      <View style={[styles.toolIcon, on && styles.toolIconOn]}>
+                        <SymbolView name={t.symbol} size={16} tintColor={on ? Colors.accentText : Colors.text} />
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>}
+
+              {(sizeTarget || inkToolOpen) && <View style={styles.sizeSlider}>
+                <VerticalSlider value={committedSize} onSlidingStart={handleSlidingStart}
+                  minimumValue={SIZE_MIN} maximumValue={SIZE_MAX}
+                  accessibilityLabel={sizeLabel} onChange={handleSizeChange} onSlidingComplete={handleSizeCommit} />
+              </View>}
             </View>
-            {/* §7-1: 인스타 스토리에서 안 가려지는 영역 미리 보기. 기본 숨김, 눌러서 확인. */}
-            <Pressable
-              onPress={() => setShowSafeGuide((v) => !v)}
-              style={[styles.guideToggle, showSafeGuide && styles.guideToggleOn]}>
-              <Text style={showSafeGuide ? styles.guideToggleTextOn : styles.guideToggleText}>인스타 스토리 영역</Text>
+          )}
+        </View>
+        <View style={styles.bottomBar}>
+          {isSampleRun(run) && <Text style={{ color: Colors.textMuted, fontFamily: Fonts.sans, fontSize: 12, marginRight: 'auto' }}>샘플 기록</Text>}
+          {/* 끄는 동안에는 이 자리에 숨기기·지우기 동그라미가 나온다. */}
+          {dragging === null && !drawing && <Pressable onPress={handleDone} disabled={!!applyingBackground || applyingStyle}
+            style={[styles.doneButton, (applyingBackground || applyingStyle) && styles.doneButtonDisabled]}
+            accessibilityRole="button" accessibilityLabel="편집 완료하고 공유로"
+            accessibilityState={{ disabled: !!applyingBackground || applyingStyle, busy: !!applyingBackground || applyingStyle }}>
+            <Text style={styles.doneText}>{applyingStyle ? '스타일 적용 중' : applyingBackground ? '배경 적용 중' : '완료'}</Text>
+          </Pressable>}
+        </View>
+      </SafeAreaView>
+
+      {dropZone && <View pointerEvents="none"
+        style={[styles.hideZone, overHideZone && styles.hideZoneOn, { bottom: hideZoneBottom, left: window.width / 2 - HIDE_ZONE / 2 }]}
+        accessibilityLabel={dropZone === 'delete' ? `여기에 놓으면 ${dragging?.kind === 'ink' ? '손그림' : '문구'}를 지워요` : '여기에 놓으면 러닝 데이터를 숨겨요'}>
+        <SymbolView name={dropZone === 'delete' ? 'trash' : 'eye.slash'} size={20} tintColor={overHideZone ? Colors.accentText : Colors.text} />
+      </View>}
+
+      {tool && <Animated.View {...sheetPanResponder.panHandlers}
+        style={[styles.sheet, { bottom: keyboardHeight, paddingBottom: keyboardHeight > 0 ? Spacing.sm : insets.bottom + Spacing.sm,
+          transform: [{ translateY: sheetDragY }] }]}
+        onLayout={(e) => { sheetHeightRef.current = e.nativeEvent.layout.height; }}>
+        <View style={styles.sheetGrabber} accessible={false} />
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>{tool === 'ink' ? '손그림' : TOOLS.find((t) => t.id === tool)?.label}</Text>
+          <View style={styles.sheetHeaderRight}>
+            {(tool === 'route' || tool === 'stamp') && <Pressable onPress={() => showLayoutMenu(tool)}
+              style={({ pressed }) => [styles.moreButton, pressed && styles.moreButtonPressed]}
+              accessibilityRole="button" accessibilityLabel={`${tool === 'route' ? '경로' : '러닝 데이터'} 더 보기`}
+              accessibilityHint="배치 복원 메뉴를 열어요">
+              <SymbolView name="ellipsis" size={18} tintColor={Colors.textMuted} />
+            </Pressable>}
+            {inkToolOpen && selectedInk ? <Pressable onPress={() => deleteInk(selectedInk.id)} hitSlop={12}
+              accessibilityRole="button" accessibilityLabel="선택한 손그림 삭제"><Text style={styles.sheetDone}>삭제</Text></Pressable> :
+            tool !== 'route' && tool !== 'stamp' && <Pressable onPress={closeTool} hitSlop={12} accessibilityRole="button" accessibilityLabel={`${TOOLS.find((t) => t.id === tool)?.label} 닫기`}>
+              <Text style={styles.sheetDone}>완료</Text>
+            </Pressable>}
+          </View>
+        </View>
+
+        <ScrollView style={{ flexGrow: 0, maxHeight: Math.max(100, window.height - insets.top - insets.bottom - keyboardHeight - 140) }}
+          contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {inkToolOpen && selectedInk && <HandStrokeControls stroke={inkWidthPreview !== null ? { ...selectedInk, width: inkWidthPreview } : selectedInk}
+          onChange={patchInk} onWidthStart={handleSlidingStart}
+          onWidthChange={setInkWidthPreview}
+          onWidthCommit={width => { patchInk({ width }); setInkWidthPreview(null); setIsInteracting(false); }} />}
+        {tool === 'style' && <MyStyleSheet snapshot={editSnapshot} onApply={handleStyleApply} />}
+        {tool === 'background' && <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.backgroundRow}>
+            {DEFAULT_BACKGROUNDS.map((bg) => {
+              const on = !draft.backgroundPhoto && !!draft.backgroundImagePath?.endsWith(`/${bg.id}.jpg`);
+              return (
+                <Pressable key={bg.id} onPress={() => { void applyDefaultBackground(bg); }} disabled={!!applyingBackground || applyingStyle}
+                  style={[styles.backgroundSwatch, on && styles.backgroundSwatchOn]}
+                  accessibilityRole="button" accessibilityLabel={`기본 배경 ${bg.label}`} accessibilityState={{ selected: on, disabled: !!applyingBackground }}>
+                  <Image source={bg.source} style={styles.backgroundImage} />
+                  <Text style={styles.backgroundLabel}>{applyingBackground === bg.id ? '바꾸는 중' : bg.label}</Text>
+                </Pressable>
+              );
+            })}
+            <Pressable onPress={() => openBackgroundPicker('gallery')} style={[styles.backgroundSwatch, styles.backgroundSource]}
+              accessibilityRole="button" accessibilityLabel="갤러리에서 고르기">
+              <SymbolView name="photo.on.rectangle" size={20} tintColor={Colors.text} />
+              <Text style={styles.backgroundLabel}>갤러리</Text>
             </Pressable>
-            {/* 실기기 피드백(2026-09-02): 재생 버튼·안내 문구가 화면 아래쪽(previewArea
-                기준 bottom)에 있다 보니, 바텀시트가 절대 위치 오버레이로 그 자리를
-                거의 항상 덮고 있어서 시트를 접었을 때가 아니면 잘 안 보였다("다른
-                레이어랑 겹쳐서 잘 안 보인다"). 시트 상태와 무관하게 항상 보이도록
-                위쪽(guideToggle과 같은 줄 높이)으로 옮겼다 — 인스타 스토리 안전
-                영역 가이드를 켰을 때 오른쪽 위에 뜨는 "X 닫기" 자리와 안 겹치도록
-                왼쪽에 몰아 두고, 가운데는 guideToggle 몫으로 비워 둔다. */}
-            <View style={styles.topLeftGroup}>
-              <Pressable
-                onPress={() => setIsPlaying((v) => !v)}
-                style={[styles.playToggle, isPlaying && styles.playToggleOn]}>
-                <Text style={styles.playToggleIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-              </Pressable>
-              <Text style={styles.cardHint}>
-                {stampTargeted ? '끌기 · 각인 위치 / 두 손가락 · 각인 크기' : '끌기 · 이동 / 두 손가락 · 확대·회전'}
-              </Text>
-            </View>
-          </>
-        )}
-      </View>
+            <Pressable onPress={() => openBackgroundPicker('camera')} style={[styles.backgroundSwatch, styles.backgroundSource]}
+              accessibilityRole="button" accessibilityLabel="사진 찍기">
+              <SymbolView name="camera" size={20} tintColor={Colors.text} />
+              <Text style={styles.backgroundLabel}>사진 찍기</Text>
+            </Pressable>
+          </ScrollView>
+          <Text style={styles.note}>갤러리와 사진 찍기는 구도를 잡는 화면으로 이동해요.</Text>
+        </>}
 
-      {/* 컨트롤 바텀시트 — 손잡이를 위아래로 끌면 접고 펼 수 있다. */}
-      {!stampSheetOpen && (
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
-          ]}>
-          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
-            <View style={styles.sheetHandleBar} />
+        {tool === 'route' && <>
+          <View style={styles.tabs}>
+            {([{ id: 'drawing', label: '다듬기' }, { id: 'style', label: '선 스타일' }] as const).map(tab =>
+              <Pressable key={tab.id} onPress={() => setRouteTab(tab.id)} style={styles.tab}
+                accessibilityRole="tab" accessibilityState={{ selected: routeTab === tab.id }}>
+                <Text style={routeTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
+              </Pressable>)}
           </View>
-
-          <View style={styles.sheetContent}>
-            {/* §3 프리셋 */}
-            <Text style={styles.sectionLabel}>프리셋 · PRESET</Text>
-            <View style={styles.presetRow}>
-              {PRESETS.map((p) => {
-                const on = draft.preset === p.id;
-                return (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => handlePresetSelect(p.id)}
-                    style={[styles.presetChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{p.label}</Text>
-                  </Pressable>
-                );
-              })}
+          {routeTab === 'style' ? <RouteStyleControls active={isFocused} value={routeStyle} onChange={updateRouteStyle}
+            onSlidingStart={handleSlidingStart} onSlidingComplete={handleRouteStyleCommit}
+            onColorPreview={setRouteColorPreview} onColorSelectionEnd={() => setIsInteracting(false)} /> : <>
+          <Text style={styles.hint}>경로를 끌어서 옮기고, 두 손가락으로 키우거나 돌려요.</Text>
+          <View style={styles.sliderRow}>
+            <Text style={styles.sliderLabel}>직선</Text>
+            <View style={styles.sliderTrack}>
+              <Slider value={smoothOptions.smooth} accessibilityLabel="직선 다듬기" onChange={(v) => handleSmoothAxisChange('smooth', v)} onSlidingStart={handleSlidingStart} onSlidingComplete={handleSmoothCommit} />
             </View>
-
-            {/* §5: 결과를 보면서 조절한다. 시안 S7대로 직선·코너 두 축을 바로 노출한다
-                (FRD §5의 "기본은 한 축"과 다름 — 확인 노트에 기록). 슬라이더 범위 자체가
-                안전 구간이라(route-rendering §3-2) 경고·차단 UI는 없다. */}
-            <View style={styles.sliderHead}>
-              <Text style={styles.sectionLabel}>직접 다듬기 · SMOOTH</Text>
-              <Text style={styles.sliderValue}>{smoothLabel(smoothOptions.smooth)}</Text>
-            </View>
-            <Slider
-              value={smoothOptions.smooth}
-              onChange={(v) => handleSmoothAxisChange('smooth', v)}
-              onSlidingComplete={handleSmoothCommit}
-            />
-
-            <View style={styles.sliderHead}>
-              <Text style={styles.sectionLabel}>코너 반경 · CORNER</Text>
-              <Text style={styles.sliderValue}>{cornerLabel(smoothOptions.corner)}</Text>
-            </View>
-            <Slider
-              value={smoothOptions.corner}
-              onChange={(v) => handleSmoothAxisChange('corner', v)}
-              onSlidingComplete={handleSmoothCommit}
-            />
-
-            <View style={styles.outlineRow}>
-              <Pressable style={styles.outlineBtn} onPress={() => setStampSheetOpen(true)}>
-                <Text style={styles.outlineBtnText}>각인</Text>
-              </Pressable>
-              <Pressable style={styles.outlineBtn} onPress={() => router.push('/background-selection')}>
-                <Text style={styles.outlineBtnText}>배경 바꾸기</Text>
-              </Pressable>
-              <Pressable style={styles.outlineBtn} onPress={handleReset}>
-                <Text style={styles.outlineBtnMuted}>초기화</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.note}>
-              적용 버튼이 없습니다. 초기화는 드로잉 조작만 되돌리고 프리셋·각인은 남습니다.
-            </Text>
+            <Text style={styles.sliderValue}>{smoothOptions.smooth === 0 ? '없음' : `${smoothOptions.smooth} %`}</Text>
           </View>
-        </Animated.View>
-      )}
-
-      {/* §7 각인 시트(S6) — 프리셋·넣을 것·한 줄 문구 등 "값"을 고르는 곳. 위치·크기는
-          이제 이 시트를 열지 않아도 미리보기에서 각인을 직접 탭해 바꿀 수 있다(위
-          panResponder의 히트테스트, editTarget='stamp') — 이 시트는 텍스트 값 편집
-          전용으로 역할이 좁혀졌다. 컨트롤 바텀시트와 자리를 다투지 않도록, 열려
-          있는 동안엔 그 시트를 안 그린다(위).
-          실기기 피드백(2026-09-02): 예전엔 이 시트가 손잡이 없는 고정 View라 접을
-          수 없었다 — "화면의 반을 차지해서 각인 프리셋을 눌러도 바뀌는 게 안 보인다"는
-          불만의 원인. 컨트롤 시트와 똑같이 sheetTranslateY/sheetPanResponder를 그대로
-          공유해 끌어서 접을 수 있게 했다(두 시트가 동시에 그려지지 않으니 상태를
-          공유해도 안전하다). 내용도 sheetContent로 감싸 프리셋 시트와 같은
-          padding·gap 리듬을 쓴다 — 이전엔 항목들이 감싸는 뷰 없이 나란히 있어서
-          "글씨가 다닥다닥 붙어있다"는 불만이 있었다. */}
-      {stampSheetOpen && (
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingBottom: insets.bottom + 12, transform: [{ translateY: sheetY }] },
-          ]}>
-          <View {...sheetPanResponder.panHandlers} style={styles.sheetHandleArea}>
-            <View style={styles.sheetHandleBar} />
+          <View style={styles.sliderRow}>
+            <Text style={styles.sliderLabel}>코너</Text>
+            <View style={styles.sliderTrack}>
+              <Slider value={smoothOptions.corner} accessibilityLabel="코너 다듬기" onChange={(v) => handleSmoothAxisChange('corner', v)} onSlidingStart={handleSlidingStart} onSlidingComplete={handleSmoothCommit} />
+            </View>
+            <Text style={styles.sliderValue}>{smoothOptions.corner === 0 ? '각지게' : `${smoothOptions.corner} %`}</Text>
           </View>
+          </>}
+        </>}
 
-          <View style={styles.sheetContent}>
-            <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>각인</Text>
-              <Text onPress={() => setStampSheetOpen(false)} style={styles.headerAction}>
-                완료
-              </Text>
-            </View>
-
-            {/* "배치"라는 이름 아래 묻혀 있던 걸 드로잉 프리셋과 같은 라벨 패턴으로 —
-                실기기 피드백(2026-09): 이건 단순 위치 배치가 아니라 각인을 어떤 스타일로
-                표현할지 고르는 프리셋이다. StampLayout이 확장 가능한 유니온이라
-                나중에 항목이 늘어도 이 자리(칩 목록)만 늘리면 된다. */}
-            <Text style={styles.sectionLabel}>각인 프리셋 · PRESET</Text>
-            {/* 실물 사진 참고(2026-09-02)로 프리셋이 2개→6개로 늘어서, flex:1로 한
-                줄에 욱여넣던 presetChip 대신 내용만큼만 너비를 차지하고 줄바꿈되는
-                칩으로 바꿨다("넣을 것" 칩과 같은 패턴). */}
-            <View style={styles.layoutChipRow}>
-              {STAMP_LAYOUTS.map((l) => {
-                const on = (stampConfig.layout ?? 'row') === l.id;
-                return (
-                  <Pressable
-                    key={l.id}
-                    onPress={() => handleLayoutSelect(l.id)}
-                    style={[styles.layoutChip, on && styles.presetChipOn]}>
-                    <Text style={on ? styles.presetChipTextOn : styles.presetChipText}>{l.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <Text style={styles.sectionLabel}>넣을 것</Text>
+        {tool === 'stamp' && <>
+          <View style={styles.tabs}>
+            {([{ id: 'items', label: '항목' }, { id: 'style', label: '글자 스타일' }] as const).map((tab) => (
+              <Pressable key={tab.id} onPress={() => setStampTab(tab.id)} style={styles.tab}
+                accessibilityRole="tab" accessibilityState={{ selected: stampTab === tab.id }}>
+                <Text style={stampTab === tab.id ? styles.tabTextOn : styles.tabText}>{tab.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {stampTab === 'style' ? <TextStyleControls value={stampConfig}
+            onChange={value => commitStamp({ ...stampConfigRef.current, font: value.font, textColor: value.textColor })} /> : (
             <View style={styles.chipRowWrap}>
               {stampItems.map((item) => {
                 const on = stampConfig.enabled?.[item] ?? false;
                 return (
-                  <Pressable
-                    key={item}
-                    onPress={() => handleStampItemToggle(item)}
+                  <Pressable key={item} onPress={() => handleStampItemToggle(item)}
+                    accessibilityRole="button" accessibilityState={{ selected: on }}
                     style={[styles.itemChip, on && styles.itemChipOn]}>
                     <Text style={on ? styles.itemChipTextOn : styles.itemChipText}>{stampChipLabel(item)}</Text>
                   </Pressable>
                 );
               })}
             </View>
+          )}
+          <Text style={styles.hint}>화면에서 끌어서 옮기고, 아래 동그라미로 끌면 숨겨요.</Text>
+        </>}
+        </ScrollView>
+      </Animated.View>}
 
-            <Text style={styles.sectionLabel}>한 줄 문구</Text>
-            <TextInput
-              value={stampConfig.caption ?? ''}
-              onChangeText={handleCaptionChange}
-              placeholder="예) 비 오는 날의 한강"
-              placeholderTextColor={Colors.textMuted}
-              maxLength={40}
-              style={styles.captionInput}
-            />
-
-            <Text style={styles.note}>끌어서 접으면 미리보기를 보면서 고를 수 있어요.</Text>
-          </View>
-        </Animated.View>
-      )}
-
-      {/* 실기기 피드백(2026-09-02): 시트를 접어도 손잡이가 편집 화면을 가린다는
-          지적 — 접힌 동안(sheetExpanded===false)은 시트를 화면 밖으로 완전히
-          숨기고, 이 버튼 하나만 남겨 다시 부를 수 있게 한다. */}
-      {!sheetExpanded && (
-        <Pressable
-          onPress={() => animateSheetTo(true)}
-          style={[styles.sheetReopenButton, { bottom: 16 + insets.bottom }]}>
-          <Text style={styles.sheetReopenText}>편집 도구 열기</Text>
+      {undoToast && dragging === null && !tool && <View style={[styles.toast, { bottom: insets.bottom + BOTTOM_BAR_HEIGHT + 8 }]}
+        accessibilityLiveRegion="polite">
+        <Text style={styles.toastText}>{undoToast}</Text>
+        <Pressable onPress={() => { setUndoToast(null); handleUndo(); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="되돌리기">
+          <Text style={styles.toastAction}>되돌리기</Text>
         </Pressable>
-      )}
-    </SafeAreaView>
+      </View>}
+
+      {editingCaption && <CaptionEditor text={editingCaption.text} scale={editingCaption.scale}
+        font={stampConfig.font} textColor={stampConfig.textColor}
+        fitScale={previewSize.width / CANVAS_WIDTH} keyboardHeight={keyboardHeight} topInset={insets.top}
+        limited={editingCaption.limited} onChangeText={captionEditing.changeText} onScaleChange={captionEditing.changeScale}
+        onInteractionChange={setIsInteracting}
+        onDone={finishEditingCaption} />}
+    </View>
   );
 }
 
 const CHIP_ON_BG = 'rgba(255,90,43,0.12)';
+// 결과물 위에 얹는 버튼. 밝은 배경에서도 보이게 반투명 어두운 바탕을 깐다.
+const OVERLAY_BG = 'rgba(11,13,16,0.55)';
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: Colors.bg },
-  center: {
-    flex: 1,
-    backgroundColor: Colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
+  inkHeader: { position: 'absolute', top: 14, left: 10, right: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  stampHeader: { gap: 8 },
+  inkDone: { height: 40, paddingHorizontal: 13, borderRadius: 20, backgroundColor: Colors.text, justifyContent: 'center' },
+  inkDoneText: { color: Colors.bg, fontFamily: Fonts.sansBold, fontSize: 12 },
+  root: { flex: 1, backgroundColor: Colors.bg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
+  stage: { flex: 1, minHeight: 0, alignItems: 'center', justifyContent: 'center' },
+  previewFrame: { backgroundColor: Colors.bgCard, overflow: 'hidden', borderRadius: 16 },
+  topLeft: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', gap: 8 },
+  roundButton: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG },
+  disabled: { opacity: 0.4 },
+  toolRail: { position: 'absolute', top: 10, right: 10, gap: 10, alignItems: 'flex-end' },
+  toolButton: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
+  toolLabel: {
+    fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.text,
+    textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4, textShadowOffset: { width: 0, height: 0 },
   },
-  headerAction: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
-  previewArea: { flex: 1, backgroundColor: Colors.bgCard, overflow: 'hidden' },
-  // 조작 중임을 눈으로도 알 수 있게 — "터치 경계가 명확하지 않다"는 피드백 대응.
-  previewActive: { borderWidth: 2, borderColor: Colors.accent },
-  guideToggle: {
-    position: 'absolute',
-    top: 14,
-    alignSelf: 'center',
-    height: 32,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-    backgroundColor: 'rgba(11,13,16,0.55)',
+  toolIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG },
+  toolIconOn: { backgroundColor: Colors.accent },
+  // 화면 왼쪽 끝에서 밀면 뒤로 가기라 그 자리를 피한다.
+  sizeSlider: { position: 'absolute', left: 12, top: '26%', height: '40%' },
+  bottomBar: { height: BOTTOM_BAR_HEIGHT, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 20 },
+  doneButtonDisabled: { opacity: 0.5 },
+  doneButton: { minHeight: 44, minWidth: 120, paddingHorizontal: 24, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.accent, borderRadius: 22 },
+  doneText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.accentText },
+  hideZone: {
+    position: 'absolute', width: HIDE_ZONE, height: HIDE_ZONE, borderRadius: HIDE_ZONE / 2,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: OVERLAY_BG, borderWidth: 1, borderColor: Colors.borderStrong,
   },
-  guideToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
-  guideToggleText: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.textMuted },
-  guideToggleTextOn: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 10, color: Colors.accent },
-  // 재생 버튼 + 안내 문구를 왼쪽 위에 묶어 둔다 — guideToggle(가운데 위)과
-  // 안전 영역 가이드의 "X 닫기" 자리(오른쪽 위)를 둘 다 피한 자리.
-  // 실기기 피드백(2026-09-02): guideToggle("인스타 스토리 영역", 가운데 위)과
-  // 같은 줄(top:14)에 뒀더니 가운데로 뻗어 나오면서 글씨가 겹쳤다 — guideToggle
-  // 바로 아래 줄(높이 32 + 여백 8)로 내려 세로로 분리했다.
-  topLeftGroup: {
-    position: 'absolute',
-    top: 54,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    maxWidth: '55%',
+  hideZoneOn: { backgroundColor: Colors.accent, borderColor: Colors.accent, transform: [{ scale: 1.15 }] },
+  toast: {
+    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 22, backgroundColor: 'rgba(20,24,29,0.95)',
+    borderWidth: 1, borderColor: Colors.border,
   },
-  // 시트를 완전히 숨겼을 때만 뜨는 버튼 — 화면 맨 아래 가운데.
-  sheetReopenButton: {
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-    height: 40,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    backgroundColor: Colors.accent,
-  },
-  sheetReopenText: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accentText },
-  cardHint: {
-    flexShrink: 1,
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 9.5,
-    letterSpacing: 1,
-    color: Colors.textMuted,
-  },
-  // 재생/정지 토글 — topLeftGroup 안에서 cardHint 왼쪽에 나란히 놓인다.
-  playToggle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(11,13,16,0.55)',
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-  },
-  playToggleOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
-  playToggleIcon: { fontSize: 12, color: Colors.text },
-  sectionLabel: {
-    fontFamily: 'JetBrainsMono_500Medium',
-    fontSize: 10,
-    letterSpacing: 1.4,
-    color: Colors.textMuted,
-  },
-  presetRow: { flexDirection: 'row', gap: 8 },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  captionInput: {
-    fontFamily: 'SpaceGrotesk_500Medium',
-    fontSize: 15,
-    color: Colors.text,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderStrong,
-    paddingVertical: 8,
-  },
-  presetChip: {
-    flex: 1,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.border,
-  },
-  presetChipOn: { backgroundColor: Colors.accent },
-  presetChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  presetChipTextOn: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.accentText },
-  // 각인 프리셋(6개, 2026-09-02)용 — presetChip과 달리 flex:1로 한 줄에 욱여넣지
-  // 않고 내용만큼만 차지하며 줄바꿈된다.
-  layoutChipRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  layoutChip: {
-    height: 40,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.border,
-  },
-  sliderHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
-    marginTop: 8,
-  },
-  sliderValue: { fontFamily: 'JetBrainsMono_500Medium', fontSize: 12, color: Colors.accent },
-  itemChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-  },
-  itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
-  itemChipText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  itemChipTextOn: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 12, color: Colors.accent },
-  outlineRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
-  outlineBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    borderColor: Colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outlineBtnText: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.text },
-  outlineBtnMuted: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, color: Colors.textMuted },
-  note: {
-    fontFamily: 'SpaceGrotesk_500Medium',
-    fontSize: 11,
-    lineHeight: 17,
-    color: Colors.textMuted,
-    marginTop: 6,
-  },
-  hint: { fontFamily: 'JetBrainsMono_500Medium', color: Colors.textMuted, fontSize: 11 },
+  toastText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
+  toastAction: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.accent },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: Colors.bgCard,
-    borderTopLeftRadius: Radius.pill,
-    borderTopRightRadius: Radius.pill,
-    borderTopWidth: 1,
-    borderColor: Colors.border,
+    position: 'absolute', left: 0, right: 0, paddingHorizontal: 20, paddingTop: 12, gap: 10,
+    backgroundColor: Colors.bgCard, borderTopLeftRadius: Radius.pill, borderTopRightRadius: Radius.pill,
+    borderTopWidth: 1, borderColor: Colors.border,
   },
-  sheetHandleArea: {
-    alignItems: 'center',
-    paddingVertical: 10,
+  sheetGrabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.borderStrong, marginTop: -4 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
+  sheetHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sheetTitle: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.text },
+  sheetDone: { fontFamily: Fonts.sansBold, fontSize: 13, color: Colors.accent },
+  hint: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16, color: Colors.textMuted },
+  note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
+  moreButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  moreButtonPressed: { backgroundColor: Colors.border },
+  routePresetRow: { flexDirection: 'row', gap: 8 },
+  routePreset: { width: 44, minHeight: 44, paddingVertical: 5, borderRadius: 22, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: OVERLAY_BG },
+  routePresetLabel: { fontFamily: Fonts.sans, fontSize: 9, color: Colors.text },
+  presetChipOn: { backgroundColor: Colors.accent },
+  presetChipTextOn: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.accentText },
+  sliderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, height: 36 },
+  sliderLabel: { width: 30, fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  sliderTrack: { flex: 1 },
+  sliderValue: { width: 46, textAlign: 'right', fontFamily: Fonts.sans, fontSize: 12, color: Colors.accent },
+  tabs: { flexDirection: 'row', gap: 24 },
+  tab: { minHeight: 32, justifyContent: 'center' },
+  tabText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  tabTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
+  chipRowWrap: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  itemChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: Radius.chip, borderWidth: 1, borderColor: Colors.borderStrong },
+  itemChipOn: { borderColor: Colors.accent, backgroundColor: CHIP_ON_BG },
+  itemChipText: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  itemChipTextOn: { fontFamily: Fonts.sansBold, fontSize: 12, color: Colors.accent },
+  backgroundRow: { gap: 10, paddingVertical: 2 },
+  backgroundSwatch: { width: 64, height: 112, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent', backgroundColor: Colors.border },
+  backgroundSwatchOn: { borderColor: Colors.accent },
+  backgroundImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
+  backgroundSource: { alignItems: 'center', justifyContent: 'center', gap: 6 },
+  backgroundLabel: {
+    position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center',
+    fontFamily: Fonts.sans, fontSize: 10, color: Colors.text,
+    textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 3, textShadowOffset: { width: 0, height: 0 },
   },
-  sheetHandleBar: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.borderStrong,
-  },
-  sheetContent: { paddingHorizontal: 24, gap: 12 },
-  // 각인 시트에서 sheetContent(패딩·gap 포함)의 첫 자식으로 쓴다 — 가로 패딩·위
-  // 여백은 부모(sheetContent·sheetHandleArea)가 이미 주므로 여기서는 두지 않는다.
-  sheetHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sheetTitle: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 17, color: Colors.text },
 });

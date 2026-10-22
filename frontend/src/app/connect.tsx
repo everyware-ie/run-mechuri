@@ -4,45 +4,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { IDENTITY_SMOOTH, IDENTITY_STAMP, IDENTITY_TRANSFORM, RoutePreview } from '@/components/route-preview';
 import { ThemedButton } from '@/components/ui';
-import { Colors, Spacing } from '@/constants/theme';
+import { InternalRunEntry } from '@/components/internal-run-entry';
+import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
+import { SampleRunEntry } from '@/components/sample-run-entry';
+import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { markConnectedOnce } from '@/lib/connection-store';
+import { createSampleRun } from '@/lib/sample-run';
 import type { Point } from '@/lib/route-projection';
 
-import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
+// FRD: docs/specs/frd/run-record-selection.md §3 권한,
+// docs/specs/frd/sample-record-experience.md §1 진입.
+// 첫 실행은 실제 기록 불러오기와 건강 권한 없는 하트 체험을 안내한다.
+// 일반 앱은 새 러닝을 측정하지 않으며, GPX 임포트는 제공하지 않는다.
 
-// FRD: docs/specs/frd/run-record-selection.md §1·§3, docs/specs/frd/common-rules.md §1-3
-//
-// "3안" 시안 S0 — 앱을 한 번도 연결 안 한 채 처음 열었을 때 뜨는 화면. 이 앱은 러닝을
-// 새로 기록하지 않고 이미 기록해 둔 것을 불러오기만 한다는 것과, 그 경로를 유일한
-// 관문(HealthKit)으로 안내한다.
-//
-// 시안엔 "GPX 파일 직접 넣기" 버튼이 있지만 GPX 임포트는 2026-08-25에 제외
-// 확정됐다(run-record-selection FRD §1, PRD §6). 그 버튼은 넣지 않는다 — MVP의
-// 출처는 HealthKit 하나뿐이라 "메추리 런 시작하기"(2026-09-02 문구 변경, 원래
-// "러닝 앱 연결하기") 하나가 유일한 경로다.
-//
-// [확인 필요] 이 화면 자체는 승인된 FRD 문서 어디에도 화면 단위로 정의돼 있지 않다.
-// run-record-selection FRD §3은 "권한은 목록을 열려 할 때 묻는다"만 정하고, 그 직전에
-// 이런 설명 화면을 하나 더 두는 것은 시안(승인됨)에는 있지만 문서화는 안 된 상태다.
-// phs00 확인 후 FRD에 반영 필요.
-
-const SAMPLE_LOOP: Point[] = buildSampleLoop();
-
-function buildSampleLoop(): Point[] {
-  const center = { latitude: 37.5665, longitude: 126.978 };
-  const lonScale = Math.cos((center.latitude * Math.PI) / 180);
-  const points: Point[] = [];
-  const steps = 48;
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const r = 0.006 + 0.0016 * Math.sin(3 * t) + 0.001 * Math.cos(5 * t + 1) + 0.0006 * Math.sin(9 * t);
-    points.push({
-      latitude: center.latitude + r * Math.sin(t) * 0.92,
-      longitude: center.longitude + (r * Math.cos(t)) / lonScale,
-    });
-  }
-  return points;
-}
+const HEART_SAMPLE = createSampleRun();
+const SAMPLE_LOOP: Point[] = HEART_SAMPLE.track.coordinates;
 
 // 실기기 피드백(2026-09-03): "시안 html엔 여기 불빛 경로처럼 움직이게 돼 있는데
 // 왜 여기는 없냐" — DesignSync로 프로젝트 파일 목록을 다시 보니 이 화면(S0)의
@@ -58,14 +34,7 @@ function buildSampleLoop(): Point[] {
 // 달리 "경로 하나만 조용히 도는" 제일 가벼운 경우다. light-runner는 이미 이번
 // 세션에서 UI 스레드(Reanimated useFrameCallback)로 옮겨 놔서 JS 렌더링과
 // 무관하게 네이티브에서 돈다 — 오히려 이 화면이 성능상 제일 안전한 자리.
-const DEMO_RUN: RunRecord = {
-  id: 'demo',
-  date: new Date().toISOString(),
-  distanceMeters: 5230,
-  durationSeconds: 1694,
-  averagePaceSecPerKm: 324,
-  hasRoute: true,
-};
+const DEMO_RUN = HEART_SAMPLE.run;
 // 각인은 이 화면 목적(연결 전 안내)과 무관 — 전부 꺼서 아무것도 안 그리게 한다.
 const DEMO_STAMP = {
   ...IDENTITY_STAMP,
@@ -111,7 +80,10 @@ export default function ConnectScreen() {
         </Text>
 
         <View style={styles.actions}>
-          <ThemedButton title="메추리 런 시작하기" onPress={handleConnect} />
+          <ThemedButton title="러너리 시작하기" onPress={handleConnect} />
+          <SampleRunEntry fromWelcome />
+          <InternalRunEntry />
+          <PrivacyPolicyLink />
         </View>
       </View>
     </SafeAreaView>
@@ -125,14 +97,14 @@ const styles = StyleSheet.create({
   artWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   body: { paddingHorizontal: 30, paddingBottom: Spacing.xl, gap: Spacing.md },
   title: {
-    fontFamily: 'SpaceGrotesk_700Bold',
+    fontFamily: Fonts.sansBold,
     fontSize: 32,
     lineHeight: 38,
     letterSpacing: -0.7,
     color: Colors.text,
   },
   subtitle: {
-    fontFamily: 'SpaceGrotesk_500Medium',
+    fontFamily: Fonts.sans,
     fontSize: 13,
     lineHeight: 20,
     color: Colors.textMuted,

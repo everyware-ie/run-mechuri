@@ -20,15 +20,16 @@ export function formatDuration(seconds: number): string {
 }
 
 /** 분'초"/km */
-export function formatPace(secPerKm: number): string {
+export function formatPace(secPerKm: number | null): string {
+  if (secPerKm == null || !Number.isFinite(secPerKm) || secPerKm <= 0) return '-';
   const total = Math.max(0, Math.round(secPerKm));
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}'${String(s).padStart(2, '0')}"/km`;
 }
 
-export function formatHeartRate(bpm: number): string {
-  return `${Math.round(bpm)}bpm`;
+export function formatHeartRate(bpm: number, includeUnit = true): string {
+  return `${Math.round(bpm)}${includeUnit ? 'bpm' : ''}`;
 }
 
 /** 러닝한 날 (ISO) → "MM.dd". 시안 S6/S8b 표기. */

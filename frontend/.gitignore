@@ -45,3 +45,11 @@ example
 # AI 에이전트 스킬 (npx skills add로 재생성 가능, 커밋 대상 아님 — skills-lock.json은 커밋)
 .agents/
 .claude/skills/
+
+# EAS 로컬 서명 자격증명 (eas credentials로 내려받음, p12 비밀번호 포함 — 커밋 금지)
+credentials.json
+credentials/
+
+# eas build --local 결과물 (ipa)
+*.ipa
+build-*.ipa
