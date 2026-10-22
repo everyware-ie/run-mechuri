@@ -1098,6 +1098,13 @@ public class RouteRendererModule: Module {
     let stampShadowColor: UIColor = stamp.stampTextColor == "black" ? UIColor.white.withAlphaComponent(0.55)
       : isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
     let textColor = selectedTextColor(stamp)
+    // route-preview.tsx의 STAMP_MUTED_ALPHA·STAMP_MUTED_SHADOW_ALPHA와 같은 값이어야 한다.
+    // 라벨(muted)은 값보다 옅게 두되, 밝은 배경에서 사라지지 않을 만큼만 올렸다(QA 2026-09-29).
+    let stampMutedAlpha: CGFloat = 0.78
+    let stampMutedShadowAlpha: CGFloat = 0.8
+    // row는 그림자가 이미 불투명한 흰색이라 그대로 둔다. 옅은 그림자(.55)를 쓰는 쪽만 라벨에서 진하게 한다.
+    let mutedShadowColor: UIColor = (stamp.stampTextColor == "black" || isSoftShadow)
+      ? stampShadowColor.withAlphaComponent(stampMutedShadowAlpha) : stampShadowColor
 
     // 2026-09-17 — 폰트 불일치(v0 근사, 구현 노트 "폰트 불일치" 참고) 수정.
     // 미리보기(route-preview.tsx)는 @expo-google-fonts로 로드한 실제 폰트를
@@ -1143,11 +1150,13 @@ public class RouteRendererModule: Module {
       // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
       let topY = origin.y - font.ascender
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
+      // color를 넘기는 호출은 라벨(muted)뿐이다. 라벨은 그림자도 조금 더 진하게 건다.
+      let shadow = color != nil ? mutedShadowColor : stampShadowColor
+      ctx.setShadow(offset: .zero, blur: 6, color: shadow.cgColor)
       (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
-    let mutedColor = textColor.withAlphaComponent(0.5)
+    let mutedColor = textColor.withAlphaComponent(stampMutedAlpha)
 
     // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(ox/oy)는 그대로 두고
     // 글자 크기·내부 간격에만 곱한다. 문구 배치에서는 문구 크기(captionScale)가 들어온다.

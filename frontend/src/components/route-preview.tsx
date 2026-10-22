@@ -1719,6 +1719,14 @@ export function StampLayerSvg({
   );
 }
 
+// 러닝 데이터의 라벨(TIME·PACE·날짜 등, muted)은 값보다 옅게 둔다. 그 위계가 디자인이다.
+// 예전 투명도 .5는 밝은 배경에서 사진 색과 섞여 라벨이 사라졌다(QA 2026-09-29).
+// 위계가 남는 선까지만 올린다. RouteRendererModule.swift의 stampMutedAlpha·
+// stampMutedShadowAlpha와 같은 값이어야 편집 화면과 저장한 영상이 같게 보인다.
+// 값은 실기기에서 보며 정한다(stamp-label-legibility 구현 노트).
+export const STAMP_MUTED_ALPHA = 0.78;
+export const STAMP_MUTED_SHADOW_ALPHA = 0.8;
+
 function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: StampTextDescriptor[]; softShadow: boolean; applyShadow?: boolean }) {
   return <>
       {/* 정적 썸네일은 필터를 묶고, 실시간 미리보기는 네이티브 그림자로 처리한다. */}
@@ -1731,14 +1739,14 @@ function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: Stamp
       <G filter={applyShadow ? "url(#stampGlow)" : undefined}>
         {texts.map((n) => (
           <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-            fontFamily={n.family} fill={softShadow && applyShadow ? n.contrastColor : n.color} fillOpacity={softShadow && applyShadow ? .55 : n.muted ? .5 : 1}>
+            fontFamily={n.family} fill={softShadow && applyShadow ? n.contrastColor : n.color} fillOpacity={softShadow && applyShadow ? (n.muted ? STAMP_MUTED_SHADOW_ALPHA : .55) : n.muted ? STAMP_MUTED_ALPHA : 1}>
             {stampTextContent(n)}
           </SvgText>
         ))}
       </G>
       {softShadow && applyShadow && texts.map((n) => (
         <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-          fontFamily={n.family} fill={n.color} fillOpacity={n.muted ? .5 : 1}>
+          fontFamily={n.family} fill={n.color} fillOpacity={n.muted ? STAMP_MUTED_ALPHA : 1}>
           {stampTextContent(n)}
         </SvgText>
       ))}
@@ -1775,7 +1783,7 @@ const StampPreviewText = memo(function StampPreviewText({ node, viewport, softSh
   // 글자·단위·폰트·좌표는 정적 SVG와 같은 기술자를 그대로 사용한다.
   return <View style={{ position: 'absolute', left: offsetX + viewport.x * fitScale,
     top: offsetY + viewport.y * fitScale, width: viewport.width * fitScale, height: viewport.height * fitScale,
-    shadowColor: softShadow ? node.contrastColor : node.color, shadowOpacity: softShadow ? .55 : 1,
+    shadowColor: softShadow ? node.contrastColor : node.color, shadowOpacity: softShadow ? (node.muted ? STAMP_MUTED_SHADOW_ALPHA : .55) : 1,
     shadowRadius: 6 * fitScale, shadowOffset: { width: 0, height: 0 } }}>
     <Svg width={viewport.width * fitScale} height={viewport.height * fitScale}
       viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="none">
