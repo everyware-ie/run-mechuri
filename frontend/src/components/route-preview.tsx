@@ -1384,17 +1384,30 @@ function stampLayoutPass(
     if (caption) {
       addCaption({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' }, true);
     }
+    // 코너는 켜진 항목에 맞춰 자리를 다시 잡는다(경로 렌더링 FRD §7-5, 2026-10-22).
+    // 큰 숫자로 쓴 항목은 통계에서 빼고, 날짜는 통계가 있으면 그 묶음의 첫 줄로,
+    // 통계가 없고 큰 숫자가 있으면 큰 숫자 바로 위로 붙인다. 날짜가 혼자 위에 떨어져 보이지 않게 한다.
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    const statItems = (['time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(k => has(k) && k !== heroKey);
     const dateText = has('date') ? value('date') : '';
+    const dateInStack = !!dateText && statItems.length > 0;
+    const dateAboveHero = !!dateText && statItems.length === 0 && !!heroKey;
+    const heroSize = 66 * u;
+    // 실기기 피드백(2026-09-03): 디자인 bottom:26px, M 곱하는 걸 빠뜨렸던 버그(위
+    // 'stack' 설명과 동일) — 26*M로 맞춘다.
+    const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
     if (dateText) {
-      nodes.push({ key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
+      nodes.push(dateAboveHero
+        ? { key: 'date', x: 22 * M + config.position.x, y: heroBaseline - heroSize * 0.78 - 8 * u, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'start', muted: true }
+        : { key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
     }
 
-    const statItems = (['time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(has);
     if (statItems.length > 0) {
       const labelFont = 9 * u;
       const valueFont = 19 * u;
       const rowGap = 14 * u;
-      let cursorY = headerBaseline + 72 * M + captionExtra; // 시안 top:96 - top:24
+      // 날짜가 있으면 그 바로 아래에서, 없으면 날짜 자리(맨 위)에서 시작한다.
+      let cursorY = (dateInStack ? headerBaseline + 12 * u : headerBaseline - headerFont * 0.85) + captionExtra;
       statItems.forEach((item, i) => {
         const labelY = cursorY + labelFont * 0.85;
         const valueY = labelY + valueFont * 1.05;
@@ -1405,12 +1418,7 @@ function stampLayoutPass(
       });
     }
 
-    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
     if (heroKey) {
-      const heroSize = 66 * u;
-      // 실기기 피드백(2026-09-03): 디자인 bottom:26px, M 곱하는 걸 빠뜨렸던 버그(위
-      // 'stack' 설명과 동일) — 26*M로 맞춘다.
-      const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
       const heroText = value(heroKey);
       nodes.push({
         key: 'hero',
