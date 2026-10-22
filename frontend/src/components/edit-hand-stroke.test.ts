@@ -264,3 +264,19 @@ it('취소한 스타일의 늦은 완료가 새 적용의 대기를 풀지 않�
   await act(async () => { resolve[1]('new.jpg'); expect(await second).toBe(true); });
   expect(renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.disabled).toBe(false);
 });
+
+it('도구 접기 손잡이는 도구 버튼을 접고 펼치며 처음에는 펼쳐져 있다', async () => {
+  const toolLabels = ['배경', '경로', '러닝 데이터', '문구', '그리기', '내 스타일'];
+  const has = (label: string) => renderer.root.findAllByProps({ accessibilityLabel: label }).length > 0;
+  expect(toolLabels.every(has)).toBe(true);
+  expect(renderer.root.findByProps({ accessibilityLabel: '도구 접기' }).props.accessibilityState).toEqual({ expanded: true });
+
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '도구 접기' }).props.onPress());
+  expect(toolLabels.some(has)).toBe(false);
+  expect(has('도구 접기')).toBe(false);
+  expect(renderer.root.findByProps({ accessibilityLabel: '도구 펼치기' }).props.accessibilityState).toEqual({ expanded: false });
+
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '도구 펼치기' }).props.onPress());
+  expect(toolLabels.every(has)).toBe(true);
+  expect(has('도구 접기')).toBe(true);
+});
