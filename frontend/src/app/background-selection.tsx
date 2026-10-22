@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PhotoBackgroundPreview } from '@/components/photo-background-preview';
@@ -277,7 +277,8 @@ export default function BackgroundSelectionScreen() {
         </>}
         {!editingPhoto && <>
         <Text style={styles.sectionLabel}>기본 이미지</Text>
-        <View style={styles.swatchRow}>
+        {/* 기본 이미지 6장 + 갤러리·촬영 칸은 한 줄에 다 안 들어가서 가로로 스크롤한다 */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow}>
           {DEFAULT_BACKGROUNDS.map(bg => <Pressable key={bg.id} disabled={disabled}
             onPress={() => { setCandidate(null); setSelection({ kind: 'default', id: bg.id }); setShowSources(true); }}
             accessibilityRole="button" accessibilityLabel={`${bg.label} 배경`}
@@ -291,7 +292,7 @@ export default function BackgroundSelectionScreen() {
           <Pressable disabled={disabled} onPress={() => pickPhoto('camera')} accessibilityRole="button" style={[styles.swatch, styles.sourceButton]}>
             <Text style={styles.buttonText}>사진 촬영</Text>
           </Pressable>
-        </View>
+        </ScrollView>
         <Text style={styles.note}>기본 이미지를 고르거나 내 사진·영상을 배경으로 사용해 보세요.</Text>
         </>}
         <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button"
@@ -332,7 +333,7 @@ const styles = StyleSheet.create({
   backgroundImage: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
   sectionLabel: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 4 },
   swatchRow: { flexDirection: 'row', gap: 9 },
-  swatch: { flex: 1, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard },
+  swatch: { width: 72, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard },
   swatchOn: { borderColor: Colors.accent },
   swatchImg: { width: '100%', height: '100%' },
   sourceButton: { borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },

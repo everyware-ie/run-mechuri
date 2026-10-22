@@ -3,7 +3,7 @@ import { applyMyStyle, captureMyStyle, deleteMyStyle, listMyStyles, MAX_MY_STYLE
 import type { EditSnapshot } from './edit-history';
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(), setItem: jest.fn() }));
 const snapshot: EditSnapshot = {
-  backgroundImagePath: 'file:///Documents/backgrounds/noon.jpg', preset: 'light-runner',
+  backgroundImagePath: 'file:///Documents/backgrounds/track.jpg', preset: 'light-runner',
   transform: { x: 100, y: -90, scale: 1.7, rotationDeg: 30 },
   smoothOptions: { smooth: 35, corner: 70 }, routeStyle: { color: 'mint', widthScale: 1.4 },
   handDrawing: [{ id: 'a', brush: 'pen', color: '#FFFFFF', width: 12, points: [{ x: 50, y: 50 }] }],
@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 it('스타일에 다듬기를 포함하고 기록·위치·문구·손그림·사진 경로를 저장하지 않는다', () => {
   const style = captureMyStyle(snapshot, '  민트  ');
-  expect(style.backgroundId).toBe('noon'); expect(style.smoothOptions).toEqual({ smooth: 35, corner: 70 });
+  expect(style.backgroundId).toBe('track'); expect(style.smoothOptions).toEqual({ smooth: 35, corner: 70 });
   expect(style.name).toBe('민트');
   for (const privateValue of ['개인 장소', '나의 문구', 'handDrawing', 'rotationDeg', 'Documents']) expect(JSON.stringify(style)).not.toContain(privateValue);
 });

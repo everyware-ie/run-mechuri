@@ -198,7 +198,7 @@ it('내 스타일 적용 직후 화면 갱신 전 완료를 눌러도 이전 값
   jest.mocked(persistDefaultBackground).mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
   await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
   const controls = renderer.root.findByType('style-controls' as never).props;
-  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning', routeStyle: { color: '#123456' as const } };
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'river-dawn', routeStyle: { color: '#123456' as const } };
   const done = renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.onPress;
   let applying!: Promise<boolean>;
   await act(async () => { applying = controls.onApply(style); done(); });
@@ -215,7 +215,7 @@ it('스타일 적용 중 그리기 진입·중복 요청은 기다리고 도구 
   jest.mocked(persistDefaultBackground).mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
   await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
   const controls = renderer.root.findByType('style-controls' as never).props;
-  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning', routeStyle: { color: '#123456' as const } };
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'river-dawn', routeStyle: { color: '#123456' as const } };
   const draw = renderer.root.findByProps({ accessibilityLabel: '그리기' }).props.onPress;
   let applying!: Promise<boolean>, duplicate!: Promise<boolean>;
   await act(async () => { applying = controls.onApply(style); draw(); duplicate = controls.onApply(style); });
@@ -236,7 +236,7 @@ it('스타일 준비 실패 뒤 다시 적용하고 완료할 수 있다', async
   jest.mocked(persistDefaultBackground).mockRejectedValueOnce(new Error('copy failed')).mockResolvedValueOnce('ready-bg.jpg');
   await act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
   const controls = renderer.root.findByType('style-controls' as never).props;
-  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'morning' };
+  const style = { ...captureMyStyle(controls.snapshot, 'QA'), backgroundId: 'river-dawn' };
   await act(async () => { await expect(controls.onApply(style)).rejects.toThrow('copy failed'); });
   expect(renderer.root.findByProps({ accessibilityLabel: '편집 완료하고 공유로' }).props.disabled).toBe(false);
   await act(async () => { expect(await controls.onApply(style)).toBe(true); });
@@ -251,7 +251,7 @@ it('취소한 스타일의 늦은 완료가 새 적용의 대기를 풀지 않�
   const open = async () => act(async () => renderer.root.findByProps({ accessibilityLabel: '내 스타일' }).props.onPress());
   await open();
   const firstControls = renderer.root.findByType('style-controls' as never).props;
-  const style = { ...captureMyStyle(firstControls.snapshot, 'QA'), backgroundId: 'morning' };
+  const style = { ...captureMyStyle(firstControls.snapshot, 'QA'), backgroundId: 'river-dawn' };
   let first!: Promise<boolean>, second!: Promise<boolean>;
   await act(async () => { first = firstControls.onApply(style); });
   // 같은 도구를 다시 누르면 닫히며, 다음에 여는 적용은 별도 작업이다.
