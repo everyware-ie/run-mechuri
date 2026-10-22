@@ -1370,15 +1370,32 @@ public class RouteRendererModule: Module {
       let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + oy
 
       if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left, fromTop: true) }
+      // route-preview.tsx 코너 분기와 같은 규칙(경로 렌더링 FRD §7-5, 2026-10-22).
+      // 큰 숫자로 쓴 항목은 통계에서 빼고, 날짜는 통계가 있으면 그 묶음의 첫 줄로,
+      // 통계가 없고 큰 숫자가 있으면 큰 숫자 바로 위로 붙인다.
+      let heroKey = keyed.first(where: { heroKeys.contains($0.0) })?.0
+      let statItems = ["time", "pace", "heartRate", "place"].filter { hasKey($0) && $0 != heroKey }
       let dateText = valueFor("date")
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
+      let dateInStack = !dateText.isEmpty && !statItems.isEmpty
+      let dateAboveHero = !dateText.isEmpty && statItems.isEmpty && heroKey != nil
+      let heroSize = 66 * u
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+      // 빠뜨렸던 버그. 26*M로 맞춘다.
+      let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
+      if !dateText.isEmpty {
+        if dateAboveHero {
+          draw(dateText, CGPoint(x: 22 * M + ox, y: heroBaseline - heroSize * 0.78 - 8 * u), monoFont(11 * u, bold: false), .left, color: mutedColor)
+        } else {
+          draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor)
+        }
+      }
 
-      let statItems = ["time", "pace", "heartRate", "place"].filter(hasKey)
       if !statItems.isEmpty {
         let labelFont = 9 * u
         let valueFont = 19 * u
         let rowGap = 14 * u
-        var cursorY = headerBaseline + 72 * M + captionExtra
+        // 날짜가 있으면 그 바로 아래에서, 없으면 날짜 자리(맨 위)에서 시작한다.
+        var cursorY = (dateInStack ? headerBaseline + 12 * u : headerBaseline - headerFont * 0.85) + captionExtra
         for key in statItems {
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 1.05
@@ -1390,10 +1407,6 @@ public class RouteRendererModule: Module {
       }
 
       if let hero = keyed.first(where: { heroKeys.contains($0.0) }) {
-        let heroSize = 66 * u
-        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
-        // 빠뜨렸던 버그. 26*M로 맞춘다.
-        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
         drawHeroValue(hero.1, CGPoint(x: 22 * M + ox, y: heroBaseline), heroSize, align: .left)
       }
       return
