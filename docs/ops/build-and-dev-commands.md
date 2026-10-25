@@ -2,6 +2,16 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-10-25: 앱 재개와 현황 복구 실기기 QA
+
+[PR #125](https://github.com/everyware-ie/run-mechuri/pull/125)의 `ce89946`에서 내부 개발 앱을 빌드했다. 기존 `/private/tmp/runary-live-build` DerivedData와 개발 인증서·프로파일을 재사용했으며 아이폰·워치·잠금화면 확장의 iphoneos Debug 빌드와 깊은 서명 검증을 통과했다. 새 인증서나 기기 등록은 없다.
+
+iPhone 11 Pro의 TestFlight `1.0.0(42)` 위에 개발 앱 `1.0.0(1)`을 설치했다. 실제 설치 버전, 내부 측정 플래그, LAN 개발 서버 연결을 확인했다. 보관함 26개와 기존 편집 초안은 유지됐다. 워치 직접 설치·응답은 이번 확인 범위에 넣지 않았다.
+
+앱 즉시 재개와 삭제한 잠금화면 현황 복구를 실기기에서 확인했다. QA 러닝은 21.15초·0km로 종료·저장했다. 상세 근거와 남은 확인은 [구현 노트](../product/features/run-resume-and-record-compatibility.md#1025-실기기-확인)에 있다.
+
+사용자가 여러 작업을 묶어 배포하기로 했으므로 TestFlight에는 제출하지 않았다. 아이폰은 로컬 QA용 개발 앱 상태이며, TestFlight 배포 번호는 올리지 않았다.
+
 ## 2026-10-19: 잠금화면 제어와 자체 기록 편집 내부 배포
 
 사용자 요청으로 [PR #114](https://github.com/everyware-ie/run-mechuri/pull/114)를 CI 통과 뒤 main에 머지했다. 배포 소스는 `cbd2007695851e2ce5904b56e42383516418dc92`다. 머지 후 main CI도 통과했다. 개인 설정을 제외한 별도 체크아웃에 잠금 파일대로 의존성을 설치하고 `internal-tracking` 프로필로 클라우드 빌드를 요청했다.
