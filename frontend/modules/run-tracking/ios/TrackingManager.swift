@@ -201,22 +201,30 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     guard let engine, ["paused", "interrupted"].contains(engine.status) else { return }
     _ = try readyForStart()
-    setWatchRequest(nil)
-    closeWatchRecovery(); append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
-    guard flush() else { haltForStorage(); throw problem("재개 상태를 저장하지 못했어요.") }
-    beginSensors(); syncWatch(); launchWatch(); restartHealthHeartIfNeeded()
+    try resumeCurrentRun()
+  }
+  func resumeImmediately() throws {
+    try requireEnabled()
+    guard let engine, ["paused", "interrupted"].contains(engine.status) else { return }
+    guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 재개해 주세요.") }
+    try requireStartPermission()
+    try resumeCurrentRun(restorePresentation: true)
   }
   // Only an explicit button in the active Live Activity can use this path.
   // A resumed segment starts now and accepts no cached pre-resume coordinates.
   private func resumeFromLiveActivity() throws {
     try requireEnabled()
     guard let engine, engine.status == "paused", liveActivity.active(runID: engine.id) else { return }
-    guard authorizeLocation(), CLLocationManager.locationServicesEnabled(), location.accuracyAuthorization == .fullAccuracy else {
-      throw problem("위치 권한과 정확한 위치를 앱에서 확인해 주세요.")
-    }
+    try requireStartPermission()
+    try resumeCurrentRun()
+  }
+  private func resumeCurrentRun(restorePresentation: Bool = false) throws {
+    guard let engine else { return }
     setWatchRequest(nil); closeWatchRecovery()
+    notice = nil; ready = nil; gpsReadyAt = nil; prepareAt = nil; phoneStartPending = false
     append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
     guard flush() else { haltForStorage(); throw problem("재개 상태를 저장하지 못했어요.") }
+    if restorePresentation { liveActivity.restoreAfterResume(runID: engine.id); syncLiveActivity(force: true) }
     beginSensors(); syncWatch(); launchWatch(); restartHealthHeartIfNeeded()
   }
   func performLiveAction(_ rawAction: String, runID: String, revision: String, confirmation: String?) throws {

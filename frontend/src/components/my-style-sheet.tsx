@@ -2,7 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
-import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { findDefaultBackground } from '@/constants/default-backgrounds';
 import { ROUTE_COLORS, resolveRouteStyle } from '@/lib/editor-style';
 import type { EditSnapshot } from '@/lib/edit-history';
 import { captureMyStyle, deleteMyStyle, listMyStyles, MAX_MY_STYLES, saveMyStyle, type MyStyle } from '@/lib/my-style-store';
@@ -51,7 +51,7 @@ export function MyStyleSheet({ snapshot, onApply }: { snapshot: EditSnapshot; on
       !styles.length ? <Text style={ui.empty}>자주 쓰는 조합을 내 스타일로 남겨 보세요.</Text> : <>
         <Text style={ui.count}>저장한 스타일 {styles.length}/{MAX_MY_STYLES}</Text>
         {styles.map(style => {
-          const bg = DEFAULT_BACKGROUNDS.find(b => b.id === style.backgroundId), line = resolveRouteStyle(style.routeStyle);
+          const bg = findDefaultBackground(style.backgroundId), line = resolveRouteStyle(style.routeStyle);
           return <View key={style.id} style={ui.card}>
             <Pressable onPress={() => { void operation(async () => { const applied = await onApply(style); if (applied && mounted.current) setMessage(`‘${style.name}’을 적용했어요`); }); }}
               disabled={busy} style={ui.apply} accessibilityRole="button" accessibilityLabel={`${style.name} 적용`}>

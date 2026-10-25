@@ -32,6 +32,7 @@ type Module = {
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;
   startImmediately?(): Promise<TrackingState>;
+  resumeImmediately?(): Promise<void>;
   startWithHeartSource?(source: HeartSource): Promise<TrackingState>;
   reconnectHealthHeart?(): Promise<void>; refreshHealthHeart?(id: string): Promise<boolean>;
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;
