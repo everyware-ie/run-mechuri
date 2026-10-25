@@ -276,8 +276,21 @@ export default function BackgroundSelectionScreen() {
           </View>
         </>}
         {!editingPhoto && <>
-        <Text style={styles.sectionLabel}>기본 이미지</Text>
-        {/* 기본 이미지 6장 + 갤러리·촬영 칸은 한 줄에 다 안 들어가서 가로로 스크롤한다 */}
+        <View style={styles.sourceHeader}>
+          <Text style={styles.sectionLabel}>기본 이미지</Text>
+          <View style={styles.sourceActions}>
+            <Pressable disabled={disabled} onPress={() => pickPhoto('gallery')}
+              accessibilityRole="button" accessibilityLabel="갤러리에서 사진 또는 영상 선택" accessibilityState={{ disabled }}
+              style={({ pressed }) => [styles.sourceButton, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              <SymbolView name="photo.on.rectangle" size={20} tintColor={Colors.text} />
+            </Pressable>
+            <Pressable disabled={disabled} onPress={() => pickPhoto('camera')}
+              accessibilityRole="button" accessibilityLabel="사진 촬영" accessibilityState={{ disabled }}
+              style={({ pressed }) => [styles.sourceButton, pressed && styles.toolPressed, disabled && styles.disabled]}>
+              <SymbolView name="camera" size={20} tintColor={Colors.text} />
+            </Pressable>
+          </View>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.swatchRow}>
           {DEFAULT_BACKGROUNDS.map(bg => <Pressable key={bg.id} disabled={disabled}
             onPress={() => { setCandidate(null); setSelection({ kind: 'default', id: bg.id }); setShowSources(true); }}
@@ -286,14 +299,7 @@ export default function BackgroundSelectionScreen() {
             style={[styles.swatch, active.kind === 'default' && active.id === bg.id && styles.swatchOn]}>
             <Image source={bg.source} style={styles.swatchImg} resizeMode="cover" />
           </Pressable>)}
-          <Pressable disabled={disabled} onPress={() => pickPhoto('gallery')} accessibilityRole="button" style={[styles.swatch, styles.sourceButton]}>
-            <Text style={styles.buttonText}>갤러리</Text>
-          </Pressable>
-          <Pressable disabled={disabled} onPress={() => pickPhoto('camera')} accessibilityRole="button" style={[styles.swatch, styles.sourceButton]}>
-            <Text style={styles.buttonText}>사진 촬영</Text>
-          </Pressable>
         </ScrollView>
-        <Text style={styles.note}>기본 이미지를 고르거나 내 사진·영상을 배경으로 사용해 보세요.</Text>
         </>}
         <Pressable disabled={disabled} onPress={handleConfirm} accessibilityRole="button"
           accessibilityState={{ disabled }}
@@ -331,18 +337,19 @@ const styles = StyleSheet.create({
   controls: { flexShrink: 0, gap: 8 },
   card: { alignSelf: 'center', borderRadius: Radius.card, overflow: 'hidden', backgroundColor: Colors.bgCard },
   backgroundImage: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
-  sectionLabel: { fontFamily: Fonts.sans, fontSize: 10, color: Colors.textMuted, marginTop: 4 },
+  sourceHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sourceActions: { flexDirection: 'row' },
+  sectionLabel: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted },
   swatchRow: { flexDirection: 'row', gap: 9 },
-  swatch: { width: 72, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard },
+  swatch: { width: 54, aspectRatio: 9 / 16, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bgCard },
   swatchOn: { borderColor: Colors.accent },
   swatchImg: { width: '100%', height: '100%' },
-  sourceButton: { borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  sourceButton: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   note: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 17, color: Colors.textMuted },
   photoTools: { flexDirection: 'row', marginTop: -4 },
   photoTool: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', paddingVertical: 8, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 8 },
   toolPressed: { backgroundColor: Colors.border },
   toolLabel: { flexShrink: 1, fontFamily: Fonts.sans, fontSize: 10.5, color: Colors.textMuted, textAlign: 'center' },
-  buttonText: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.text },
   loadingOverlay: { ...StyleSheet.absoluteFill, zIndex: 20, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 32 },
   loadingCard: { width: '100%', maxWidth: 300, alignItems: 'center', backgroundColor: Colors.bgCard, borderRadius: Radius.card, borderWidth: 1, borderColor: Colors.borderStrong, padding: 24 },
   loadingIcon: { padding: 10, marginBottom: 12 },
