@@ -3,7 +3,7 @@ title: 러닝 기록 선택 기능정의서 (FRD)
 product: running
 type: frd
 status: approved
-updated: 2026-10-19
+updated: 2026-10-25
 derives_from: ../prd/running-drawing-mvp.md
 prd_sections: "§5 포함 1번, §6 첫 진입, §6 데이터 진입"
 related:
@@ -73,6 +73,8 @@ HealthKit의 실외 달리기 워크아웃만 보여준다. 걷기, 자전거, �
 `[확인 필요]` 좌표 없는 워크아웃이 얼마나 흔한지 모른다. 팀 3명 기기에서 확인이 필요하다(PRD §11). 흔하면 §4-1 빈 상태(세 번째 경우)가 자주 뜬다는 뜻이라, 그 문구가 실제로 도움이 되는지 다시 본다.
 
 ### 2-3. 목록 항목
+
+각 실제 기록의 날짜 위에 출처 배지를 표시한다. 문구는 `Runary`와 `Apple 건강`이며 지표 줄에는 출처를 반복하지 않는다. 색과 구성은 [자체 기록 편집 FRD §2 목록과 선택](runary-record-editing.md#2-목록과-선택)의 2026-10-25 승인안을 따른다.
 
 | 항목 | |
 |---|---|

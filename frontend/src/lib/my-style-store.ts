@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { defaultBackgroundForPath, findDefaultBackground } from '@/constants/default-backgrounds';
 import type { RoutePreset, StampConfig } from '@/components/route-preview';
 import type { EditSnapshot } from './edit-history';
 import { normalizeRouteStyle, type RouteStyle } from './editor-style';
@@ -17,7 +17,7 @@ const finitePercent = (v: number) => Number.isFinite(v) ? Math.min(100, Math.max
 export function captureMyStyle(snapshot: EditSnapshot, name: string): MyStyle {
   return {
     id: `style-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: name.trim().slice(0, 20) || '내 스타일', createdAt: new Date().toISOString(),
-    backgroundId: snapshot.backgroundPhoto ? null : DEFAULT_BACKGROUNDS.find(bg => snapshot.backgroundImagePath?.endsWith(`/${bg.id}.jpg`))?.id ?? null,
+    backgroundId: snapshot.backgroundPhoto ? null : defaultBackgroundForPath(snapshot.backgroundImagePath)?.id ?? null,
     preset: snapshot.preset, routeStyle: normalizeRouteStyle(snapshot.routeStyle),
     smoothOptions: { smooth: finitePercent(snapshot.smoothOptions.smooth), corner: finitePercent(snapshot.smoothOptions.corner) },
     stampStyle: { enabled: { ...snapshot.stampConfig.enabled }, layout: snapshot.stampConfig.layout,
@@ -43,7 +43,7 @@ async function read(): Promise<MyStyle[]> {
   return value.filter((style: MyStyle) => style && typeof style.id === 'string' && typeof style.name === 'string'
     && ['default-drawing', 'light-runner', 'segment-lighting'].includes(style.preset) && style.stampStyle?.enabled && style.smoothOptions)
     .slice(0, MAX_MY_STYLES).map((s: MyStyle) => ({ id: s.id, name: s.name.slice(0, 20), createdAt: s.createdAt,
-      backgroundId: DEFAULT_BACKGROUNDS.some(bg => bg.id === s.backgroundId) ? s.backgroundId : null,
+      backgroundId: findDefaultBackground(s.backgroundId)?.id ?? null,
       preset: s.preset, routeStyle: normalizeRouteStyle(s.routeStyle), smoothOptions: {
         smooth: finitePercent(s.smoothOptions.smooth), corner: finitePercent(s.smoothOptions.corner),
       }, stampStyle: { layout: ['corner', 'glass', 'rail', 'stack', 'bar', 'line', 'row'].includes(s.stampStyle.layout) ? s.stampStyle.layout : 'corner',

@@ -55,7 +55,7 @@ import { Slider } from '@/components/slider';
 import { StampPresetSelector } from '@/components/stamp-preset-selector';
 import { ThemedButton } from '@/components/ui';
 import { VerticalSlider } from '@/components/vertical-slider';
-import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { DEFAULT_BACKGROUNDS, findDefaultBackground } from '@/constants/default-backgrounds';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { isVideoBackground, persistDefaultBackground } from '@/lib/background-storage';
 import { useCaptionEditing } from '@/hooks/use-caption-editing';
@@ -884,7 +884,7 @@ export default function EditScreen() {
     applyingStyleRef.current = true;
     setApplyingStyle(true);
     try {
-      const bg = DEFAULT_BACKGROUNDS.find(b => b.id === style.backgroundId);
+      const bg = findDefaultBackground(style.backgroundId);
       const path = bg ? await persistDefaultBackground(bg) : undefined;
       if (operation !== styleOperation.current) return false;
       const current = { ...snapshotRef.current, transform: transformRef.current, routeStyle: routeStyleRef.current,

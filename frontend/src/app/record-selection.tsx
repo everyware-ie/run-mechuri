@@ -202,12 +202,16 @@ export default function RecordSelectionScreen() {
               </View>
 
               <View style={styles.rowMain}>
+                <View style={[styles.sourceBadge, item.source === 'runary' && styles.sourceBadgeRunary]}>
+                  <Text style={[styles.sourceBadgeText, item.source === 'runary' && styles.sourceBadgeTextRunary]}>
+                    {item.source === 'runary' ? 'Runary' : 'Apple 건강'}
+                  </Text>
+                </View>
                 <Text style={[styles.rowTitle, !selectable && styles.rowTitleMuted]}>
                   {formatRunTitle(item.date)}
                 </Text>
                 <Text style={styles.rowMeta}>
                   {[
-                    item.source === 'runary' ? 'Runary' : 'Apple 건강',
                     formatDistanceKm(item.distanceMeters),
                     !failed ? formatDuration(item.durationSeconds) : null,
                     selectable ? formatPace(item.averagePaceSecPerKm) : null,
@@ -292,6 +296,10 @@ const styles = StyleSheet.create({
   thumbGlyph: { fontFamily: Fonts.sans, fontSize: 18, color: Colors.textMuted },
   thumbGlyphFailed: { color: Colors.accent },
   rowMain: { flex: 1, gap: 4 },
+  sourceBadge: { alignSelf: 'flex-start', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, marginBottom: 2, backgroundColor: 'rgba(237,241,245,0.08)' },
+  sourceBadgeRunary: { backgroundColor: 'rgba(255,90,43,0.12)' },
+  sourceBadgeText: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 15, color: '#BBC2CB' },
+  sourceBadgeTextRunary: { color: '#FF9D7F' },
   rowTitle: { fontFamily: Fonts.sansBold, fontSize: 15, color: Colors.text },
   rowTitleMuted: { color: Colors.textMuted },
   rowMeta: { fontFamily: Fonts.sans, fontSize: 10.5, color: Colors.textMuted, lineHeight: 16 },
