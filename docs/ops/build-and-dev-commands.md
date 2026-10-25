@@ -108,6 +108,25 @@ Xcode가 열리면:
 
 Run 후 앱이 켜지면, 그 앱은 자동으로 Metro(`npx expo start`)를 찾아 연결한다 — 둘은 별개 프로세스라 **Xcode Run과 `npx expo start`를 둘 다 켜둬야** JS 코드 변경이 실시간으로 반영된다.
 
+## 2026-10-25: 실제 러닝 QA용 내부 빌드 43
+
+사용자가 다음 날 실제 러닝 QA를 위해 현재까지의 작업을 TestFlight로 제출하도록 요청했다. [PR #125](https://github.com/everyware-ie/run-mechuri/pull/125)의 커밋 `7384ccb5f50f1ca888170ee8ac85d5d0a96f7997`을 별도 깨끗한 체크아웃으로 복사하고 잠금 파일대로 의존성을 설치했다. 개인 `.claude/launch.json`과 개발용 생성 iOS 프로젝트는 포함하지 않았다.
+
+최신 커밋의 GitHub CI는 통과했다. 자동 승인 검토가 이번 제출 요청과 main 머지 권한을 별개로 판단해 머지를 거절했다. 따라서 main 머지 없이 위 확정 커밋으로 배포하며, 기존의 머지된 소스 배포 절차와 다른 점을 명시한다.
+
+- 버전: `1.0.0(43)`, 프로필과 채널: `internal-tracking`.
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/71681903-baff-49dd-b9c3-ad1ff8c1388d): `FINISHED`.
+- [자동 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/0cad4ac2-fc95-4f89-b194-0d46cbc0c45f): `FINISHED`. Apple 업로드 완료. 2026-10-25 Apple 조회에서 `VALID / IN_BETA_TESTING`, 미만료 상태를 확인했다. 등록된 내부 테스터가 TestFlight에서 설치할 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크·정식 심사 설정은 변경하지 않았다.
+- 기존 아이폰·워치·잠금화면 확장 배포 인증서와 프로파일, EAS의 제출용 API 자격을 재사용했다. 새 인증서나 기기를 등록하지 않았다.
+
+변경은 앱 즉시 재개, 삭제한 잠금화면 현황 복구, 이전 기본 배경 보존, 기록 출처 배지, 배경 선택의 고정 갤러리·촬영 버튼이다. Jest 375개와 Swift 169개, 타입·빌드 설정·문서 검사, 실기기 제작 흐름을 통과했다. 린트는 오류 0개와 기존 경고 30개다.
+
+배포 IPA에서 아이폰·워치·잠금화면 확장의 버전 `1.0.0(43)` 일치, `RunaryInternalTracking=true`, `NSSupportsLiveActivities=true`, 위치 백그라운드 모드를 확인했다. 깊은 서명 검증도 통과했다. IPA SHA-256은 `6e0ab70cc1b2116344423186d1abb9af15eeb7e73195281a2ac7cb840108aa4f`다.
+
+일반 러닝의 워치 운동 세션과 손목을 들었을 때 자동 화면 복귀는 이번 빌드에 추가하지 않았다. Runary 단독 연속 심박을 보장하는 빌드로 안내하지 않는다. [측정 출시 전 검토](../product/features/tracking-release-readiness.md)에 남은 범위를 기록했다.
+
+내일 QA는 아이폰을 소지한 실제 러닝에서 잠금 중 거리·경로 유지, 일시정지 후 즉시 재개, 종료·저장된 기록으로 영상 만들기를 우선 확인한다. 워치 심박이 비어 있다면 별도 운동 앱 사용 여부와 미수신 시각을 함께 남긴다.
+
 ## 4. TestFlight로 배포 (팀원들이 실기기에서 테스트)
 
 `eas.json`에 `production` 빌드/제출 프로필이 이미 설정돼 있음(`ascAppId: 6807295594`).
