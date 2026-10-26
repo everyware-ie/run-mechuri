@@ -49,3 +49,11 @@ test('projection, smoothing, path and animation preserve gaps', () => {
   expect(justAfterGap.segment).toBe(1);
   expect(justAfterGap.x).toBeGreaterThanOrEqual(projected[2].x);
 });
+
+test('Health export is hidden only while its exact Runary original exists', () => {
+  const own = runaryRecord(summary);
+  const exported = { ...own, id: 'health-copy', source: 'healthkit' as const, runaryRunID: summary.id };
+  const unrelated = { ...exported, id: 'other-app', runaryRunID: undefined };
+  expect(mergeRunRecords([exported, unrelated], [own]).map(r => r.id).sort()).toEqual(['other-app', own.id].sort());
+  expect(mergeRunRecords([exported], []).map(r => r.id)).toEqual(['health-copy']);
+});

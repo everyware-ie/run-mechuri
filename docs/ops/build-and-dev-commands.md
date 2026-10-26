@@ -608,3 +608,19 @@ CoreDevice로 업데이트를 전송하던 중 연결 중단(3002 / IXRemoteErro
 `codex/feature/runary-record-editing`에서 기존 내부 개발 앱 `1.0.0(1)`에 자체 기록 선택과 경로 구간 렌더링을 추가했다. 새 Swift 소스 반영을 위해 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행하고 기존 DerivedData·개발 프로파일로 아이폰·워치·위젯 전체 iphoneos Debug 빌드를 완료했다. `codesign --verify --deep --strict`를 통과한 앱을 CoreDevice로 iPhone 11 Pro에 업데이트 설치했다. API 키나 새 기기 등록은 사용하지 않았다.
 
 8081 Metro에 연결한 미러링에서 실제 Runary 5.41km 기록 선택, 경로 편집, 영상 생성·사진 저장, 보관함에서 다시 편집을 확인했다. 워치 실제 업데이트 반영은 확인하지 않았으며 자체 기록 선택은 아이폰에서 검증했다. TestFlight 제출과 PR 머지는 수행하지 않았다. 자세한 결과는 [구현 노트](../product/features/runary-record-editing.md)에 둔다.
+
+
+## 2026-10-26: 건강 저장 개발 앱 설치와 QA
+
+`codex/feature/watch-workout-integration`의 아이폰·워치·잠금화면 확장을 기존 개발 인증서와 프로파일로 빌드했다. iphoneos Debug 빌드와 깊은 서명 검증을 통과한 `1.0.0(1)`을 iPhone 11 Pro에 업데이트 설치했다. 새 기기 등록이나 인증서 생성, API 키 재사용은 하지 않았다.
+
+LAN 8081 개발 서버에서 자체 측정 후 건강 저장을 검증했다. Apple 건강 원본에 출처 Runary로 저장됐고 피트니스에도 29초 운동이 표시됐다.워치 앱은 동봉됐지만 직접 설치는 연결 시간 초과로 확인하지 못했다. TestFlight는 제출하지 않았다. [실기기 결과와 남은 확인](../product/features/watch-workout-integration.md#실기기-결과)을 참고한다.
+
+
+같은 날 21:22에는 워치 개발 서비스 연결이 가능해져 최신 `RunaryWatch.app`을 직접 업데이트했다. 실제 설치 조회에서 `1.0.0(1)`과 실행 성공을 확인했다. 이후 제자리 심박 수신과 Runary 내부 저장은 통과했지만 건강 운동의 심박 연결은 권한 오류로 실패했다. [추가 QA](../product/features/watch-workout-integration.md#2124-심박-실기기-추가-검증)를 참고한다.
+
+
+같은 날 21:35 심박 연결 권한을 수정한 개발 앱 1번을 재설치했다. 기존 서명으로 빌드와 깊은 서명 검증을 통과했으며 이전 QA 기록에서 심박수 쓰기 요청 화면을 확인했다. 권한 승인 후 저장 완료 검증은 대기 중이다. TestFlight에는 제출하지 않았다.
+
+
+21:40 권한 승인 후 기존 72초 QA 기록의 심박 샘플 13개 연결에 성공했다. 기존 운동 UUID를 유지하고 건강 저장 완료 상태를 확인했다. 수정 빌드는 개발 앱에만 적용됐으며 TestFlight 배포는 없다.

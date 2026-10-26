@@ -302,3 +302,7 @@ WatchConnectivity 상태 전달은 워치 앱의 자동 전면 실행을 보장�
 - [Apple: 기기 간 운동 연동](https://developer.apple.com/videos/play/wwdc2023/10023/): 워치 운동 세션과 아이폰의 상태·지표 동기화. 예제의 cycling cadence를 러닝 cadence로 혼용하지 않는다.
 - [Apple: currentCadence](https://developer.apple.com/documentation/coremotion/cmpedometerdata/currentcadence): 초당 걸음 수와 미지원·미수신에서 값이 없는 경우.
 - [Apple: HKAnchoredObjectQuery](https://developer.apple.com/documentation/healthkit/hkanchoredobjectquery): 저장소에 새로 들어오는 샘플의 관찰. 워치-아이폰 실시간 전달 주기를 보장하는 API가 아니다.
+
+## 2026-10-26 개정: 워치 운동 세션과 건강 저장
+
+사용자가 [워치 연동 FRD](watch-workout-integration.md)의 구현을 승인했다. 이 범위에서는 첫 연결 동의 후 자체 워치 운동 세션을 사용하며 다른 워치 운동과 병행을 보장하지 않는다. 완료한 실제 Runary 기록은 쓰기 허용 시 건강에도 저장한다. 워치 없는 아이폰 측정도 저장 대상이다. 기존 읽기 전용·자체 운동 미사용 설명은 이 개정 이전 정책이며, 배포 완료 여부는 구현 노트에서 구분한다.

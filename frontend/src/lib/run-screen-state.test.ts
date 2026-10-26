@@ -77,7 +77,7 @@ test('a pending Watch start does not restart native GPS preparation from the scr
   state.mockResolvedValue({ ...snapshot, phase: 'preparing', watchStartPending: true, locationPermission: 4, preciseLocation: true });
   await act(async () => { renderer = create(createElement(RunScreen)); });
   expect(Tracking!.prepare).not.toHaveBeenCalled();
-  expect(text()).toContain('워치에서 요청한 러닝을 GPS 준비 후 자동으로 시작해요.');
+  expect(text()).toContain('워치에서 요청한 러닝의 시작을 확인하고 있어요.');
 });
 
 test('an imported but delayed heart displays its average and measured time while waiting for fresh data', async () => {
