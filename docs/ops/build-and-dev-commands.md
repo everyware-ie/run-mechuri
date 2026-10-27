@@ -12,6 +12,33 @@ iPhone 11 Pro의 TestFlight `1.0.0(42)` 위에 개발 앱 `1.0.0(1)`을 설치�
 
 사용자가 여러 작업을 묶어 배포하기로 했으므로 TestFlight에는 제출하지 않았다. 아이폰은 로컬 QA용 개발 앱 상태이며, TestFlight 배포 번호는 올리지 않았다.
 
+## 2026-10-22: 기본 배경 6장과 편집 개선 내부 배포
+
+사용자 요청으로 [PR #119](https://github.com/everyware-ie/run-mechuri/pull/119)(기본 배경 6장)와 [#121](https://github.com/everyware-ie/run-mechuri/pull/121)(러닝 데이터 라벨 가독성), [#122](https://github.com/everyware-ie/run-mechuri/pull/122)(도구 버튼 접기), [#123](https://github.com/everyware-ie/run-mechuri/pull/123)(코너 프리셋 재배치)을 머지한 main을 내부 테스터용으로 배포했다. 배포 소스는 `4e0713bd559066237cc163f8abd08a7e2968d8f9`다. 머지 후 main CI는 통과했다. 개인 설정을 제외한 별도 깨끗한 체크아웃에서 기존 잠금 파일대로 `npm ci`를 한 뒤 `internal-tracking` 프로필로 클라우드 빌드를 요청했다.
+
+- 버전: `1.0.0(42)`.
+- EAS 빌드: `0bd2ff5b-8bd5-4e0c-9ed0-f56514654cd4`.
+- 빌드 프로필과 채널: `internal-tracking`, `RUNARY_INTERNAL_TRACKING=1`.
+- 빌드 결과: `FINISHED`. 클라우드 빌드 시간은 약 7분 40초다. 빌드가 가리키는 커밋이 배포 소스와 같은 것을 확인했다.
+- 제출 ID: `c53c74d6-9bc9-415e-8a1c-b58dedd626b0`. EAS 제출은 Apple App Store Connect 업로드까지 완료했다.
+
+**확인한 것.** 머지한 네 PR의 CI(타입·린트·테스트·문서 검사)와 main CI 통과, 전체 Jest 366개 통과, 사용자가 개발 앱을 Xcode에서 실행해 Swift 컴파일과 저장 영상의 라벨·코너 배치를 확인했다.
+
+**확인하지 않은 것.** 아래는 이번 배포에서 하지 않았다.
+
+- Apple의 처리 결과(`VALID / IN_BETA_TESTING`, 만료 여부). 업로드 직후라 아직 조회하지 않았다. 내부 테스터가 설치할 수 있는지는 이 조회 뒤에 확정한다
+- 제출한 IPA의 버전과 내부 기능 설정 확인
+- 이 TestFlight 빌드를 실기기에 설치해 다시 확인하는 것
+- 측정 기능. 이번 변경에서 측정 코드는 건드리지 않았고 새로 검증하지도 않았다. 10/20 회의에서 나온 측정 QA 4건은 이 빌드에 해결돼 들어가지 않았다([QA 기록](qa-log.md))
+
+**후속 확인 (2026-10-27).** `eas submit:status` 조회에서 42번의 `VALID / IN_BETA_TESTING`, 미만료를 확인했다. 내부 테스터는 설치할 수 있다.
+
+내부 테스터용 배포다. 외부 공개 그룹과 정식 심사 제출은 이번 작업에서 변경하지 않았다. 인증서 생성·폐기와 기기 등록도 하지 않았다.
+
+팀 공유 문안:
+
+> Runary TestFlight 1.0.0(42) 올렸어요. Apple 처리가 끝나면(5~10분) 내부 테스터는 설치할 수 있어요. 기본 배경이 러닝 풍경 6장으로 바뀌었고, 편집 화면에서 오른쪽 도구 버튼을 접었다 펼 수 있어요. 러닝 데이터의 라벨(TIME·PACE)이 더 잘 보이고, 코너 프리셋은 날짜가 통계 위에 붙어요. 항목을 끄고 켜면서 코너 배치가 자연스러운지 봐 주세요.
+
 ## 2026-10-19: 잠금화면 제어와 자체 기록 편집 내부 배포
 
 사용자 요청으로 [PR #114](https://github.com/everyware-ie/run-mechuri/pull/114)를 CI 통과 뒤 main에 머지했다. 배포 소스는 `cbd2007695851e2ce5904b56e42383516418dc92`다. 머지 후 main CI도 통과했다. 개인 설정을 제외한 별도 체크아웃에 잠금 파일대로 의존성을 설치하고 `internal-tracking` 프로필로 클라우드 빌드를 요청했다.
