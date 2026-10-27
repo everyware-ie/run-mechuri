@@ -71,7 +71,16 @@ final class TrackingStore {
       throw NSError(domain: "TrackingStore", code: 2, userInfo: [NSLocalizedDescriptionKey: "저장된 기록을 읽을 수 없어요. 원본은 보존했습니다."])
     }
     let engine = TrackingEngine(id: id, started: start.time)
-    for event in decoded.prefix(committed).dropFirst() { engine.apply(event) }
+    let committedEvents = Array(decoded.prefix(committed).dropFirst())
+    let stop = committedEvents.filter { $0.kind == "watchStop" && $0.time >= start.time }.map(\.time).min()
+    for event in committedEvents {
+      if let stop, event.time > stop, !["checkpoint", "feedback", "finish", "saving", "heartDeleted", "heartSeries"].contains(event.kind) { continue }
+      if event.kind == "watchStop" { continue }
+      if let stop, ["finish", "saving"].contains(event.kind) {
+        var terminal = event; terminal.time = stop; engine.apply(terminal)
+      } else { engine.apply(event) }
+    }
+    if let stop, engine.status != "completed" { engine.apply(TrackingEvent(kind: "saving", time: stop)) }
     if committedBytes < data.count {
       engine.errors.append("uncommittedOrDamagedTail")
       if repair {

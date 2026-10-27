@@ -1,12 +1,14 @@
 import { requireOptionalNativeModule } from 'expo';
 
+export type HeartSource = "off" | "health" | "watch";
 export type RunSummary = {
   id: string; started: number; status: 'running' | 'paused' | 'interrupted' | 'saving' | 'completed';
   duration: number; elapsed: number; distance: number; pace?: number | null; averagePace?: number | null;
+  heartSource?: HeartSource;
   heartRate?: number | null; averageHeartRate?: number | null; maxHeartRate?: number | null;
   steps: number; cadence?: number | null; averageCadence?: number | null;
   lastLocation?: number | null; lastHeart?: number | null; lastMotion?: number | null; lastSaved?: number | null;
-  segments: number; rawCount: number; acceptedCount: number; rejected: Record<string, number>;
+  segments: number; rawCount: number; acceptedCount: number; hasDrawableRoute?: boolean; rejected: Record<string, number>;
   backgroundCount: number; foregroundCount: number; maxSampleGap: number; maxReceiptGap: number;
   meanAccuracy?: number | null; incomplete: boolean; errors: string[];
   batteryStart?: number | null; batteryEnd?: number | null; charging: boolean; watchEnabled: boolean; feedback?: string; preparedAt?: number; readyAt?: number; lowPower: boolean; metricVersion: number;
@@ -18,19 +20,29 @@ export type RunMapPage = {
 };
 export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
-  watchState: string; storageError: boolean; unsavedEvents: number;
+  watchWorkoutEnabled?: boolean; watchWorkoutState?: string; healthExportEnabled?: boolean;
+  watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
+  watchStartPending?: boolean; phoneStartPending?: boolean;
+  liveActivityState?: 'off' | 'active' | 'disabled' | 'waiting' | 'dismissed' | 'unavailable';
   locationPermission: number; preciseLocation: boolean; motionPermission: number; motionSupported: boolean;
   watchPaired: boolean; watchInstalled: boolean;
 };
 type Module = {
-  enabled: boolean;
+  enabled: boolean; editorRoutes?: boolean; watchDisplayOnly?: boolean; watchAutoSync?: boolean;
   appVersion: string; buildVersion: string;
+  setWatchWorkoutEnabled?(value: boolean): Promise<void>;
+  setHealthExportEnabled?(value: boolean): Promise<void>;
+  exportHealth?(id: string): Promise<void>;
   state(): Promise<TrackingState>; prepare(): Promise<TrackingState>; cancelPreparation(): Promise<void>;
   mapSnapshot?(revision: string | null, after: number): Promise<RunMapPage>;
+  startImmediately?(): Promise<TrackingState>;
+  resumeImmediately?(): Promise<void>;
+  startWithHeartSource?(source: HeartSource): Promise<TrackingState>;
+  reconnectHealthHeart?(): Promise<void>; refreshHealthHeart?(id: string): Promise<boolean>;
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;
   retrySave(): Promise<void>; keepSaved(): Promise<void>; recover(id: string): Promise<void>;
   records(): Promise<{ records: RunSummary[]; damaged: string[] }>;
-  detail(id: string): Promise<{ summary: RunSummary; points: RunPoint[] }>;
+  detail(id: string): Promise<{ summary: RunSummary; points: RunPoint[]; healthExport?: { status: string; workoutID?: string } }>;
   deleteRecord(id: string): Promise<void>; feedback(id: string, text: string): Promise<void>; connectWatch(): Promise<void>;
   copySummary(text: string): Promise<void>;
 };

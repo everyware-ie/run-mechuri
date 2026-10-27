@@ -4,12 +4,28 @@ import UIKit
 public final class RunTrackingModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RunTracking")
+    Constant("editorRoutes") { true }
     Constant("enabled") { TrackingManager.enabled }
+    Constant("watchDisplayOnly") { true }
+    Constant("watchAutoSync") { true }
     Constant("appVersion") { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?" }
     Constant("buildVersion") { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?" }
     AsyncFunction("copySummary") { (text: String) throws in
       guard TrackingManager.enabled else { throw NSError(domain: "RunaryTracking", code: 1) }
       UIPasteboard.general.string = text
+    }.runOnQueue(.main)
+    AsyncFunction("setWatchWorkoutEnabled") { (value: Bool) throws in try TrackingManager.shared.setWatchWorkoutEnabled(value) }.runOnQueue(.main)
+    AsyncFunction("setHealthExportEnabled") { (value: Bool, promise: Promise) in
+      TrackingManager.shared.setHealthExportEnabled(value) { error in
+        if let error { promise.reject(error) } else { promise.resolve(nil) }
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("exportHealth") { (id: String, promise: Promise) in
+      do {
+        try TrackingManager.shared.exportHealth(id) { error in
+          if let error { promise.reject("ERR_HEALTH_EXPORT", error.localizedDescription) } else { promise.resolve(nil) }
+        }
+      } catch { promise.reject("ERR_HEALTH_EXPORT", error.localizedDescription) }
     }.runOnQueue(.main)
     AsyncFunction("state") { TrackingManager.shared.snapshot() }.runOnQueue(.main)
     AsyncFunction("mapSnapshot") { (revision: String?, after: Int) throws -> [String: Any] in
@@ -20,10 +36,25 @@ public final class RunTrackingModule: Module {
     }.runOnQueue(.main)
     AsyncFunction("cancelPreparation") { TrackingManager.shared.cancelPreparation() }.runOnQueue(.main)
     AsyncFunction("start") { (watch: Bool) throws -> [String: Any] in
-      try TrackingManager.shared.start(watch: watch); return TrackingManager.shared.snapshot()
+      try TrackingManager.shared.start(); return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("startImmediately") { () throws -> [String: Any] in
+      try TrackingManager.shared.startImmediately(); return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("startWithHeartSource") { (source: String) throws -> [String: Any] in
+      guard source == "health" else { throw NSError(domain: "RunaryTracking", code: 1) }
+      try TrackingManager.shared.start()
+      return TrackingManager.shared.snapshot()
+    }.runOnQueue(.main)
+    AsyncFunction("reconnectHealthHeart") { () throws in try TrackingManager.shared.reconnectHealthHeart() }.runOnQueue(.main)
+    AsyncFunction("refreshHealthHeart") { (id: String, promise: Promise) in
+      TrackingManager.shared.refreshHealthHeart(id) { result in
+        switch result { case .success(let value): promise.resolve(value); case .failure(let error): promise.reject(error) }
+      }
     }.runOnQueue(.main)
     AsyncFunction("pause") { () throws in try TrackingManager.shared.pause() }.runOnQueue(.main)
     AsyncFunction("resume") { () throws in try TrackingManager.shared.resume() }.runOnQueue(.main)
+    AsyncFunction("resumeImmediately") { () throws in try TrackingManager.shared.resumeImmediately() }.runOnQueue(.main)
     AsyncFunction("finish") { () throws in try TrackingManager.shared.finish() }.runOnQueue(.main)
     AsyncFunction("retrySave") { () throws in try TrackingManager.shared.retrySave() }.runOnQueue(.main)
     AsyncFunction("keepSaved") { () throws in try TrackingManager.shared.keepSaved() }.runOnQueue(.main)

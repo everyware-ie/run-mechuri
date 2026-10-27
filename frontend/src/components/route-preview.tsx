@@ -276,7 +276,8 @@ function skPath(points: CanvasPoint[]) {
   if (points.length === 0) return path;
   path.moveTo(points[0].x, points[0].y);
   for (let i = 1; i < points.length; i++) {
-    path.lineTo(points[i].x, points[i].y);
+    if ((points[i].segment ?? 0) !== (points[i - 1].segment ?? 0)) path.moveTo(points[i].x, points[i].y);
+    else path.lineTo(points[i].x, points[i].y);
   }
   return path;
 }
@@ -1207,7 +1208,7 @@ function stampLayoutPass(
 
   const finalValue = (item: StampItem) => item === 'distance' ? formatDistanceKm(run.distanceMeters)
     : item === 'time' ? formatDuration(run.durationSeconds)
-    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm ?? 0)) : value(item);
   const rawCaption = normalizeCaption(config.caption ?? '');
   const caption = rawCaption.trim() ? rawCaption : '';
   const layout: StampLayout = config.layout ?? 'row';
@@ -1348,7 +1349,7 @@ function stampLayoutPass(
       const widths = statOrder.map(item => {
         const finalValue = item === 'distance' ? formatDistanceKm(run.distanceMeters)
           : item === 'time' ? formatDuration(run.durationSeconds)
-    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm)) : value(item);
+    : item === 'pace' ? formatPace(Math.max(600, run.averagePaceSecPerKm ?? 0)) : value(item);
         return Math.max(estimateStampTextWidth(STAT_LABEL[item], labelFont),
           estimateStampTextWidth(finalValue, (item === 'distance' ? 22 : 18) * u));
       });
@@ -1383,17 +1384,30 @@ function stampLayoutPass(
     if (caption) {
       addCaption({ key: 'caption', x: topLeftX, y: headerBaseline, size: headerFont, family: 'NotoSansKR_700Bold', text: caption, anchor: 'start' }, true);
     }
+    // 코너는 켜진 항목에 맞춰 자리를 다시 잡는다(경로 렌더링 FRD §7-5, 2026-10-22).
+    // 큰 숫자로 쓴 항목은 통계에서 빼고, 날짜는 통계가 있으면 그 묶음의 첫 줄로,
+    // 통계가 없고 큰 숫자가 있으면 큰 숫자 바로 위로 붙인다. 날짜가 혼자 위에 떨어져 보이지 않게 한다.
+    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
+    const statItems = (['time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(k => has(k) && k !== heroKey);
     const dateText = has('date') ? value('date') : '';
+    const dateInStack = !!dateText && statItems.length > 0;
+    const dateAboveHero = !!dateText && statItems.length === 0 && !!heroKey;
+    const heroSize = 66 * u;
+    // 실기기 피드백(2026-09-03): 디자인 bottom:26px, M 곱하는 걸 빠뜨렸던 버그(위
+    // 'stack' 설명과 동일) — 26*M로 맞춘다.
+    const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
     if (dateText) {
-      nodes.push({ key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
+      nodes.push(dateAboveHero
+        ? { key: 'date', x: 22 * M + config.position.x, y: heroBaseline - heroSize * 0.78 - 8 * u, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'start', muted: true }
+        : { key: 'date', x: topRightX, y: headerBaseline, size: 11 * u, family: 'JetBrainsMono_500Medium', text: dateText, anchor: 'end', muted: true });
     }
 
-    const statItems = (['time', 'pace', 'heartRate', 'place'] as StampItem[]).filter(has);
     if (statItems.length > 0) {
       const labelFont = 9 * u;
       const valueFont = 19 * u;
       const rowGap = 14 * u;
-      let cursorY = headerBaseline + 72 * M + captionExtra; // 시안 top:96 - top:24
+      // 날짜가 있으면 그 바로 아래에서, 없으면 날짜 자리(맨 위)에서 시작한다.
+      let cursorY = (dateInStack ? headerBaseline + 12 * u : headerBaseline - headerFont * 0.85) + captionExtra;
       statItems.forEach((item, i) => {
         const labelY = cursorY + labelFont * 0.85;
         const valueY = labelY + valueFont * 1.05;
@@ -1404,12 +1418,7 @@ function stampLayoutPass(
       });
     }
 
-    const heroKey = (['distance', 'time', 'pace'] as StampItem[]).find(has);
     if (heroKey) {
-      const heroSize = 66 * u;
-      // 실기기 피드백(2026-09-03): 디자인 bottom:26px, M 곱하는 걸 빠뜨렸던 버그(위
-      // 'stack' 설명과 동일) — 26*M로 맞춘다.
-      const heroBaseline = CANVAS_HEIGHT * (1 - SAFE_AREA_BOTTOM_RATIO) - 26 * M + config.position.y;
       const heroText = value(heroKey);
       nodes.push({
         key: 'hero',
@@ -1718,6 +1727,14 @@ export function StampLayerSvg({
   );
 }
 
+// 러닝 데이터의 라벨(TIME·PACE·날짜 등, muted)은 값보다 옅게 둔다. 그 위계가 디자인이다.
+// 예전 투명도 .5는 밝은 배경에서 사진 색과 섞여 라벨이 사라졌다(QA 2026-09-29).
+// 위계가 남는 선까지만 올린다. RouteRendererModule.swift의 stampMutedAlpha·
+// stampMutedShadowAlpha와 같은 값이어야 편집 화면과 저장한 영상이 같게 보인다.
+// 값은 실기기에서 보며 정한다(stamp-label-legibility 구현 노트).
+export const STAMP_MUTED_ALPHA = 0.9;
+export const STAMP_MUTED_SHADOW_ALPHA = 0.9;
+
 function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: StampTextDescriptor[]; softShadow: boolean; applyShadow?: boolean }) {
   return <>
       {/* 정적 썸네일은 필터를 묶고, 실시간 미리보기는 네이티브 그림자로 처리한다. */}
@@ -1730,14 +1747,14 @@ function StampTextsSvg({ texts, softShadow, applyShadow = true }: { texts: Stamp
       <G filter={applyShadow ? "url(#stampGlow)" : undefined}>
         {texts.map((n) => (
           <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-            fontFamily={n.family} fill={softShadow && applyShadow ? n.contrastColor : n.color} fillOpacity={softShadow && applyShadow ? .55 : n.muted ? .5 : 1}>
+            fontFamily={n.family} fill={softShadow && applyShadow ? n.contrastColor : n.color} fillOpacity={softShadow && applyShadow ? (n.muted ? STAMP_MUTED_SHADOW_ALPHA : .55) : n.muted ? STAMP_MUTED_ALPHA : 1}>
             {stampTextContent(n)}
           </SvgText>
         ))}
       </G>
       {softShadow && applyShadow && texts.map((n) => (
         <SvgText key={n.key} x={n.x} y={n.y} textAnchor={n.anchor} fontSize={n.size}
-          fontFamily={n.family} fill={n.color} fillOpacity={n.muted ? .5 : 1}>
+          fontFamily={n.family} fill={n.color} fillOpacity={n.muted ? STAMP_MUTED_ALPHA : 1}>
           {stampTextContent(n)}
         </SvgText>
       ))}
@@ -1774,7 +1791,7 @@ const StampPreviewText = memo(function StampPreviewText({ node, viewport, softSh
   // 글자·단위·폰트·좌표는 정적 SVG와 같은 기술자를 그대로 사용한다.
   return <View style={{ position: 'absolute', left: offsetX + viewport.x * fitScale,
     top: offsetY + viewport.y * fitScale, width: viewport.width * fitScale, height: viewport.height * fitScale,
-    shadowColor: softShadow ? node.contrastColor : node.color, shadowOpacity: softShadow ? .55 : 1,
+    shadowColor: softShadow ? node.contrastColor : node.color, shadowOpacity: softShadow ? (node.muted ? STAMP_MUTED_SHADOW_ALPHA : .55) : 1,
     shadowRadius: 6 * fitScale, shadowOffset: { width: 0, height: 0 } }}>
     <Svg width={viewport.width * fitScale} height={viewport.height * fitScale}
       viewBox={`${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}`} preserveAspectRatio="none">

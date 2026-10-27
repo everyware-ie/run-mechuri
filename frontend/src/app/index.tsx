@@ -12,6 +12,7 @@ import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
 import { hasConnectedOnce, markConnectedOnce } from '@/lib/connection-store';
 import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
+import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
 
 // 홈과 보관함 FRD §1: 홈은 결과물 목록이다.
@@ -142,7 +143,7 @@ export default function HomeScreen() {
                 <View>
                   <Text style={styles.draftLabel}>이어서 만들기</Text>
                   <Text style={styles.draftMeta}>
-                    {(draft.run.distanceMeters / 1000).toFixed(2)}km · {draft.run.date.slice(0, 10)}
+                    {isSampleRun(draft.run) ? '샘플 기록 · ' : ''}{(draft.run.distanceMeters / 1000).toFixed(2)}km · {draft.run.date.slice(0, 10)}
                   </Text>
                 </View>
                 <Text style={styles.draftChevron}>→</Text>
@@ -169,7 +170,7 @@ export default function HomeScreen() {
                       {(hero.distanceMeters / 1000).toFixed(2)}
                       <Text style={styles.heroUnit}> km</Text>
                     </Text>
-                    <Text style={styles.heroDate}>{hero.runDate.slice(0, 10)}</Text>
+                    <Text style={styles.heroDate}>{isSampleRun(hero.run) ? '샘플 기록 · ' : ''}{hero.runDate.slice(0, 10)}</Text>
                   </View>
                   <View style={styles.playButton}>
                     <Text style={styles.playIcon}>▶</Text>
@@ -179,7 +180,7 @@ export default function HomeScreen() {
             ) : (
               <View style={styles.emptyBox}>
                 <Text style={styles.emptyTitle}>아직 만든 결과물이 없어요</Text>
-                <Text style={styles.emptySub}>가져온 러닝 기록 하나만 있으면 됩니다.</Text>
+                <Text style={styles.emptySub}>러닝 기록을 가져오거나 샘플로 먼저 만들어 보세요.</Text>
               </View>
             )}
 
@@ -210,7 +211,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.gridMeta}>
               <Text style={styles.gridLabel}>{(item.distanceMeters / 1000).toFixed(2)} km</Text>
-              <Text style={styles.gridDate}>{item.runDate.slice(0, 10)}</Text>
+              <Text style={styles.gridDate}>{isSampleRun(item.run) ? '샘플 기록 · ' : ''}{item.runDate.slice(0, 10)}</Text>
             </View>
           </Pressable>
         )}

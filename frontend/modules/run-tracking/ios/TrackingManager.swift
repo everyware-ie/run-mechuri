@@ -10,14 +10,44 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   static let shared = TrackingManager()
   private let location = CLLocationManager()
   private let motion = CMPedometer()
+  private var motionCollecting = false
   private let health = HKHealthStore()
   private var store: TrackingStore?
-  private var engine: TrackingEngine? { didSet { mapRevision = UUID().uuidString; watchResponseAt = nil; watchRequest = nil } }
+  private lazy var healthExport = TrackingHealthExport(root: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+  private var workoutEnabled: Bool { UserDefaults.standard.bool(forKey: "RunaryWatchWorkoutEnabled") }
+  private var workoutState = "off"
+  func setWatchWorkoutEnabled(_ value: Bool) throws {
+    try requireEnabled()
+    guard engine == nil else { throw problem("러닝을 마친 뒤 워치 연동을 변경해 주세요.") }
+    UserDefaults.standard.set(value, forKey: "RunaryWatchWorkoutEnabled"); syncWatch()
+  }
+  func setHealthExportEnabled(_ value: Bool, completion: @escaping (Error?) -> Void) {
+    guard Self.enabled else { completion(problem("측정 기능이 꺼져 있어요.")); return }
+    healthExport.enable(value, completion: completion)
+  }
+  func exportHealth(_ id: String, completion: @escaping (Error?) -> Void) throws {
+    try requireEnabled()
+    let saved = try store!.load(id)
+    guard saved.status == "completed" else { throw problem("완료한 기록만 건강에 저장할 수 있어요.") }
+    guard healthExport.enabledSince > 0 else { throw problem("건강 앱 자동 저장을 먼저 켜 주세요.") }
+    healthExport.prepareHeartLink(saved) { error in
+      guard error == nil else { completion(error); return }
+      self.healthExport.export(saved); completion(nil)
+    }
+  }
+  private func retryHealthExports() {
+    guard healthExport.enabledSince > 0, let store, let ids = try? store.ids() else { return }
+    for id in ids {
+      if let saved = try? store.load(id), saved.status == "completed" { healthExport.export(saved) }
+    }
+  }
+  private var engine: TrackingEngine? { didSet { mapRevision = UUID().uuidString; watchResponseAt = nil; watchRequestedAt = nil; workoutState = "off" } }
   private var mapRevision = UUID().uuidString
   private var pending: [TrackingEvent] = []
   private var watchRecoveryStart: Double?
   private var historyCache: [String: TrackingSummary] = [:]
   private var tick: Timer?
+  private var phoneStartPending = false
   private var preparing = false
   private var ready: CLLocation?
   private var gpsReadyAt: Double?
@@ -25,12 +55,24 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   private var phase = "idle"
   private var notice: String?
   private var watchState = "off"
+  private var heartQuery: HKAnchoredObjectQuery?
+  private var heartGeneration = UUID()
+  private var healthRefreshes: [String: [(Result<Bool, Error>) -> Void]] = [:]
+  private var healthHeartState = "off"
   private var watchRequestedAt: Double?
   private var watchResponseAt: Double?
-  private var watchRequest: UUID?
+  private var watchLaunch: (id: String, requested: Double)?
+  private var watchAppInfo: String?
+  private var watchRequest: TrackingWatchRequest?
+  private let watchRequestKey = "RunaryPendingWatchRequest"
+  private var watchRequests = TrackingWatchRequests()
+  private let watchRequestsKey = "RunaryHandledWatchRequests"
   private var writeFailedAt: Double?
   private var writeRetries = 0
   private var observers: [NSObjectProtocol] = []
+  private lazy var liveActivity = TrackingLiveActivity()
+  private var liveSession = RunaryLiveSession()
+  private var liveActionError = false
   private var now: Double { Date().timeIntervalSince1970 }
 
   override init() {
@@ -48,14 +90,18 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     UIDevice.current.isBatteryMonitoringEnabled = true
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
       guard let self else { return }
-      self.cancelPreparation()
+      self.cancelPreparation(clearWatchRequest: false)
+      self.syncWatch()
       var task = UIBackgroundTaskIdentifier.invalid
       task = UIApplication.shared.beginBackgroundTask { if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid } }
       if self.engine != nil { self.battery(); self.flush() }
       if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid }
     })
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-      self?.validatePermissions(); self?.syncWatch()
+      self?.liveActivity.foreground()
+      self?.retryHealthExports()
+      self?.continuePhoneStart(); self?.validatePermissions(); self?.continueWatchRequest(); self?.syncWatch(); self?.restartHealthHeartIfNeeded()
+      self?.syncLiveActivity(force: true)
     })
     if WCSession.isSupported() { WCSession.default.delegate = self; WCSession.default.activate() }
     // A single native timer is only for checkpoint/UI freshness. Location events
@@ -67,6 +113,13 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       let unfinished = ids.compactMap { try? store?.load($0) }.filter { $0.status != "completed" }.max { $0.started < $1.started }
       if let unfinished { try? recover(unfinished.id) }
     }
+    if let data = UserDefaults.standard.data(forKey: watchRequestKey),
+       let request = try? JSONDecoder().decode(TrackingWatchRequest.self, from: data), request.valid(at: now) {
+      watchRequest = request
+    } else { UserDefaults.standard.removeObject(forKey: watchRequestKey) }
+    if let data = UserDefaults.standard.data(forKey: watchRequestsKey),
+       let requests = try? JSONDecoder().decode(TrackingWatchRequests.self, from: data) { watchRequests = requests }
+    syncLiveActivity(force: true)
   }
   private func requireEnabled() throws {
     guard Self.enabled else { throw problem("내부 측정은 팀 테스트 빌드에서만 사용할 수 있어요.") }
@@ -81,16 +134,19 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     guard engine?.status != "running", engine?.status != "saving" else { return }
     guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 GPS를 준비해 주세요.") }
     notice = nil; preparing = true; prepareAt = now; phase = "preparing"; ready = nil; gpsReadyAt = nil
-    if location.authorizationStatus == .notDetermined { location.requestWhenInUseAuthorization(); return }
+    if location.authorizationStatus == .notDetermined { location.requestWhenInUseAuthorization(); syncWatch(); return }
     guard authorizeLocation(), CLLocationManager.locationServicesEnabled() else { cancelPreparation(); throw problem("앱 권한에서 위치 접근을 확인해 주세요.") }
     guard location.accuracyAuthorization == .fullAccuracy else { cancelPreparation(); throw problem("정확한 위치를 켜고 다시 준비해 주세요.") }
     location.allowsBackgroundLocationUpdates = false
     location.startUpdatingLocation()
+    syncWatch()
   }
-  func cancelPreparation() {
+  func cancelPreparation(clearWatchRequest: Bool = true) {
+    phoneStartPending = false
+    if clearWatchRequest { setWatchRequest(nil) }
     guard preparing else { return }
     preparing = false; ready = nil; prepareAt = nil
-    location.stopUpdatingLocation(); phase = "idle"
+    location.stopUpdatingLocation(); phase = engine?.status ?? "idle"; syncWatch()
   }
   private func readyForStart() throws -> CLLocation {
     guard authorizeLocation(), location.accuracyAuthorization == .fullAccuracy,
@@ -104,17 +160,65 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     TrackingSampleRules.preparedLocation(latitude: sample.coordinate.latitude, longitude: sample.coordinate.longitude,
       accuracy: sample.horizontalAccuracy, time: sample.timestamp.timeIntervalSince1970, now: now)
   }
-  func start(watch: Bool) throws {
+  func start() throws {
     try requireEnabled()
     guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
     let initialPosition = try readyForStart()
-    let e = TrackingEngine(id: UUID().uuidString, started: now)
+    try createRun(initialPosition: initialPosition)
+  }
+  // An explicit iPhone start does not wait for a location fix. The only
+  // deferred request is first-use permission, never persisted across launches.
+  func startImmediately() throws {
+    try requireEnabled()
+    guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
+    guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 시작해 주세요.") }
+    if phoneStartPending { return }
+    cancelPreparation(clearWatchRequest: false)
+    notice = nil
+    guard CLLocationManager.locationServicesEnabled() else { throw problem("앱 권한에서 위치 접근을 확인해 주세요.") }
+    if location.authorizationStatus == .notDetermined {
+      phoneStartPending = true
+      location.requestWhenInUseAuthorization()
+      return
+    }
+    try requireStartPermission()
+    try createRun(initialPosition: nil)
+  }
+  private func requireStartPermission() throws {
+    guard authorizeLocation(), CLLocationManager.locationServicesEnabled(), location.accuracyAuthorization == .fullAccuracy else {
+      throw problem("앱 권한에서 위치와 정확한 위치를 확인해 주세요.")
+    }
+  }
+  private func continuePhoneStart() {
+    guard phoneStartPending, UIApplication.shared.applicationState == .active,
+          location.authorizationStatus != .notDetermined else { return }
+    phoneStartPending = false
+    guard engine == nil else { return }
+    do {
+      try requireEnabled()
+      try requireStartPermission()
+      try createRun(initialPosition: nil)
+    } catch { notice = error.localizedDescription }
+  }
+  private func createRun(initialPosition: CLLocation?) throws {
+    // All entry points execute on the main queue and share this single engine.
+    guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
+    phoneStartPending = false
+    let e = TrackingEngine(id: watchRequest?.action == "start" ? watchRequest!.id : UUID().uuidString, started: now)
+    setWatchRequest(nil)
     engine = e; pending = []; phase = "running"; preparing = false
-    append(TrackingEvent(kind: "preparation", time: now, received: initialPosition.timestamp.timeIntervalSince1970, value: gpsReadyAt, intervalStart: prepareAt))
-    append(TrackingEvent(kind: "watch", time: now, value: watch ? 1 : 0)); battery()
+    if let initialPosition {
+      append(TrackingEvent(kind: "preparation", time: now, received: initialPosition.timestamp.timeIntervalSince1970, value: gpsReadyAt, intervalStart: prepareAt))
+    }
+    ready = nil; gpsReadyAt = nil; prepareAt = nil
+    append(TrackingEvent(kind: "watch", time: now, value: 0))
+    append(TrackingEvent(kind: "heartSource", time: now, detail: "health"))
+    if let watchAppInfo { append(TrackingEvent(kind: "watchApp", time: now, detail: watchAppInfo)) }
+    battery()
     guard flush() else { haltForStorage(); throw problem("시작 기록을 저장하지 못했어요. 저장 재시도를 확인해 주세요.") }
     beginSensors()
-    if watch { try connectWatch() }
+    try connectWatch()
+    beginHealthHeart(requestPermission: true)
   }
   func pause() throws {
     try requireEnabled()
@@ -126,21 +230,89 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     guard let engine, ["paused", "interrupted"].contains(engine.status) else { return }
     _ = try readyForStart()
-    closeWatchRecovery(); append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
+    try resumeCurrentRun()
+  }
+  func resumeImmediately() throws {
+    try requireEnabled()
+    guard let engine, ["paused", "interrupted"].contains(engine.status) else { return }
+    guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 재개해 주세요.") }
+    try requireStartPermission()
+    try resumeCurrentRun(restorePresentation: true)
+  }
+  // Only an explicit button in the active Live Activity can use this path.
+  // A resumed segment starts now and accepts no cached pre-resume coordinates.
+  private func resumeFromLiveActivity() throws {
+    try requireEnabled()
+    guard let engine, engine.status == "paused", liveActivity.active(runID: engine.id) else { return }
+    try requireStartPermission()
+    try resumeCurrentRun()
+  }
+  private func resumeCurrentRun(restorePresentation: Bool = false) throws {
+    guard let engine else { return }
+    setWatchRequest(nil); closeWatchRecovery()
+    notice = nil; ready = nil; gpsReadyAt = nil; prepareAt = nil; phoneStartPending = false
+    append(TrackingEvent(kind: "resume", time: now)); preparing = false; phase = "running"
     guard flush() else { haltForStorage(); throw problem("재개 상태를 저장하지 못했어요.") }
-    beginSensors(); syncWatch()
+    if restorePresentation { liveActivity.restoreAfterResume(runID: engine.id); syncLiveActivity(force: true) }
+    beginSensors(); syncWatch(); launchWatch(); restartHealthHeartIfNeeded()
+  }
+  func performLiveAction(_ rawAction: String, runID: String, revision: String, confirmation: String?) throws {
+    try requireEnabled()
+    syncLiveActivity()
+    guard let action = RunaryLiveAction(rawValue: rawAction), liveActivity.active(runID: runID),
+          liveSession.accept(action, runID: runID, revision: revision, confirmation: confirmation) else {
+      syncLiveActivity(force: true)
+      return
+    }
+    liveActionError = false
+    defer { syncLiveActivity(force: true) }
+    do {
+      switch action {
+      case .pause: try pause()
+      case .resume: try resumeFromLiveActivity()
+      case .finish: try finish()
+      case .askFinish, .cancelFinish: break
+      }
+    } catch {
+      liveSession.invalidate()
+      liveActionError = true
+      // Keep the actual native phase and a route back to recovery. The card
+      // must not disappear when finalization fails.
+      notice = error.localizedDescription
+      throw error
+    }
+  }
+  func waitForLiveUpdates() async { await liveActivity.waitForUpdates() }
+  private func syncLiveActivity(force: Bool = false) {
+    guard Self.enabled else { return }
+    let status = engine?.status ?? "idle"
+    let previousRevision = liveSession.revision
+    liveSession.observe(runID: engine?.id, phase: status, storageError: writeFailedAt != nil)
+    if previousRevision != liveSession.revision { liveActionError = false }
+    guard liveActivity.due(revision: engine?.lastSaved == nil ? nil : liveSession.revision, force: force) else { return }
+    guard let summary = engine?.summary(at: now), summary.lastSaved != nil else {
+      liveActivity.publish(id: nil, state: nil, force: force)
+      return
+    }
+    let state = RunaryLiveState(phase: status, revision: liveSession.revision, confirmation: liveSession.confirmation,
+      snapshotAt: now, duration: summary.duration, distance: summary.distance, averagePace: summary.averagePace,
+      heartRate: summary.heartRate, lastHeart: summary.lastHeart, storageError: writeFailedAt != nil, actionError: liveActionError)
+    liveActivity.publish(id: summary.id, state: state, force: force)
   }
   func finish() throws {
     try requireEnabled()
     guard let engine else { return }
-    if engine.status == "completed" { self.engine = nil; pending = []; phase = "idle"; watchState = "off"; return }
+    setWatchRequest(nil)
+    if engine.status == "completed" { self.engine = nil; pending = []; phase = "idle"; watchState = "off"; syncWatch(); return }
     closeWatchRecovery()
-    append(TrackingEvent(kind: "saving", time: engine.ended ?? now)); stopSensors(); preparing = false; phase = "saving"
+    append(TrackingEvent(kind: "saving", time: engine.ended ?? now)); stopHealthHeart(); stopSensors(); preparing = false; phase = "saving"
     battery(); syncWatch()
     guard flush() else { throw problem("종료 기록을 저장하지 못했어요. 저장 재시도를 눌러 주세요.") }
     append(TrackingEvent(kind: "finish", time: engine.ended ?? now))
     guard flush() else { engine.status = "saving"; throw problem("완료 상태를 저장하지 못했어요.") }
+    healthExport.export(engine)
     self.engine = nil; pending = []; phase = "idle"; watchState = "off"
+    syncWatch()
   }
   func retrySave() throws {
     try requireEnabled()
@@ -169,6 +341,197 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       append(TrackingEvent(kind: "gap", time: restored.lastSaved ?? restored.started))
     }
     phase = restored.status; flush(); syncWatch()
+    if restored.healthHeartEnabled { beginHealthHeart(requestPermission: false) }
+  }
+  private func stopHealthHeart() {
+    heartGeneration = UUID()
+    if let heartQuery { health.stop(heartQuery) }
+    heartQuery = nil; healthHeartState = "off"
+  }
+  private func restartHealthHeartIfNeeded() {
+    guard engine?.healthHeartEnabled == true, engine?.status == "running",
+          healthHeartState != "authorizing", writeFailedAt == nil else { return }
+    beginHealthHeart(requestPermission: false)
+  }
+  func reconnectHealthHeart() throws {
+    try requireEnabled()
+    guard engine?.healthHeartEnabled == true, engine?.status == "running", healthHeartState != "authorizing", writeFailedAt == nil else {
+      throw problem("건강 앱 심박을 사용하는 러닝 중에 다시 연결할 수 있어요.")
+    }
+    beginHealthHeart(requestPermission: false)
+  }
+  private func beginHealthHeart(requestPermission: Bool) {
+    stopHealthHeart()
+    guard let e = engine, e.healthHeartEnabled, writeFailedAt == nil else { return }
+    let id = e.id, generation = heartGeneration
+    guard HKHealthStore.isHealthDataAvailable(), let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+      healthHeartState = "failed"; note("healthHeartUnavailable"); beginMotion(); return
+    }
+    let read = { [weak self] in
+      guard let self, self.heartGeneration == generation, self.engine?.id == id, self.writeFailedAt == nil else { return }
+      self.healthHeartState = "waiting"
+      self.beginMotion()
+      let predicate = HKQuery.predicateForSamples(withStart: Date(timeIntervalSince1970: e.started), end: nil, options: [])
+      let handler: (HKAnchoredObjectQuery, [HKSample]?, [HKDeletedObject]?, HKQueryAnchor?, Error?) -> Void = { [weak self] _, samples, deleted, _, error in
+        DispatchQueue.main.async {
+          guard let self, self.heartGeneration == generation, self.engine?.id == id, self.writeFailedAt == nil else { return }
+          if error != nil { self.stopHealthHeart(); self.healthHeartState = "failed"; self.note("healthHeartReadFailed"); return }
+          do { try self.mergeHealthHeart(id, read: HealthHeartRead(), deletedIDs: Set((deleted ?? []).map { $0.uuid.uuidString })) }
+          catch { self.healthHeartState = "failed"; return }
+          self.readHealthHeart(samples ?? []) { [weak self] result in
+            guard let self, self.heartGeneration == generation, self.engine?.id == id, self.writeFailedAt == nil else { return }
+            do {
+              try self.mergeHealthHeart(id, read: result.get(), deletedIDs: [])
+              self.healthHeartState = self.engine?.hearts.isEmpty == false ? "reading" : "waiting"
+            } catch { self.healthHeartState = "failed" }
+          }
+        }
+      }
+      let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: nil, limit: HKObjectQueryNoLimit, resultsHandler: handler)
+      query.updateHandler = handler; self.heartQuery = query; self.health.execute(query)
+    }
+    // Recovery and foreground return only read; they never open a permission sheet.
+    guard requestPermission else { read(); return }
+    healthHeartState = "authorizing"
+    health.getRequestStatusForAuthorization(toShare: [], read: [type]) { [weak self] status, error in
+      DispatchQueue.main.async {
+        guard let self, self.heartGeneration == generation, self.engine?.id == id else { return }
+        if error != nil || status == .unknown { self.healthHeartState = "failed"; self.beginMotion(); return }
+        if status == .unnecessary { read(); return }
+        guard UIApplication.shared.applicationState == .active else { self.healthHeartState = "failed"; self.beginMotion(); return }
+        self.health.requestAuthorization(toShare: [], read: [type]) { [weak self] success, error in
+          DispatchQueue.main.async {
+            guard let self, self.heartGeneration == generation, self.engine?.id == id else { return }
+            if success && error == nil { read() } else { self.healthHeartState = "failed"; self.beginMotion() }
+          }
+        }
+      }
+    }
+  }
+  // Callback-time reloading prevents a delayed query from overwriting controls,
+  // another import, or a deletion. No data query requests authorization.
+  func refreshHealthHeart(_ id: String, completion: @escaping (Result<Bool, Error>) -> Void) {
+    do {
+      try requireEnabled()
+      let e = engine?.id == id ? engine! : try store!.load(id)
+      guard e.healthHeartEnabled, let type = HKObjectType.quantityType(forIdentifier: .heartRate), HKHealthStore.isHealthDataAvailable() else {
+        throw problem("건강 앱 심박을 사용하는 기록에서만 불러올 수 있어요.")
+      }
+      if healthRefreshes[id] != nil { healthRefreshes[id]!.append(completion); return }
+      healthRefreshes[id] = [completion]
+      let end = e.ended ?? (e.status == "running" ? now : e.intervals.last?.end ?? e.started)
+      let predicate = HKQuery.predicateForSamples(withStart: Date(timeIntervalSince1970: e.started), end: Date(timeIntervalSince1970: end), options: [])
+      let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: nil, limit: HKObjectQueryNoLimit) { [weak self] _, samples, deleted, _, error in
+        DispatchQueue.main.async {
+          guard let self else { completion(.failure(NSError(domain: "RunaryTracking", code: 1))); return }
+          if let error { self.completeHealthRefresh(id, result: .failure(error)); return }
+          // Handle explicit deletions before asynchronous series expansion,
+          // even when the subsequent series read fails or returns partial data.
+          do { try self.mergeHealthHeart(id, read: HealthHeartRead(), deletedIDs: Set((deleted ?? []).map { $0.uuid.uuidString })) }
+          catch { self.completeHealthRefresh(id, result: .failure(error)); return }
+          self.readHealthHeart(samples ?? []) { [weak self] result in
+            guard let self else { return }
+            do {
+              try self.mergeHealthHeart(id, read: result.get(), deletedIDs: [])
+              self.completeHealthRefresh(id, result: .success(true))
+            } catch { self.completeHealthRefresh(id, result: .failure(error)) }
+          }
+        }
+      }
+      health.execute(query)
+    } catch { completion(.failure(error)) }
+  }
+  private func completeHealthRefresh(_ id: String, result: Result<Bool, Error>) {
+    let callbacks = healthRefreshes.removeValue(forKey: id) ?? []
+    callbacks.forEach { $0(result) }
+  }
+  private final class HealthHeartRead {
+    var events: [TrackingEvent] = []
+    var seriesCounts: [String: Int] = [:]
+    var receivedCounts: [String: Int] = [:]
+    var finished = false
+  }
+  // Query overlapping parent samples, then let the engine filter every child's
+  // actual time. Strict parent bounds would discard series spanning a run edge.
+  private func readHealthHeart(_ samples: [HKSample], completion: @escaping (Result<HealthHeartRead, Error>) -> Void) {
+    let read = HealthHeartRead()
+    let quantities = samples.compactMap { $0 as? HKQuantitySample }
+    let unit = HKUnit.count().unitDivided(by: .minute())
+    for sample in quantities where sample.count == 1 {
+      read.events.append(.healthHeart(parentID: sample.uuid.uuidString, time: sample.startDate.timeIntervalSince1970,
+        received: now, bpm: sample.quantity.doubleValue(for: unit), source: sample.sourceRevision.source.bundleIdentifier))
+    }
+    let series = quantities.filter { $0.count > 1 }
+    guard !series.isEmpty else { completion(.success(read)); return }
+    guard let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+      completion(.failure(problem("건강 앱 심박을 읽을 수 없어요."))); return
+    }
+    for sample in series { read.seriesCounts[sample.uuid.uuidString] = sample.count }
+    let predicate = HKQuery.predicateForObjects(with: Set(series.map { $0.uuid }))
+    let query = HKQuantitySeriesSampleQuery(quantityType: type, predicate: predicate) { [weak self] _, quantity, interval, sample, done, error in
+      DispatchQueue.main.async {
+        guard let self, !read.finished else { return }
+        if let error { read.finished = true; completion(.failure(error)); return }
+        if let quantity, let interval, let sample, read.seriesCounts[sample.uuid.uuidString] != nil {
+          let parentID = sample.uuid.uuidString
+          let index = read.receivedCounts[parentID, default: 0]
+          read.receivedCounts[parentID] = index + 1
+          read.events.append(.healthHeart(parentID: parentID, index: index, time: interval.start.timeIntervalSince1970,
+            received: self.now, bpm: quantity.doubleValue(for: unit), source: sample.sourceRevision.source.bundleIdentifier))
+        }
+        if done {
+          read.finished = true
+          // A partial/empty read must not replace previously saved values.
+          guard read.seriesCounts == read.receivedCounts else {
+            completion(.failure(self.problem("심박 자료를 모두 읽지 못했어요. 다시 불러와 주세요."))); return
+          }
+          completion(.success(read))
+        }
+      }
+    }
+    query.includeSample = true
+    // Immutable samples enumerate children in time order; parent UUID + ordinal
+    // is stable on re-query and preserves distinct measurements at the same time.
+    query.orderByQuantitySampleStartDate = true
+    health.execute(query)
+  }
+  private func mergeHealthHeart(_ id: String, read: HealthHeartRead, deletedIDs: Set<String>) throws {
+    guard let store, !store.deletedIDs().contains(id) else { throw problem("삭제한 기록에는 심박을 추가하지 않아요.") }
+    let current = engine?.id == id
+    guard !current || writeFailedAt == nil else { throw problem("기록 저장을 복구한 뒤 심박을 다시 불러와 주세요.") }
+    let e = current ? engine! : try store.load(id, repair: true)
+    guard e.healthHeartEnabled else { return }
+    // A terminated process's open interval must not admit fabricated running time.
+    var events: [TrackingEvent] = []
+    if !current && e.status == "running" {
+      let interrupt = TrackingEvent(kind: "interrupt", time: e.lastSaved ?? e.started)
+      e.apply(interrupt); events.append(interrupt)
+    }
+    // Empty reads cannot distinguish revoked permission from no data. Only
+    // explicit anchored deletion notices remove saved samples.
+    for parentID in deletedIDs.sorted() where !e.hasDeletedHealthSample(parentID) {
+      // Persist even when no child has arrived yet: a slower series query must
+      // never resurrect an explicitly deleted HealthKit sample.
+      let event = TrackingEvent(kind: "heartDeleted", time: now, sampleID: parentID)
+      e.apply(event); events.append(event)
+    }
+    for parentID in read.seriesCounts.keys.sorted() where e.hearts.contains(where: { $0.id == parentID && $0.source?.hasPrefix("health:") == true }) {
+      let event = TrackingEvent(kind: "heartSeries", time: now, sampleID: parentID)
+      e.apply(event); events.append(event)
+    }
+    for event in read.events.sorted(by: { $0.time < $1.time }) {
+      let count = e.hearts.count
+      e.apply(event)
+      if e.hearts.count > count { events.append(event) }
+    }
+    guard !events.isEmpty else { return }
+    if current { pending.append(contentsOf: events); guard flush() else { throw problem("심박 저장을 다시 시도해 주세요.") } }
+    else {
+      var summary = e.summary(at: e.ended ?? e.intervals.last?.end ?? e.started); summary.lastSaved = now
+      try store.append(id: id, started: e.started, events: events, summary: summary)
+      historyCache.removeValue(forKey: id)
+      healthExport.export(e)
+    }
   }
   private func closeWatchRecovery() {
     if let start = watchRecoveryStart { append(TrackingEvent(kind: "watchRecovery", time: now, intervalStart: start)); watchRecoveryStart = nil }
@@ -177,7 +540,16 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     location.allowsBackgroundLocationUpdates = true
     location.showsBackgroundLocationIndicator = true
     location.startUpdatingLocation()
-    guard CMPedometer.isStepCountingAvailable(), let interval = engine?.intervals.last else { return }
+    // Defer the first Motion prompt until HealthKit finishes so two system
+    // permission sheets do not compete. GPS and workout time already run.
+    if engine?.healthHeartEnabled != true { beginMotion() }
+  }
+  private func beginMotion() {
+    guard !motionCollecting, engine?.status == "running", CMPedometer.isStepCountingAvailable(), let interval = engine?.intervals.last else { return }
+    // A lock-screen resume reuses authorization; first-time permission sheets
+    // belong to a foreground app visit, not a background App Intent.
+    guard CMPedometer.authorizationStatus() != .notDetermined || UIApplication.shared.applicationState == .active else { return }
+    motionCollecting = true
     motion.startUpdates(from: Date(timeIntervalSince1970: interval.start)) { [weak self] data, error in
       DispatchQueue.main.async {
         guard let self, self.engine?.status == "running" else { return }
@@ -190,7 +562,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       }
     }
   }
-  private func stopSensors() { location.stopUpdatingLocation(); motion.stopUpdates(); ready = nil }
+  private func stopSensors() { location.stopUpdatingLocation(); motion.stopUpdates(); motionCollecting = false; ready = nil }
   private func append(_ event: TrackingEvent) { engine?.apply(event); pending.append(event) }
   private func battery() {
     append(TrackingEvent(kind: "power", time: now, value: ProcessInfo.processInfo.isLowPowerModeEnabled ? 1 : 0))
@@ -199,6 +571,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     append(TrackingEvent(kind: "battery", time: now, value: value < 0 ? nil : Double(value), detail: charging ? "charging" : "unplugged"))
   }
   @discardableResult private func flush() -> Bool {
+    defer { syncLiveActivity() }
     guard let engine, let store else { return false }
     let date = now
     var summary = engine.summary(at: date); summary.lastSaved = date
@@ -219,15 +592,19 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   private func haltForStorage() {
     guard engine != nil else { return }
     if engine?.status == "running" { append(TrackingEvent(kind: "interrupt", time: now, detail: "storage")) }
-    stopSensors(); preparing = false; phase = engine?.status ?? "interrupted"; syncWatch()
+    stopHealthHeart(); stopSensors(); preparing = false; phase = engine?.status ?? "interrupted"; syncWatch()
   }
   private func checkpointIfDue() {
     if writeFailedAt != nil { return }
     if now - (engine?.lastSaved ?? 0) >= 5 { battery(); flush() }
   }
   private func onTick() {
+    defer { syncLiveActivity() }
+    if let request = watchRequest, !request.valid(at: now) {
+      cancelPreparation(); notice = "워치의 러닝 요청 시간이 지났어요. 다시 시작해 주세요."; syncWatch()
+    }
     if preparing {
-      if now - (prepareAt ?? now) > 30 { cancelPreparation(); notice = "GPS 준비가 오래 걸려요. 야외에서 다시 시도해 주세요." }
+      if TrackingSampleRules.preparationTimedOut(started: prepareAt, lastReady: gpsReadyAt, now: now) { cancelPreparation(); notice = "GPS 준비가 오래 걸려요. 야외에서 다시 시도해 주세요."; syncWatch() }
       else if let ready, now - ready.timestamp.timeIntervalSince1970 > 15 { self.ready = nil; phase = "preparing" }
     }
     if let failed = writeFailedAt, now - failed >= Double((writeRetries + 1) * 3), writeRetries < 2 {
@@ -240,7 +617,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     if engine != nil { validatePermissions(); checkpointIfDue() }
     if let requested = watchRequestedAt, now - requested > 10, watchState == "connecting" { watchState = "noResponse" }
     if let response = watchResponseAt, now - response > 10, ["connected", "waiting"].contains(watchState) { watchState = "disconnected" }
-    if engine?.status == "running", Int(now) % 3 == 0 { syncWatch() }
+    if Int(now) % 3 == 0, engine != nil || watchRequest != nil || (WCSession.isSupported() && WCSession.default.isReachable) { syncWatch() }
   }
   private func note(_ code: String) {
     guard engine?.errors.last != code else { return }
@@ -255,6 +632,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     }
   }
   func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    continuePhoneStart()
     if preparing {
       if authorizeLocation() && manager.accuracyAuthorization == .fullAccuracy { manager.startUpdatingLocation() }
       else if manager.authorizationStatus != .notDetermined { cancelPreparation(); notice = "앱 권한에서 위치와 정확한 위치를 확인해 주세요." }
@@ -264,6 +642,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
     if preparing {
       if let candidate = locations.last(where: { validPreparation($0) }) { ready = candidate; gpsReadyAt = now; phase = "ready" }
+      continueWatchRequest(); syncWatch()
       return
     }
     guard engine?.status == "running" else { return }
@@ -285,7 +664,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     guard Self.enabled else { return ["enabled": false, "phase": "disabled"] }
     let summary: Any = engine.map { json($0.summary(at: now)) } ?? NSNull()
     return ["enabled": true, "phase": phase, "notice": notice as Any? ?? NSNull(),
-      "summary": summary, "watchState": watchState,
+      "summary": summary, "watchState": watchState, "watchWorkoutEnabled": workoutEnabled, "watchWorkoutState": now - (watchResponseAt ?? 0) <= 10 ? workoutState : "waiting", "healthExportEnabled": healthExport.enabledSince > 0, "healthHeartState": healthHeartState,
+      "watchStartPending": watchRequest != nil, "phoneStartPending": phoneStartPending,
+      "liveActivityState": liveActivity.availability,
       "unsavedEvents": pending.count, "storageError": writeFailedAt != nil,
       "locationPermission": location.authorizationStatus.rawValue,
       "preciseLocation": location.accuracyAuthorization == .fullAccuracy,
@@ -334,12 +715,13 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     let e = engine?.id == id ? engine! : try store!.load(id)
     if e !== engine, e.status == "running" { e.apply(TrackingEvent(kind: "interrupt", time: e.lastSaved ?? e.started)) }
-    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points)]
+    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points), "healthExport": healthExport.state(id)]
   }
   func delete(_ id: String) throws {
     try requireEnabled()
     guard engine?.id != id else { throw problem("진행 중인 기록을 먼저 종료해 주세요.") }
-    try store!.delete(id); historyCache.removeValue(forKey: id); syncDeletions()
+    guard !healthExport.isBusy(id) else { throw problem("건강 저장이 끝난 뒤 삭제해 주세요.") }
+    try store!.delete(id); try healthExport.removeLocalReceipt(id); historyCache.removeValue(forKey: id); syncDeletions()
   }
   func feedback(_ id: String, text: String) throws {
     try requireEnabled()
@@ -355,21 +737,62 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   }
   func connectWatch() throws {
     try requireEnabled()
-    guard let engine, engine.status == "running" else { throw problem("측정을 시작한 뒤 워치를 연결해 주세요.") }
-    guard WCSession.isSupported(), WCSession.default.isPaired, WCSession.default.isWatchAppInstalled else {
-      watchState = "notInstalled"; notice = "워치의 Runary 설치를 확인해 주세요. 아이폰 측정은 계속됩니다."; return
+    guard let engine, engine.status != "completed" else { throw problem("측정을 시작한 뒤 워치를 연결해 주세요.") }
+    watchState = "connecting"; watchRequestedAt = now
+    syncWatch()
+    launchWatch()
+  }
+  private func launchWatch() {
+    guard workoutEnabled, let engine, engine.status == "running", WCSession.isSupported(), HKHealthStore.isHealthDataAvailable() else { return }
+    // Only explicit start/resume calls request a launch. Context/timer updates
+    // never reopen the Watch app. Workout creation also requires the saved opt-in.
+    guard WCSession.default.activationState == .activated else {
+      watchLaunch = (engine.id, now); return
     }
-    append(TrackingEvent(kind: "watch", time: now, value: 1)); flush()
-    watchState = "connecting"; watchRequestedAt = now; syncWatch()
-    let request = UUID(); watchRequest = request
+    watchLaunch = nil
+    guard WCSession.default.isPaired, WCSession.default.isWatchAppInstalled, !WCSession.default.isReachable else { return }
     let id = engine.id
-    let config = HKWorkoutConfiguration(); config.activityType = .running; config.locationType = .outdoor
-    health.startWatchApp(with: config) { [weak self] success, _ in
+    let configuration = HKWorkoutConfiguration()
+    configuration.activityType = .running; configuration.locationType = .outdoor
+    append(TrackingEvent(kind: "watchLaunch", time: now, detail: "requested"))
+    health.startWatchApp(with: configuration) { [weak self] success, error in
       DispatchQueue.main.async {
-        guard let self, self.engine?.id == id, self.watchRequest == request, self.watchState == "connecting" else { return }
-        if !success { self.watchState = "noResponse" }
+        guard let self, self.engine?.id == id, self.engine?.status == "running" else { return }
+        if success { self.append(TrackingEvent(kind: "watchLaunch", time: self.now, detail: "succeeded")) }
+        else { self.note("watchLaunchFailed:\((error as NSError?)?.domain ?? "unknown"):\((error as NSError?)?.code ?? 0)") }
+        // Launch completion alone does not confirm fresh metrics on the Watch.
+        self.syncWatch()
       }
     }
+  }
+  private func setWatchRequest(_ request: TrackingWatchRequest?) {
+    watchRequest = request
+    if let request, let data = try? JSONEncoder().encode(request) { UserDefaults.standard.set(data, forKey: watchRequestKey) }
+    else { UserDefaults.standard.removeObject(forKey: watchRequestKey) }
+  }
+  private func continueWatchRequest() {
+    guard !phoneStartPending, let request = watchRequest else { return }
+    guard request.valid(at: now) else { cancelPreparation(); notice = "워치의 러닝 요청 시간이 지났어요."; syncWatch(); return }
+    if request.action == "start", engine != nil { setWatchRequest(nil); syncWatch(); return }
+    if request.action == "resume", engine?.id != request.id || !["paused", "interrupted"].contains(engine?.status ?? "") {
+      setWatchRequest(nil); syncWatch(); return
+    }
+    if request.action == "resume", engine?.status == "paused" {
+      do { try requireStartPermission(); try resumeCurrentRun() }
+      catch { setWatchRequest(nil); notice = error.localizedDescription; syncWatch() }
+      return
+    }
+    guard UIApplication.shared.applicationState == .active else {
+      notice = "워치에서 러닝을 요청했어요. 아이폰 Runary를 열면 시작합니다."; syncWatch(); return
+    }
+    do {
+      if request.action == "start" { try startImmediately() } else { try resumeImmediately() }
+    } catch { setWatchRequest(nil); notice = error.localizedDescription; syncWatch() }
+  }
+  private func watchReply(accepted: Bool, error: String? = nil) -> [String: Any] {
+    var reply: [String: Any] = ["accepted": accepted, "snapshot": watchMessage()]
+    if let error { reply["error"] = error }
+    return reply
   }
   private func syncDeletions() {
     guard WCSession.isSupported(), WCSession.default.activationState == .activated, let store else { return }
@@ -378,28 +801,168 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       WCSession.default.transferUserInfo(["kind": "delete", "ids": Array(ids[start..<min(start + 200, ids.count)])])
     }
   }
-  private func syncWatch() {
-    guard Self.enabled, WCSession.isSupported(), WCSession.default.activationState == .activated, let engine, engine.watchEnabled else { return }
-    let summary = engine.summary(at: now)
-    var message = (json(summary) as? [String: Any]) ?? [:]
+  private func watchMessage() -> [String: Any] {
+    let watchPhase = watchRequest != nil && UIApplication.shared.applicationState != .active ? "needsPhone" : phase
+    guard let engine else {
+      var message: [String: Any] = ["kind": "noRun", "sent": now, "phase": watchPhase, "startPending": watchRequest != nil, "startSupported": true]
+      if let watchRequest { message["requestID"] = watchRequest.id }
+      if let notice { message["notice"] = notice }
+      return message
+    }
+    var message = (json(engine.summary(at: now)) as? [String: Any]) ?? [:]
     message = message.filter { !($0.value is NSNull) }
-    message["kind"] = "run"; message["sent"] = now
-    message["preserveWatch"] = watchRecoveryStart != nil
-    do { try WCSession.default.updateApplicationContext(message) } catch { watchState = "disconnected" }
-    if WCSession.default.isReachable { WCSession.default.sendMessage(message, replyHandler: nil) { _ in } }
+    message["kind"] = "run"; message["sent"] = now; message["displayOnly"] = true
+    message["workoutEnabled"] = workoutEnabled
+    message["startPending"] = watchRequest != nil; message["healthHeartState"] = healthHeartState
+    message["startSupported"] = true
+    message["requestPhase"] = watchPhase
+    if let watchRequest { message["requestID"] = watchRequest.id }
+    if let notice { message["notice"] = notice }
+    return message
+  }
+  private func syncWatch() {
+    syncLiveActivity()
+    guard Self.enabled, WCSession.isSupported() else { return }
+    let session = WCSession.default
+    guard session.isPaired else { watchState = "notPaired"; return }
+    guard session.isWatchAppInstalled else { watchState = "notInstalled"; return }
+    guard session.activationState == .activated else { return }
+    let message = watchMessage()
+    let id = engine?.id
+    do { try session.updateApplicationContext(message) } catch { watchState = "disconnected" }
+    if session.isReachable {
+      session.sendMessage(message, replyHandler: { [weak self] reply in
+        DispatchQueue.main.async { [weak self] in _ = self?.receive(reply, live: true) }
+      }, errorHandler: { [weak self] _ in
+        DispatchQueue.main.async { if self?.engine?.id == id { self?.watchState = "disconnected" } }
+      })
+    }
   }
   private func receive(_ message: [String: Any], live: Bool = false) -> [String: Any] {
-    guard Self.enabled, let id = message["id"] as? String, UUID(uuidString: id) != nil else { return ["accepted": false] }
-    if let request = message["request"] as? String, engine?.id == id {
+    guard Self.enabled else { return ["accepted": false] }
+    if message["kind"] as? String == "stopRequest", let id = message["id"] as? String,
+       UUID(uuidString: id) != nil, let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2 {
+      var accepted = false
+      do {
+        if let current = engine, current.id == id, sent >= current.started {
+          append(TrackingEvent(kind: "watchStop", time: sent))
+          guard flush() else { return ["accepted": false] }
+          engine = try store!.load(id, repair: true)
+          try finish(); accepted = true
+        } else if let saved = try? store?.load(id), saved.status == "completed" { accepted = true }
+        else if store?.deletedIDs().contains(id) == true { accepted = true }
+      } catch { accepted = false }
+      if accepted, WCSession.default.activationState == .activated { WCSession.default.transferUserInfo(["kind": "stopAck", "id": id]) }
+      return ["accepted": accepted, "snapshot": watchMessage()]
+    }
+    if message["kind"] as? String == "healthBatch" {
+      guard let batch = TrackingWatchHealthBatch(message, at: now), let store else { return ["accepted": false] }
+      var reply: [String: Any] = ["kind": "healthAck", "batchID": batch.batchID, "accepted": false]
+      // Deleted/unknown records are discarded; a delayed batch cannot create one.
+      if store.deletedIDs().contains(batch.runID) {
+        reply["accepted"] = true; return reply
+      }
+      do {
+        if engine?.id != batch.runID, !(try store.ids()).contains(batch.runID) {
+          reply["accepted"] = true; return reply
+        }
+        let e = engine?.id == batch.runID ? engine! : try store.load(batch.runID, repair: true)
+        guard e.healthHeartEnabled else { reply["accepted"] = true; return reply }
+        let read = HealthHeartRead()
+        for sample in batch.samples {
+          read.events.append(.healthHeart(parentID: sample.parent, index: sample.index, time: sample.time,
+            received: now, bpm: sample.bpm, source: sample.source))
+          if let count = sample.seriesCount { read.seriesCounts[sample.parent] = count }
+        }
+        try mergeHealthHeart(batch.runID, read: read, deletedIDs: Set(batch.deleted))
+        if engine?.id == batch.runID {
+          if engine?.hearts.isEmpty == false { healthHeartState = "reading" }
+          append(TrackingEvent(kind: "healthWatch", time: now, detail: "samples:\(batch.samples.count),deleted:\(batch.deleted.count)"))
+          guard flush() else { return reply }
+        }
+        syncWatch(); reply["accepted"] = true; reply["snapshot"] = watchMessage()
+      } catch { return reply }
+      return reply
+    }
+    if message["kind"] as? String == "sessionProbe" {
+      guard let probe = TrackingWatchProbe(message, at: now) else { return ["accepted": false] }
+      do {
+        let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("InternalRunProbe", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var resource = root; var values = URLResourceValues(); values.isExcludedFromBackup = true; try resource.setResourceValues(values)
+        let path = root.appendingPathComponent("watch-session.json")
+        var history = (try? JSONDecoder().decode([TrackingWatchProbe].self, from: Data(contentsOf: path))) ?? []
+        if !history.contains(where: { $0.id == probe.id && $0.sent == probe.sent && $0.event == probe.event }) {
+          history.append(probe); history.sort { $0.sent < $1.sent }; history = Array(history.suffix(60))
+          try JSONEncoder().encode(history).write(to: path, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+        return ["accepted": true]
+      } catch { return ["accepted": false] }
+    }
+    if live, ["displayReady", "displayAck"].contains(message["kind"] as? String ?? ""),
+       let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10,
+       let build = message["appBuild"] as? String, build.count <= 40,
+       let version = message["syncVersion"] as? Int {
+      let info = "build:\(build),sync:\(version),launchHandled:\(message["launchHandled"] as? Bool == true)"
+      if info != watchAppInfo {
+        watchAppInfo = info
+        if engine != nil { append(TrackingEvent(kind: "watchApp", time: now, detail: info)) }
+      }
+    }
+    if live, let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10,
+       sent >= (watchResponseAt ?? -.greatestFiniteMagnitude),
+       let id = message["workoutRunID"] as? String, id == engine?.id,
+       let state = message["workoutState"] as? String, ["off", "running", "paused", "waiting", "starting", "permission", "blocked"].contains(state) {
+      workoutState = state
+    }
+    if live, message["kind"] as? String == "displayReady" {
+      if let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10 {
+        watchResponseAt = sent; watchState = "connected"
+      }
+      return watchMessage()
+    }
+    guard let id = message["id"] as? String, UUID(uuidString: id) != nil else { return ["accepted": false] }
+    if live, message["request"] as? String == "cancelStart" {
+      guard let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10,
+            watchRequest?.id == id else { return watchReply(accepted: false) }
+      cancelPreparation(); syncWatch(); return watchReply(accepted: true)
+    }
+    if live, message["request"] as? String == "start" {
+      guard let request = TrackingWatchRequest(message: message, at: now) else { return watchReply(accepted: false, error: "러닝 요청 시간이 지났어요.") }
+      if watchRequests.contains(id, at: now) {
+        return watchReply(accepted: engine != nil || watchRequest != nil, error: engine == nil && watchRequest == nil ? "이미 처리한 요청이에요. 새로 시작해 주세요." : nil)
+      }
+      watchRequests.insert(id, at: now)
+      if let data = try? JSONEncoder().encode(watchRequests) { UserDefaults.standard.set(data, forKey: watchRequestsKey) }
+      // An existing run is authoritative, including a paused/recovered one.
+      if engine != nil { return watchReply(accepted: true) }
+      guard let ids = try? store?.ids(), !ids.contains(id), store?.deletedIDs().contains(id) != true else {
+        return watchReply(accepted: false, error: "이미 마친 러닝 요청이에요. 새로 시작해 주세요.")
+      }
+      if watchRequest == nil { setWatchRequest(request) }
+      continueWatchRequest()
+      return watchReply(accepted: engine != nil || watchRequest != nil, error: watchRequest == nil && engine == nil ? notice : nil)
+    }
+    if live, message["kind"] as? String == "displayAck", engine?.id == id {
+      guard message["accepted"] as? Bool == true, let sent = message["sent"] as? Double,
+            sent.isFinite, now - sent >= -2, now - sent <= 10, sent >= (watchResponseAt ?? -.greatestFiniteMagnitude) else { return ["accepted": false] }
+      watchResponseAt = sent; watchState = "connected"; return ["accepted": true]
+    }
+    if live, let request = message["request"] as? String, engine?.id == id {
+      guard let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10 else {
+        return watchReply(accepted: false, error: "요청 시간이 지났어요. 상태를 갱신하고 있어요.")
+      }
       do {
         switch request {
         case "pause": try pause()
-        case "resume": try resume()
+        case "resume":
+          guard let command = TrackingWatchRequest(message: message, at: now) else { return watchReply(accepted: false) }
+          if ["paused", "interrupted"].contains(engine?.status ?? "") { setWatchRequest(command); continueWatchRequest() }
         case "finish": try finish()
         default: return ["accepted": false]
         }
-        return ["accepted": true]
-      } catch { return ["accepted": false, "error": error.localizedDescription] }
+        return watchReply(accepted: true)
+      } catch { return watchReply(accepted: false, error: error.localizedDescription) }
     }
     guard let values = message["hearts"] as? [[String: Any]], values.count <= 200 else {
       if engine?.id == id, let error = message["error"] as? String { watchState = "failed"; note("watch:\(error)") }
@@ -407,7 +970,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     }
     let current = engine?.id == id
     if current && writeFailedAt != nil { return ["accepted": false] }
-    guard let e = current ? engine : try? store?.load(id, repair: true) else { return ["accepted": false] }
+    guard let e = current ? engine : try? store?.load(id, repair: true), e.watchEnabled, !e.healthHeartEnabled else { return ["accepted": false] }
     var events: [TrackingEvent] = []
     if !current && e.status == "running" {
       let saved = e.lastSaved ?? e.started
@@ -444,10 +1007,18 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     } catch { return ["accepted": false] }
   }
   func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-    DispatchQueue.main.async { [weak self] in self?.syncDeletions(); self?.syncWatch() }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.syncDeletions(); self.syncWatch()
+      if let launch = self.watchLaunch, self.engine?.id == launch.id, self.now - launch.requested <= 10 { self.launchWatch() }
+      else { self.watchLaunch = nil }
+    }
   }
   func sessionDidBecomeInactive(_ session: WCSession) {}
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
+  func sessionReachabilityDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { [weak self] in self?.syncWatch() }
+  }
   func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
     DispatchQueue.main.async { [weak self] in replyHandler(self?.receive(message, live: true) ?? ["accepted": false]) }
   }
@@ -455,6 +1026,13 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     DispatchQueue.main.async { [weak self] in _ = self?.receive(message, live: true) }
   }
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
-    DispatchQueue.main.async { [weak self] in _ = self?.receive(userInfo) }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      let reply = self.receive(userInfo)
+      if userInfo["kind"] as? String == "healthBatch", reply["accepted"] as? Bool == true,
+         let id = reply["batchID"] as? String, session.activationState == .activated {
+        session.transferUserInfo(["kind": "healthAck", "batchID": id, "accepted": true])
+      }
+    }
   }
 }

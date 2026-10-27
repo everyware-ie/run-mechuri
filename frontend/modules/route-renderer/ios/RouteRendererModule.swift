@@ -34,6 +34,7 @@ private enum ClipSpec {
 struct RoutePointInput: Record {
   @Field var latitude: Double = 0
   @Field var longitude: Double = 0
+  @Field var segment: Int = 0
 }
 
 struct RouteTransformInput: Record {
@@ -114,7 +115,7 @@ struct RenderClipOptionsInput: Record {
   /// 각인 값 계산용 — 그려진 선 길이가 아니라 기록된 값을 쓴다(route-rendering §7-3).
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
-  @Field var averagePaceSecPerKm: Double = 0
+  @Field var averagePaceSecPerKm: Double? = nil
   @Field var paceSamples: [Double] = []
   /// 데이터가 없으면 nil(§2-3, 빈 자리를 남기지 않는다 — 항목 자체가 빠진다).
   @Field var averageHeartRate: Double? = nil
@@ -336,6 +337,15 @@ public class RouteRendererModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RouteRenderer")
     Events("onRenderProgress")
+    OnCreate {
+      // Apply the same exclusion to clips made by an older app version.
+      do {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        _ = try LocalClipStorage.prepare(in: documents, create: false)
+      } catch {
+        NSLog("Runary: stored video backup exclusion could not be applied")
+      }
+    }
     View(RouteColorPickerView.self) {
       Events("onColorChange")
       Prop("color") { (view: RouteColorPickerView, color: String) in view.setColor(color) }
@@ -416,8 +426,15 @@ public class RouteRendererModule: Module {
     let routeStart = CFAbsoluteTimeGetCurrent()
     let preset = RoutePreset(rawValue: options.preset) ?? .defaultDrawing
     let baseProjected = projectPoints(options.points)
-    let smoothed = applySmoothing(baseProjected, smooth: options.smooth, corner: options.corner)
-    let projected = applyTransform(smoothed, transform: options.transform)
+    var projected: [RouteVertex] = []
+    var start = 0
+    for end in 1...options.points.count {
+      if end == options.points.count || options.points[end].segment != options.points[start].segment {
+        let smoothed = applySmoothing(Array(baseProjected[start..<end]), smooth: options.smooth, corner: options.corner)
+        projected += applyTransform(smoothed, transform: options.transform).map { RouteVertex(point: $0, segment: options.points[start].segment) }
+        start = end
+      }
+    }
     let distances = cumulativeCanvasDistances(projected)
     let routePreparationSeconds = CFAbsoluteTimeGetCurrent() - routeStart
     let output = try outputURL(named: options.outputFileName)
@@ -503,7 +520,7 @@ public class RouteRendererModule: Module {
         lat1: points[i - 1].latitude, lon1: points[i - 1].longitude,
         lat2: points[i].latitude, lon2: points[i].longitude
       )
-      result.append(result[i - 1] + d)
+      result.append(result[i - 1] + (points[i].segment == points[i - 1].segment ? d : 0))
     }
     return result
   }
@@ -519,13 +536,8 @@ public class RouteRendererModule: Module {
   }
 
   /// 캔버스(픽셀) 좌표계 누적 거리. route-projection.ts의 cumulativeCanvasDistances와 동일.
-  private func cumulativeCanvasDistances(_ points: [CGPoint]) -> [Double] {
-    guard points.count > 1 else { return [0] }
-    var result: [Double] = [0]
-    for i in 1..<points.count {
-      result.append(result[i - 1] + Double(hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)))
-    }
-    return result
+  private func cumulativeCanvasDistances(_ points: [RouteVertex]) -> [Double] {
+    SegmentedRoute.cumulative(points)
   }
 
   // MARK: - 다듬기 (result-editing FRD §5)
@@ -638,26 +650,8 @@ public class RouteRendererModule: Module {
   }
 
   /// §5-4: 진행률은 점 인덱스가 아니라 거리(호 길이) 기준.
-  private func pointsUpTo(distance targetDistance: Double, projected: [CGPoint], cumulative: [Double]) -> [CGPoint] {
-    if targetDistance <= 0 { return [projected[0]] }
-    var result: [CGPoint] = [projected[0]]
-    for i in 1..<projected.count {
-      if cumulative[i] <= targetDistance {
-        result.append(projected[i])
-      } else {
-        let segmentStart = cumulative[i - 1]
-        let segmentEnd = cumulative[i]
-        let segmentLength = segmentEnd - segmentStart
-        let t = segmentLength > 0 ? (targetDistance - segmentStart) / segmentLength : 0
-        let interpolated = CGPoint(
-          x: projected[i - 1].x + (projected[i].x - projected[i - 1].x) * CGFloat(t),
-          y: projected[i - 1].y + (projected[i].y - projected[i - 1].y) * CGFloat(t)
-        )
-        result.append(interpolated)
-        break
-      }
-    }
-    return result
+  private func pointsUpTo(distance targetDistance: Double, projected: [RouteVertex], cumulative: [Double]) -> [RouteVertex] {
+    SegmentedRoute.prefix(distance: targetDistance, points: projected, cumulative: cumulative)
   }
 
   // MARK: - 프레임 렌더링
@@ -712,11 +706,16 @@ public class RouteRendererModule: Module {
   }
 
   private func strokePath(_ points: [CGPoint], color: UIColor, width: CGFloat, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
+    strokePath(points.map { RouteVertex(point: $0, segment: 0) }, color: color, width: width, glowRadius: glowRadius, glowColor: glowColor)
+  }
+
+  private func strokePath(_ points: [RouteVertex], color: UIColor, width: CGFloat, glowRadius: CGFloat = 0, glowColor: UIColor? = nil) {
     guard points.count >= 2 else { return }
     let path = UIBezierPath()
-    path.move(to: points[0])
-    for point in points.dropFirst() {
-      path.addLine(to: point)
+    path.move(to: points[0].point)
+    for index in 1..<points.count {
+      if points[index].segment != points[index - 1].segment { path.move(to: points[index].point) }
+      else { path.addLine(to: points[index].point) }
     }
     path.lineWidth = width
     path.lineCapStyle = .round
@@ -834,7 +833,7 @@ public class RouteRendererModule: Module {
   private func drawFrame(
     preset: RoutePreset,
     background: UIImage,
-    projectedPoints: [CGPoint],
+    projectedPoints: [RouteVertex],
     cumulativeDistances: [Double],
     totalDistance: Double,
     progressFraction: Double,
@@ -880,7 +879,7 @@ public class RouteRendererModule: Module {
           self.strokePath(hotTrail, color: routeColor, width: 10 * widthScale, glowRadius: 14, glowColor: runnerGlow)
           if coloredLight { self.strokePath(hotTrail, color: light.core, width: 3.4 * widthScale) }
           if let head = traveled.last {
-            self.fillDot(at: head, radius: 8 * widthScale, color: coloredLight ? light.core : .white, glowRadius: 14, glowColor: runnerGlow)
+            self.fillDot(at: head.point, radius: 8 * widthScale, color: coloredLight ? light.core : .white, glowRadius: 14, glowColor: runnerGlow)
           }
         } else {
           self.strokePath(projectedPoints, color: routeColor, width: 14 * widthScale, glowRadius: 14, glowColor: runnerGlow)
@@ -910,7 +909,7 @@ public class RouteRendererModule: Module {
           self.strokePath(slice, color: routeColor.withAlphaComponent(done ? 0.95 : 0.5),
             width: (10 + CGFloat(justLit) * 4) * widthScale,
             glowRadius: done ? 14 + CGFloat(justLit) * 26 : 0, glowColor: routeGlow)
-          if done, let boundary = segPoints.last { completedMarkers.append((point: boundary, flash: justLit * justLit)) }
+          if done, let boundary = segPoints.last { completedMarkers.append((point: boundary.point, flash: justLit * justLit)) }
         }
         // 선을 모두 그린 뒤 표시해 다음 구간이 경계 점을 덮지 않게 한다.
         for marker in completedMarkers {
@@ -946,14 +945,15 @@ public class RouteRendererModule: Module {
   /// TS paceAtProgress와 동일. 전처리는 JS에서 한 번만 수행해 미리보기와 공유한다.
   private func paceAtProgress(_ stamp: RenderClipOptionsInput, _ progress: Double) -> Double {
     let samples = stamp.paceSamples
-    guard samples.count >= 2, progress.isFinite, progress < 1 else { return stamp.averagePaceSecPerKm }
+    guard samples.count >= 2, progress.isFinite, progress < 1 else { return stamp.averagePaceSecPerKm ?? 0 }
     let index = max(0, progress) * Double(samples.count - 1)
     let lo = Int(floor(index)), hi = min(lo + 1, samples.count - 1)
     let value = samples[lo] + (samples[hi] - samples[lo]) * (index - Double(lo))
-    return value.isFinite && value > 0 ? value : stamp.averagePaceSecPerKm
+    return value.isFinite && value > 0 ? value : (stamp.averagePaceSecPerKm ?? 0)
   }
 
   private func formatPace(_ secPerKm: Double) -> String {
+    guard secPerKm.isFinite, secPerKm > 0 else { return "-" }
     let total = max(0, Int(secPerKm.rounded()))
     return String(format: "%d'%02d\"/km", total / 60, total % 60)
   }
@@ -1098,6 +1098,13 @@ public class RouteRendererModule: Module {
     let stampShadowColor: UIColor = stamp.stampTextColor == "black" ? UIColor.white.withAlphaComponent(0.55)
       : isSoftShadow ? UIColor.black.withAlphaComponent(0.55) : UIColor.white
     let textColor = selectedTextColor(stamp)
+    // route-preview.tsx의 STAMP_MUTED_ALPHA·STAMP_MUTED_SHADOW_ALPHA와 같은 값이어야 한다.
+    // 라벨(muted)은 값보다 옅게 두되, 밝은 배경에서 사라지지 않을 만큼만 올렸다(QA 2026-09-29).
+    let stampMutedAlpha: CGFloat = 0.9
+    let stampMutedShadowAlpha: CGFloat = 0.9
+    // row는 그림자가 이미 불투명한 흰색이라 그대로 둔다. 옅은 그림자(.55)를 쓰는 쪽만 라벨에서 진하게 한다.
+    let mutedShadowColor: UIColor = (stamp.stampTextColor == "black" || isSoftShadow)
+      ? stampShadowColor.withAlphaComponent(stampMutedShadowAlpha) : stampShadowColor
 
     // 2026-09-17 — 폰트 불일치(v0 근사, 구현 노트 "폰트 불일치" 참고) 수정.
     // 미리보기(route-preview.tsx)는 @expo-google-fonts로 로드한 실제 폰트를
@@ -1143,11 +1150,13 @@ public class RouteRendererModule: Module {
       // 겹쳐 보였다. 베이스라인 y에서 ascender를 빼 실제 "맨 위" y로 바꿔서 넘긴다.
       let topY = origin.y - font.ascender
       ctx.saveGState()
-      ctx.setShadow(offset: .zero, blur: 6, color: stampShadowColor.cgColor)
+      // color를 넘기는 호출은 라벨(muted)뿐이다. 라벨은 그림자도 조금 더 진하게 건다.
+      let shadow = color != nil ? mutedShadowColor : stampShadowColor
+      ctx.setShadow(offset: .zero, blur: 6, color: shadow.cgColor)
       (text as NSString).draw(at: CGPoint(x: x, y: topY), withAttributes: attrs)
       ctx.restoreGState()
     }
-    let mutedColor = textColor.withAlphaComponent(0.5)
+    let mutedColor = textColor.withAlphaComponent(stampMutedAlpha)
 
     // route-preview.tsx StampConfig.scale과 같은 배율 — 자리(ox/oy)는 그대로 두고
     // 글자 크기·내부 간격에만 곱한다. 문구 배치에서는 문구 크기(captionScale)가 들어온다.
@@ -1199,7 +1208,7 @@ public class RouteRendererModule: Module {
     func finalValueFor(_ k: String) -> String {
       k == "distance" ? formatDistanceKm(stamp.distanceMeters)
         : k == "time" ? formatDuration(stamp.durationSeconds)
-        : k == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm)) : valueFor(k)
+        : k == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm ?? 0)) : valueFor(k)
     }
     // 채운 사각형(카드 배경·구분선·레일 선) — route-preview.tsx StampRectDescriptor와 같은 개념.
     func fillRect(_ rect: CGRect, radius: CGFloat, color: UIColor, strokeColor: UIColor? = nil) {
@@ -1332,7 +1341,7 @@ public class RouteRendererModule: Module {
         let widths = statOrder.map { key -> CGFloat in
           let finalValue = key == "distance" ? formatDistanceKm(stamp.distanceMeters)
             : key == "time" ? formatDuration(stamp.durationSeconds)
-            : key == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm)) : valueFor(key)
+            : key == "pace" ? formatPace(max(600, stamp.averagePaceSecPerKm ?? 0)) : valueFor(key)
           return max(estimateStampTextWidth(statLabel[key] ?? "", labelFont),
             estimateStampTextWidth(finalValue, (key == "distance" ? 22 : 18) * u))
         }
@@ -1361,15 +1370,32 @@ public class RouteRendererModule: Module {
       let headerBaseline = canvasSize.height * safeAreaTopRatio + 24 * M + headerFont * 0.85 + oy
 
       if !caption.isEmpty { drawCaption(CGPoint(x: topLeftX, y: headerBaseline), hangulFont(headerFont, bold: true), .left, fromTop: true) }
+      // route-preview.tsx 코너 분기와 같은 규칙(경로 렌더링 FRD §7-5, 2026-10-22).
+      // 큰 숫자로 쓴 항목은 통계에서 빼고, 날짜는 통계가 있으면 그 묶음의 첫 줄로,
+      // 통계가 없고 큰 숫자가 있으면 큰 숫자 바로 위로 붙인다.
+      let heroKey = keyed.first(where: { heroKeys.contains($0.0) })?.0
+      let statItems = ["time", "pace", "heartRate", "place"].filter { hasKey($0) && $0 != heroKey }
       let dateText = valueFor("date")
-      if !dateText.isEmpty { draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor) }
+      let dateInStack = !dateText.isEmpty && !statItems.isEmpty
+      let dateAboveHero = !dateText.isEmpty && statItems.isEmpty && heroKey != nil
+      let heroSize = 66 * u
+      // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
+      // 빠뜨렸던 버그. 26*M로 맞춘다.
+      let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
+      if !dateText.isEmpty {
+        if dateAboveHero {
+          draw(dateText, CGPoint(x: 22 * M + ox, y: heroBaseline - heroSize * 0.78 - 8 * u), monoFont(11 * u, bold: false), .left, color: mutedColor)
+        } else {
+          draw(dateText, CGPoint(x: topRightX, y: headerBaseline), monoFont(11 * u, bold: false), .right, color: mutedColor)
+        }
+      }
 
-      let statItems = ["time", "pace", "heartRate", "place"].filter(hasKey)
       if !statItems.isEmpty {
         let labelFont = 9 * u
         let valueFont = 19 * u
         let rowGap = 14 * u
-        var cursorY = headerBaseline + 72 * M + captionExtra
+        // 날짜가 있으면 그 바로 아래에서, 없으면 날짜 자리(맨 위)에서 시작한다.
+        var cursorY = (dateInStack ? headerBaseline + 12 * u : headerBaseline - headerFont * 0.85) + captionExtra
         for key in statItems {
           let labelY = cursorY + labelFont * 0.85
           let valueY = labelY + valueFont * 1.05
@@ -1381,10 +1407,6 @@ public class RouteRendererModule: Module {
       }
 
       if let hero = keyed.first(where: { heroKeys.contains($0.0) }) {
-        let heroSize = 66 * u
-        // 실기기 피드백(2026-09-03), TS와 동일 — 디자인 bottom:26px, M 곱하는 걸
-        // 빠뜨렸던 버그. 26*M로 맞춘다.
-        let heroBaseline = canvasSize.height * (1 - safeAreaBottomRatio) - 26 * M + oy
         drawHeroValue(hero.1, CGPoint(x: 22 * M + ox, y: heroBaseline), heroSize, align: .left)
       }
       return
@@ -1594,9 +1616,8 @@ public class RouteRendererModule: Module {
 
   private func outputURL(named name: String) throws -> URL {
     // 홈과 보관함 FRD §2-3: 완성 파일은 임시 공간 정리로 사라지면 안 된다.
-    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("clips", isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let directory = try LocalClipStorage.prepare(in: documents)
     return directory.appendingPathComponent("\(name).mp4")
   }
 
@@ -1610,7 +1631,7 @@ public class RouteRendererModule: Module {
 
   private func writeClip(
     preset: RoutePreset,
-    projectedPoints: [CGPoint],
+    projectedPoints: [RouteVertex],
     cumulativeDistances: [Double],
     totalDistance: Double,
     background: UIImage,

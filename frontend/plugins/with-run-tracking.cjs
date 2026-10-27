@@ -9,6 +9,10 @@ function withRunTracking(config) {
     const directory = path.join(mod.modRequest.platformProjectRoot, WATCH);
     fs.mkdirSync(directory, { recursive: true });
     fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'watch/RunaryWatchApp.swift'), path.join(directory, 'RunaryWatchApp.swift'));
+    fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'modules/run-tracking/ios/TrackingWatchDisplay.swift'), path.join(directory, 'TrackingWatchDisplay.swift'));
+    fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'modules/run-tracking/ios/TrackingWatchHealth.swift'), path.join(directory, 'TrackingWatchHealth.swift'));
+    fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'watch/WatchHealthReader.swift'), path.join(directory, 'WatchHealthReader.swift'));
+    fs.copyFileSync(path.join(mod.modRequest.projectRoot, 'watch/WatchWorkoutSession.swift'), path.join(directory, 'WatchWorkoutSession.swift'));
     const plist = require('@expo/plist').default;
     fs.writeFileSync(path.join(directory, 'Info.plist'), plist.build({
       CFBundleDisplayName: 'Runary', CFBundleIdentifier: '$(PRODUCT_BUNDLE_IDENTIFIER)',
@@ -16,9 +20,10 @@ function withRunTracking(config) {
       CFBundlePackageType: 'APPL', CFBundleShortVersionString: config.version || '1.0.0',
       CFBundleVersion: config.ios.buildNumber || '1', WKApplication: true,
       WKCompanionAppBundleIdentifier: config.ios.bundleIdentifier,
-      WKRunsIndependentlyOfCompanionApp: false, WKBackgroundModes: ['workout-processing'],
-      NSHealthShareUsageDescription: '러닝 중 워치의 심박수를 확인하고 Runary 기록에 보관합니다.',
-      NSHealthUpdateUsageDescription: '심박 측정을 위한 운동 세션을 실행합니다. 완성한 운동은 건강 앱에 중복 저장하지 않습니다.',
+      WKRunsIndependentlyOfCompanionApp: false,
+      WKBackgroundModes: ['workout-processing'],
+      NSHealthShareUsageDescription: '워치 건강 저장소의 심박을 읽어 같은 아이폰 러닝 기록에 전달합니다.',
+      NSHealthUpdateUsageDescription: '러닝 중 심박 측정을 위해 운동 세션을 실행합니다. 완료 기록은 아이폰에서 건강 앱에 저장합니다.',
     }));
     fs.writeFileSync(path.join(directory, 'RunaryWatch.entitlements'), plist.build({ 'com.apple.developer.healthkit': true }));
     const assets = path.join(directory, 'Assets.xcassets');
@@ -27,19 +32,32 @@ function withRunTracking(config) {
     const info = { version: 1, author: 'runary' };
     fs.writeFileSync(path.join(assets, 'Contents.json'), JSON.stringify({ info }));
     fs.writeFileSync(path.join(icon, 'Contents.json'), JSON.stringify({ info, images: [{ filename: 'icon.png', idiom: 'universal', platform: 'watchos', size: '1024x1024' }] }));
-    fs.copyFileSync(path.resolve(mod.modRequest.projectRoot, config.ios.icon || config.icon), path.join(icon, 'icon.png'));
+    const { generateImageAsync } = require('@expo/image-utils');
+    const image = await generateImageAsync({ projectRoot: mod.modRequest.projectRoot, cacheType: 'runary-watch-icon' }, {
+      src: path.resolve(mod.modRequest.projectRoot, config.ios.icon || config.icon),
+      width: 1024, height: 1024, resizeMode: 'cover', removeTransparency: true, backgroundColor: '#F0EAE3',
+    });
+    fs.writeFileSync(path.join(icon, 'icon.png'), image.source);
     return mod;
   }]);
   return withXcodeProject(config, mod => { addWatchTarget(mod.modResults, config); return mod; });
 }
 function addWatchTarget(project, config) {
-    const existing = Object.values(project.pbxNativeTargetSection()).some(t => typeof t === 'object' && String(t.name).replaceAll('"', '') === WATCH);
-    if (existing) return;
+    const existing = Object.entries(project.pbxNativeTargetSection()).find(([, t]) => typeof t === 'object' && String(t.name).replaceAll('"', '') === WATCH);
+    if (existing) {
+      for (const name of ['TrackingWatchDisplay.swift', 'TrackingWatchHealth.swift', 'WatchHealthReader.swift', 'WatchWorkoutSession.swift']) {
+        const filename = `${WATCH}/${name}`;
+        if (project.hasFile(filename)) continue;
+        const group = Object.entries(project.hash.project.objects.PBXGroup).find(([, g]) => typeof g === 'object' && g.name === WATCH);
+        project.addSourceFile(filename, { target: existing[0] }, group?.[0]);
+      }
+      return;
+    }
     const target = project.addTarget(WATCH, 'application', WATCH, `${config.ios.bundleIdentifier}.watch`);
-    project.addBuildPhase([`${WATCH}/RunaryWatchApp.swift`], 'PBXSourcesBuildPhase', 'Sources', target.uuid);
+    project.addBuildPhase(['RunaryWatchApp.swift', 'TrackingWatchDisplay.swift', 'TrackingWatchHealth.swift', 'WatchHealthReader.swift', 'WatchWorkoutSession.swift'].map(name => `${WATCH}/${name}`), 'PBXSourcesBuildPhase', 'Sources', target.uuid);
     project.addBuildPhase([`${WATCH}/Assets.xcassets`], 'PBXResourcesBuildPhase', 'Resources', target.uuid);
     project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid);
-    const group = project.addPbxGroup([`${WATCH}/RunaryWatchApp.swift`, `${WATCH}/Info.plist`, `${WATCH}/RunaryWatch.entitlements`], WATCH);
+    const group = project.addPbxGroup(['RunaryWatchApp.swift', 'TrackingWatchDisplay.swift', 'TrackingWatchHealth.swift', 'WatchHealthReader.swift', 'WatchWorkoutSession.swift', 'Info.plist', 'RunaryWatch.entitlements'].map(name => `${WATCH}/${name}`), WATCH);
     delete project.hash.project.objects.PBXGroup[group.uuid].path;
     project.hash.project.objects.PBXTargetDependency ||= {};
     project.hash.project.objects.PBXContainerItemProxy ||= {};

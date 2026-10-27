@@ -1,31 +1,52 @@
 import { SymbolView } from 'expo-symbols';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { InstagramMissingSheet } from '@/components/instagram-missing-sheet';
 import { RouteThumbnail } from '@/components/route-thumbnail';
+import { ResultVideoPreview } from '@/components/result-video-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { defaultBackgroundForPath } from '@/constants/default-backgrounds';
+import { persistDefaultBackground } from '@/lib/background-storage';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
+import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
 import { useSaveToPhotos } from '@/hooks/use-save-to-photos';
 import { useInstagramShare } from '@/hooks/use-instagram-share';
 
 // FRD: docs/specs/frd/home-and-library.md §2-2
 // "보기 / 공유 / 다시 편집 / 같은 기록으로 새로 만들기 / 삭제"
-// 보기는 v0는 정지 이미지(썸네일 크게)로 대신한다 — 영상 재생 라이브러리는 아직 안 붙임.
+// 썸네일 아래 전용 컨트롤로 보관한 완성 영상을 같은 자리에서 재생한다.
 // 공유(2026-09-08 추가): mp4가 이미 outputPath에 있으므로 share.tsx처럼 다시 인코딩할
 // 필요 없이 바로 인스타그램 스토리로 넘긴다.
 
 export default function ResultDetailScreen() {
+  const { width, height } = useWindowDimensions();
+  const previewSize = Math.min(360, Math.max(1, width - Spacing.md * 2));
+  const previewHeight = Math.round(Math.min(previewSize * 1.25, Math.max(previewSize, height * 0.5)));
   const { id } = useLocalSearchParams<{ id: string }>();
   const { loadDraft, setSelectedRun } = useCreationFlow();
-  const [result, setResult] = useState<SavedResult | null | undefined>(undefined);
+  const [lookup, setLookup] = useState<{ id: string; result: SavedResult | null; failed: boolean }>();
+  const [attempt, setAttempt] = useState(0);
+  const result = !id ? null : lookup?.id === id ? lookup.result : undefined;
+  const editEpoch = useRef(0);
+  const focused = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (!id) return;
+    focused.current = true;
+    const subscription = AppState.addEventListener('change', state => { if (state === 'background') editEpoch.current++; });
+    return () => { focused.current = false; editEpoch.current++; subscription.remove(); };
+  }, [id]));
+  const beginEdit = () => {
+    const token = ++editEpoch.current;
+    return () => focused.current && token === editEpoch.current;
+  };
   const [showMissingSheet, setShowMissingSheet] = useState(false);
   const { sharing, share: handleShareToInstagram } = useInstagramShare({
     outputPath: result?.outputPath,
@@ -36,11 +57,18 @@ export default function ResultDetailScreen() {
 
   useEffect(() => {
     if (!id) return;
-    getResult(id).then(setResult);
-  }, [id]);
+    let alive = true;
+    void getResult(id).then(result => {
+      if (alive) setLookup({ id, result, failed: false });
+    }).catch(() => {
+      if (alive) setLookup({ id, result: null, failed: true });
+    });
+    return () => { alive = false; };
+  }, [id, attempt]);
 
   const handleReEdit = async () => {
     if (!result) return;
+    const isCurrent = beginEdit();
     // 실기기 피드백(2026-09-03): "다시 편집 → 결과물을 만들지 못했어요" — 예전에
     // 만든 결과물의 backgroundImagePath가 그 사이 앱이 재설치되거나(새 dev-client
     // 빌드 등) 저장공간 부족으로 iOS가 캐시를 정리해서 더 이상 못 찾는 경우가
@@ -49,12 +77,29 @@ export default function ResultDetailScreen() {
     // 해놓고 마지막(공유 화면) 단계에서야 실패하면 그동안의 편집이 헛수고가
     // 되니, 시작하기 전에 미리 확인해서 배경만 다시 고르게 안내한다 — 나머지
     // 편집값(프리셋·변형·다듬기·각인)은 그대로 유지.
-    const bgInfo = await FileSystem.getInfoAsync(result.backgroundImagePath);
+    let bgInfo: FileSystem.FileInfo;
+    let backgroundImagePath = result.backgroundImagePath;
+    try {
+      bgInfo = await FileSystem.getInfoAsync(backgroundImagePath);
+      if (!isCurrent()) return;
+      const bundled = !result.backgroundPhoto && defaultBackgroundForPath(backgroundImagePath);
+      if (!bgInfo.exists && bundled) {
+        backgroundImagePath = await persistDefaultBackground(bundled);
+        if (!isCurrent()) return;
+        bgInfo = await FileSystem.getInfoAsync(backgroundImagePath);
+      }
+    }
+    catch {
+      if (isCurrent()) Alert.alert('배경을 확인하지 못했어요', '편집 내용은 유지했어요. 잠시 후 다시 편집을 눌러 주세요.');
+      return;
+    }
+    if (!isCurrent()) return;
     if (!bgInfo.exists) {
       Alert.alert('배경 이미지를 다시 골라야 해요', '이전에 쓴 배경 사진을 더 이상 찾을 수 없어요. 배경만 다시 골라주세요 — 나머지 편집 내용은 그대로 유지됩니다.', [
         {
           text: '확인',
           onPress: () => {
+            if (!isCurrent()) return;
             loadDraft({
               backgroundImagePath: null,
               backgroundPhoto: undefined,
@@ -77,7 +122,7 @@ export default function ResultDetailScreen() {
     loadDraft({
       selectedRun: result.run,
       track: result.track,
-      backgroundImagePath: result.backgroundImagePath,
+      backgroundImagePath,
       backgroundPhoto: result.backgroundPhoto,
       preset: result.preset,
       routeStyle: result.routeStyle,
@@ -91,14 +136,20 @@ export default function ResultDetailScreen() {
 
   const handleMakeAnother = async () => {
     if (!result) return;
+    const isCurrent = beginEdit();
     // §2-2: "같은 기록으로 새로 만들기"는 렌더러 초기값에서 시작한다(result-editing §8).
     // 배경은 다시 고를 수 있게 배경 선택부터.
-    await setSelectedRun(result.run, result.track);
-    router.push('/background-selection');
+    try {
+      await setSelectedRun(result.run, result.track, isCurrent);
+      if (isCurrent()) router.push('/background-selection');
+    } catch {
+      if (isCurrent()) Alert.alert('기록을 준비하지 못했어요', '잠시 후 다시 시도해 주세요. 저장된 결과물은 그대로 남아 있어요.');
+    }
   };
 
   const handleDelete = () => {
     if (!result) return;
+    editEpoch.current++;
     Alert.alert('결과물을 삭제할까요?', '되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       {
@@ -112,13 +163,17 @@ export default function ResultDetailScreen() {
     ]);
   };
 
-  if (result === undefined) return <SafeAreaView style={styles.safeArea} />;
+  if (result === undefined) return <SafeAreaView style={styles.safeArea}>
+    <ScreenHeader title="결과물" />
+    <View style={styles.center}><ActivityIndicator color={Colors.accent} accessibilityLabel="결과물 불러오는 중" /></View>
+  </SafeAreaView>;
   if (result === null) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScreenHeader title="결과물" />
         <View style={styles.center}>
-          <Text style={styles.notice}>결과물을 찾을 수 없어요.</Text>
+          <Text style={styles.notice}>{lookup?.failed ? '결과물을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.' : '결과물을 찾을 수 없어요.'}</Text>
+          {lookup?.failed && <ThemedButton title="다시 불러오기" variant="outline" onPress={() => { setLookup(undefined); setAttempt(value => value + 1); }} />}
         </View>
       </SafeAreaView>
     );
@@ -127,8 +182,12 @@ export default function ResultDetailScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScreenHeader title="결과물" />
-      <View style={styles.container}>
-        <View style={styles.previewBox}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <ResultVideoPreview key={result.outputPath} uri={result.outputPath} size={previewSize} height={previewHeight}
+          metadata={<>
+            <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
+            <Text style={styles.meta}>{isSampleRun(result.run) ? '샘플 기록 · ' : ''}{result.runDate.slice(0, 10)}</Text>
+          </>}>
           <RouteThumbnail
             points={result.track.coordinates}
             preset={result.preset}
@@ -139,12 +198,10 @@ export default function ResultDetailScreen() {
             stampConfig={result.stampConfig}
             backgroundImagePath={result.backgroundImagePath}
             framing="content"
-            size={270}
+            size={previewSize}
+            height={previewHeight}
           />
-        </View>
-        <Text style={styles.distance}>{(result.distanceMeters / 1000).toFixed(2)}km</Text>
-        <Text style={styles.meta}>{result.runDate.slice(0, 10)}</Text>
-
+        </ResultVideoPreview>
         <View style={styles.actionColumn}>
           {/* share.tsx S8b와 같은 구성(2026-09-08): 주 버튼(인스타그램 공유) + 저장
               아이콘 버튼 한 줄. */}
@@ -175,7 +232,7 @@ export default function ResultDetailScreen() {
           <ThemedButton title="같은 기록으로 새로 만들기" variant="outline" onPress={handleMakeAnother} />
           <ThemedButton title="삭제" variant="outline" onPress={handleDelete} />
         </View>
-      </View>
+      </ScrollView>
 
       <InstagramMissingSheet
         visible={showMissingSheet}
@@ -194,18 +251,11 @@ export default function ResultDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   center: { flex: 1, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1, alignItems: 'center', padding: Spacing.lg, gap: Spacing.sm },
-  previewBox: {
-    width: 270,
-    height: 270,
-    borderRadius: Radius.card,
-    overflow: 'hidden',
-    backgroundColor: Colors.bgCard,
-  },
-  distance: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, marginTop: Spacing.sm },
-  meta: { fontFamily: Fonts.sans, fontSize: 12, color: Colors.textMuted },
+  container: { flexGrow: 1, alignItems: 'center', paddingHorizontal: Spacing.md, paddingTop: 8, paddingBottom: Spacing.lg, gap: 12 },
+  distance: { fontFamily: Fonts.sansBold, fontSize: 22, color: Colors.text },
+  meta: { fontFamily: Fonts.sans, fontSize: 11, color: Colors.textMuted, marginTop: 2 },
   notice: { fontFamily: Fonts.sans, color: Colors.textMuted, fontSize: 12 },
-  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: Spacing.lg },
+  actionColumn: { alignSelf: 'stretch', gap: Spacing.sm, marginTop: 4 },
   primaryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   shareButton: { flex: 1 },
   iconButton: {

@@ -20,7 +20,8 @@ export function formatDuration(seconds: number): string {
 }
 
 /** 분'초"/km */
-export function formatPace(secPerKm: number): string {
+export function formatPace(secPerKm: number | null): string {
+  if (secPerKm == null || !Number.isFinite(secPerKm) || secPerKm <= 0) return '-';
   const total = Math.max(0, Math.round(secPerKm));
   const m = Math.floor(total / 60);
   const s = total % 60;

@@ -5,11 +5,18 @@ export function runTime(value: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 export function runPace(value?: number | null): string {
-  if (value == null || !Number.isFinite(value) || value <= 0) return '—';
+  if (value == null || !Number.isFinite(value) || value <= 0) return '-';
   const rounded = Math.round(value);
   return `${Math.floor(rounded / 60)}′${String(rounded % 60).padStart(2, '0')}″`;
 }
-export function runNumber(value?: number | null): string { return value == null ? '—' : String(Math.round(value)); }
+export function runNumber(value?: number | null): string { return value == null || !Number.isFinite(value) ? '-' : String(Math.round(value)); }
+export function heartImportNotice(run: RunSummary): string | null {
+  if (run.heartSource !== 'health' || run.lastHeart == null || !Number.isFinite(run.lastHeart) || run.averageHeartRate == null || !Number.isFinite(run.averageHeartRate)) return null;
+  const measured = new Date(run.lastHeart * 1000);
+  if (!Number.isFinite(measured.getTime())) return null;
+  const time = `${String(measured.getHours()).padStart(2, '0')}:${String(measured.getMinutes()).padStart(2, '0')}`;
+  return `건강 앱에서 불러온 평균 심박 ${runNumber(run.averageHeartRate)} bpm · 마지막 측정 ${time}`;
+}
 export const runStatus = { running: '측정 중', paused: '일시정지', interrupted: '중단됨', saving: '저장 대기', completed: '완료' };
 export function diagnosticSummary(run: RunSummary, version: string, device: string): string {
   // Allowlist: no coordinate arrays, raw heart samples, IDs or place metadata.
@@ -22,9 +29,10 @@ export function diagnosticSummary(run: RunSummary, version: string, device: stri
     `정확도 평균: ${run.meanAccuracy?.toFixed(1) ?? '미측정'} m`,
     `최대 공백: 좌표 ${run.maxSampleGap.toFixed(1)}초 / 수신 ${run.maxReceiptGap.toFixed(1)}초`,
     `좌표 수신: 전면 ${run.foregroundCount} / 백그라운드 ${run.backgroundCount}`,
-    `워치 사용: ${run.watchEnabled ? '예' : '아니오'}, 심박 수신: ${run.lastHeart != null ? '있음' : '없음'}, 동작 수신: ${run.lastMotion != null ? '있음' : '없음'}`,
+    `심박 방식: ${run.heartSource === 'health' ? '건강 앱' : run.watchEnabled ? 'Runary 워치' : '사용 안 함'}`,
+    `직접 워치 수집 (이전 기록): ${run.watchEnabled ? '예' : '아니오'}, 심박 수신: ${run.lastHeart != null ? '있음' : '없음'}, 동작 수신: ${run.lastMotion != null ? '있음' : '없음'}`,
     `경로 누락 가능성: ${run.incomplete ? '있음' : '없음'}`,
-    `배터리: ${run.batteryStart != null ? Math.round(run.batteryStart * 100) : '—'}% → ${run.batteryEnd != null ? Math.round(run.batteryEnd * 100) : '—'}%, 충전 ${run.charging ? '있음' : '없음'}, 저전력 모드 ${run.lowPower ? '있음' : '없음'}`,
+    `배터리: ${run.batteryStart != null ? Math.round(run.batteryStart * 100) : '-'}% → ${run.batteryEnd != null ? Math.round(run.batteryEnd * 100) : '-'}%, 충전 ${run.charging ? '있음' : '없음'}, 저전력 모드 ${run.lowPower ? '있음' : '없음'}`,
     `오류: ${run.errors.join(', ') || '없음'}`, `사용자 메모: ${run.feedback || '없음'}`,
   ].join('\n');
 }

@@ -11,7 +11,7 @@ import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-n
 import { CANVAS_HEIGHT, CANVAS_WIDTH, cumulativeCanvasDistances, pointAtDistance, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
 import { computeThumbnailFrame } from '@/lib/thumbnail-framing';
-import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { DEFAULT_BACKGROUNDS, defaultBackgroundForPath } from '@/constants/default-backgrounds';
 
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RoutePreset, type RouteTransform, type StampConfig } from './route-preview';
@@ -28,7 +28,8 @@ type Props = {
   transform: RouteTransform;
   routeStyle?: RouteStyle;
   handDrawing?: HandStroke[];
-  size: number; // 정사각형 한 변
+  size: number; // 너비. 높이를 생략하면 정사각형이다.
+  height?: number;
   smoothOptions?: SmoothOptions;
   run?: RunRecord;
   stampConfig?: StampConfig;
@@ -44,6 +45,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   routeStyle,
   handDrawing = EMPTY_HAND_DRAWING,
   size,
+  height = size,
   smoothOptions = IDENTITY_SMOOTH,
   run,
   stampConfig = IDENTITY_STAMP,
@@ -69,10 +71,14 @@ export const RouteThumbnail = memo(function RouteThumbnail({
     () => Skia.Path.MakeFromSVGString(toSvgPath(projected)) ?? Skia.Path.Make(),
     [projected]
   );
-  const frame = useMemo(() => framing === 'content'
+  const frame = useMemo(() => {
+    const square = framing === 'content'
     ? computeThumbnailFrame(projected, transform, run ? computeStampBounds(run, stampConfig, true) : null, handDrawingBounds(handDrawing))
-    : { x: 0, y: (CANVAS_HEIGHT - CANVAS_WIDTH) / 2, width: CANVAS_WIDTH, height: CANVAS_WIDTH },
-  [framing, projected, transform, run, stampConfig, handDrawing]);
+    : { x: 0, y: (CANVAS_HEIGHT - CANVAS_WIDTH) / 2, width: CANVAS_WIDTH, height: CANVAS_WIDTH };
+    // 상세의 세로 미리보기는 정사각형 구도를 자르지 않고 위아래를 더 보여준다.
+    const frameHeight = square.width * height / Math.max(1, size);
+    return { ...square, y: square.y - (frameHeight - square.height) / 2, height: frameHeight };
+  }, [framing, projected, transform, run, stampConfig, handDrawing, height, size]);
 
   const fitScale = size / frame.width;
   const offsetX = -frame.x * fitScale;
@@ -91,10 +97,10 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   ];
 
   return (
-    <View style={{ width: size, height: size, overflow: 'hidden' }}>
+    <View style={{ width: size, height, overflow: 'hidden' }}>
       {framing === 'content' && (
         <ThumbnailBackground key={backgroundImagePath ?? 'default'} path={backgroundImagePath}
-          size={size} left={offsetX} top={offsetY} scale={fitScale} />
+          size={size} height={height} left={offsetX} top={offsetY} scale={fitScale} />
       )}
       <Canvas style={{ flex: 1 }}>
         <Group transform={groupTransform}>
@@ -114,7 +120,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
         </Group>
       </Canvas>
 
-      <HandDrawingLayer strokes={handDrawing} width={size} height={size}
+      <HandDrawingLayer strokes={handDrawing} width={size} height={height}
         offsetX={offsetX} offsetY={offsetY} scale={fitScale} />
 
       {/* §2-1 "완성된 순간" — 각인도 완주 시점(progressFraction=1)으로 함께. */}
@@ -122,7 +128,7 @@ export const RouteThumbnail = memo(function RouteThumbnail({
         <Svg
           style={{ position: 'absolute', top: 0, left: 0 }}
           width={size}
-          height={size}
+          height={height}
           viewBox={`${frame.x} ${frame.y} ${frame.width} ${frame.height}`}>
           <Defs>
             <Filter id="stampGlow" x="-100%" y="-100%" width="300%" height="300%">
@@ -140,12 +146,12 @@ export const RouteThumbnail = memo(function RouteThumbnail({
   );
 });
 
-function ThumbnailBackground({ path, size, left, top, scale }: {
-  path?: string; size: number; left: number; top: number; scale: number;
+function ThumbnailBackground({ path, size, height, left, top, scale }: {
+  path?: string; size: number; height: number; left: number; top: number; scale: number;
 }) {
   const [failed, setFailed] = useState(false);
   // 기본 배경은 앱 업데이트로 컨테이너 경로가 달라져도 원래 소재를 복원한다.
-  const bundled = DEFAULT_BACKGROUNDS.find(bg => path?.endsWith(`/backgrounds/${bg.id}.jpg`));
+  const bundled = defaultBackgroundForPath(path);
   const source = bundled?.source ?? (path && !failed
     ? (path.startsWith('/') ? `file://${path}` : path)
     : DEFAULT_BACKGROUNDS[0].source);
@@ -153,7 +159,7 @@ function ThumbnailBackground({ path, size, left, top, scale }: {
   const backgroundRect = { x: left, y: top, width: CANVAS_WIDTH * scale, height: CANVAS_HEIGHT * scale };
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Canvas style={{ width: size, height: size }}>
+      <Canvas style={{ width: size, height }}>
         {image && <>
           {/* 원본과 같은 좌표에서 가장자리 색을 연장한다. 반투명·별도 확대 때문에 생기던 띠를 없앤다. */}
           <Fill>

@@ -13,6 +13,7 @@ import {
 import type { PhotoBackground } from '@/lib/background-storage';
 import type { SmoothOptions } from '@/lib/route-smoothing';
 import { FIRST_STAMP_LAYOUT, getPreferredStampLayout } from '@/lib/stamp-preference';
+import { isSampleRun, SAMPLE_PLACE_NAME } from '@/lib/sample-run';
 
 import type { RunRecord, Track } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 
@@ -36,7 +37,7 @@ type CreationDraft = {
 
 type CreationFlowContextValue = {
   draft: CreationDraft;
-  setSelectedRun: (run: RunRecord, track: Track) => Promise<void>;
+  setSelectedRun: (run: RunRecord, track: Track, isCurrent?: () => boolean) => Promise<void>;
   setBackground: (path: string, photo?: PhotoBackground) => void;
   setPreset: (preset: RoutePreset) => void;
   setRouteStyle: (style: RouteStyle) => void;
@@ -69,9 +70,11 @@ export function CreationFlowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CreationFlowContextValue>(
     () => ({
       draft,
-      setSelectedRun: async (run, track) => {
+      setSelectedRun: async (run, track, isCurrent = () => true) => {
         const layout = await getPreferredStampLayout();
-        setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout } });
+        if (!isCurrent()) return;
+        setDraft({ ...emptyDraft, selectedRun: run, track, stampConfig: { ...IDENTITY_STAMP, layout,
+          placeName: isSampleRun(run) ? SAMPLE_PLACE_NAME : '' } });
       },
       setBackground: (path, photo) => setDraft((prev) => ({ ...prev, backgroundImagePath: path, backgroundPhoto: photo })),
       setPreset: (preset) => setDraft((prev) => ({ ...prev, preset })),

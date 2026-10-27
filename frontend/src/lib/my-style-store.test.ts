@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { applyMyStyle, captureMyStyle, deleteMyStyle, listMyStyles, MAX_MY_STYLES, saveMyStyle } from './my-style-store';
 import type { EditSnapshot } from './edit-history';
+import { DEFAULT_BACKGROUNDS, defaultBackgroundForPath, findDefaultBackground } from '@/constants/default-backgrounds';
 jest.mock('@react-native-async-storage/async-storage', () => ({ getItem: jest.fn(), setItem: jest.fn() }));
 const snapshot: EditSnapshot = {
-  backgroundImagePath: 'file:///Documents/backgrounds/noon.jpg', preset: 'light-runner',
+  backgroundImagePath: 'file:///Documents/backgrounds/track.jpg', preset: 'light-runner',
   transform: { x: 100, y: -90, scale: 1.7, rotationDeg: 30 },
   smoothOptions: { smooth: 35, corner: 70 }, routeStyle: { color: 'mint', widthScale: 1.4 },
   handDrawing: [{ id: 'a', brush: 'pen', color: '#FFFFFF', width: 12, points: [{ x: 50, y: 50 }] }],
@@ -16,9 +17,20 @@ beforeEach(() => {
   jest.mocked(AsyncStorage.getItem).mockImplementation(async () => stored);
   jest.mocked(AsyncStorage.setItem).mockImplementation(async (_key, value) => { stored = value; });
 });
+it.each(['morning', 'noon', 'evening'])('이전 %s 배경은 읽기·다른 스타일 저장·재적용 뒤에도 보존한다', async id => {
+  const old = { ...captureMyStyle(snapshot, '기존 스타일'), backgroundId: id };
+  stored = JSON.stringify([old]);
+  expect((await listMyStyles())[0].backgroundId).toBe(id);
+  await saveMyStyle(captureMyStyle(snapshot, '새 스타일'));
+  expect((await listMyStyles()).find(style => style.id === old.id)?.backgroundId).toBe(id);
+  const path = `file:///new-container/Documents/backgrounds/${id}.jpg`;
+  expect(captureMyStyle({ ...snapshot, backgroundImagePath: path }, '다시 저장').backgroundId).toBe(id);
+  expect(defaultBackgroundForPath(path)).toBe(findDefaultBackground(id));
+  expect(DEFAULT_BACKGROUNDS.some(bg => bg.id === id)).toBe(false);
+});
 it('스타일에 다듬기를 포함하고 기록·위치·문구·손그림·사진 경로를 저장하지 않는다', () => {
   const style = captureMyStyle(snapshot, '  민트  ');
-  expect(style.backgroundId).toBe('noon'); expect(style.smoothOptions).toEqual({ smooth: 35, corner: 70 });
+  expect(style.backgroundId).toBe('track'); expect(style.smoothOptions).toEqual({ smooth: 35, corner: 70 });
   expect(style.name).toBe('민트');
   for (const privateValue of ['개인 장소', '나의 문구', 'handDrawing', 'rotationDeg', 'Documents']) expect(JSON.stringify(style)).not.toContain(privateValue);
 });

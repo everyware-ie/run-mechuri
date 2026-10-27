@@ -1,7 +1,8 @@
-import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { goBackOrHome } from '@/lib/navigation';
 import * as Device from 'expo-device';
-import { useCallback, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, ScrollView, Text, TextInput, View } from 'react-native';
 import { RunDisclosure, RunMetric, RunStatus, runUI } from '@/components/run-tracking-ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RunMap } from '@/components/run-map';
@@ -14,9 +15,10 @@ import { trackingStyles as styles } from '@/components/internal-run-styles';
 
 export default function RunDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [data, setData] = useState<{ summary: RunSummary; points: RunPoint[] } | null>(null);
+  const [data, setData] = useState<{ summary: RunSummary; points: RunPoint[]; healthExport?: { status: string } } | null>(null);
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
+  const [heartError, setHeartError] = useState('');
   const [busy, setBusy] = useState(false);
   const [memoOpen, setMemoOpen] = useState(false);
   const [diagnosticOpen, setDiagnosticOpen] = useState(false);
@@ -26,24 +28,53 @@ export default function RunDetail() {
   useFocusEffect(useCallback(() => {
     if (!trackingEnabled || !id) return;
     setMapVisible(true);
-    setData(null); setFeedback(''); setMemoOpen(false); setDiagnosticOpen(false);
-    let alive = true, request = 0;
+    setData(null); setFeedback(''); setHeartError(''); setMemoOpen(false); setDiagnosticOpen(false);
+    let alive = true, request = 0, feedbackLoaded = false;
     const load = async () => {
       const current = ++request;
       setError('');
       try {
         const detail = await Tracking!.detail(id);
-        if (!alive || current !== request) return;
+        if (!alive || current !== request || AppState.currentState !== 'active') return;
         if (detail.summary.id !== id) throw new Error('다른 기록이 반환됐어요.');
-        setData(detail); setFeedback(detail.summary.feedback ?? '');
+        setData(detail);
+        if (!feedbackLoaded) { setFeedback(detail.summary.feedback ?? ''); feedbackLoaded = true; }
+        if (detail.summary.heartSource === 'health' && Tracking!.refreshHealthHeart) {
+          try {
+            await Tracking!.refreshHealthHeart(id);
+            if (!alive || current !== request || AppState.currentState !== 'active') return;
+            const updated = await Tracking!.detail(id);
+            if (!alive || current !== request || AppState.currentState !== 'active') return;
+            if (updated.summary.id !== id) throw new Error('다른 기록이 반환됐어요.');
+            setData(updated); setHeartError('');
+          } catch {
+            if (alive && current === request) setHeartError('심박을 불러오지 못했어요. 기존 기록은 보존했습니다. 건강 앱 권한을 확인한 뒤 다시 시도해 주세요.');
+          }
+        }
       } catch {
         if (alive && current === request) setError('기록을 불러오지 못했어요. 원본은 보존되어 있으니 다시 시도해 주세요.');
       }
     };
     reload.current = load;
     void load();
-    return () => { alive = false; reload.current = null; setMapVisible(false); };
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') void load(); else request++; });
+    return () => { alive = false; request++; reload.current = null; subscription.remove(); setMapVisible(false); };
   }, [id]));
+  const exportPending = data?.healthExport?.status === 'pending';
+  useEffect(() => {
+    if (!exportPending || !id || !trackingEnabled) return;
+    let active = true, loading = false;
+    const timer = setInterval(async () => {
+      if (loading || AppState.currentState !== 'active') return;
+      loading = true;
+      try {
+        const updated = await Tracking!.detail(id);
+        if (active && updated.summary.id === id) setData(updated);
+      } catch { /* Keep the saved local record visible during a transient read failure. */ }
+      finally { loading = false; }
+    }, 1500);
+    return () => { active = false; clearInterval(timer); };
+  }, [exportPending, id]);
   if (!trackingEnabled) return <Redirect href="/" />;
   const act = async (work: () => Promise<unknown>) => {
     if (actionPending.current) return; actionPending.current = true; setBusy(true); setError('');
@@ -73,11 +104,20 @@ export default function RunDetail() {
         </View>
         {run.incomplete ? <View style={runUI.error}><Text style={styles.notice}>경로 일부가 누락됐을 수 있어요. 없는 구간은 연결하지 않았습니다.</Text></View> : null}
         <View style={runUI.support}>
-          <View style={runUI.supportItem}><Text style={runUI.label}>걸음</Text><Text style={runUI.supportValue}>{run.lastMotion != null || run.steps > 0 ? run.steps : '—'}</Text></View>
+          <View style={runUI.supportItem}><Text style={runUI.label}>걸음</Text><Text style={runUI.supportValue}>{run.lastMotion != null || run.steps > 0 ? run.steps : '-'}</Text></View>
           <View style={runUI.supportItem}><Text style={runUI.label}>평균 케이던스</Text><Text style={runUI.supportValue}>{runNumber(run.averageCadence)} spm</Text></View>
           <View style={runUI.supportItem}><Text style={runUI.label}>최대 심박</Text><Text style={runUI.supportValue}>{runNumber(run.maxHeartRate)} bpm</Text></View>
         </View>
         <Text style={runUI.footnote}>심박·동작 통계는 실제 수집된 자료만 반영해요.</Text>
+        {run.heartSource === 'health' ? <>
+          <Text style={styles.subtitle}>건강 앱에서 불러온 심박이에요. 다른 운동 앱의 동기화가 늦으면 나중에 다시 불러와 주세요.</Text>
+          {heartError ? <Text style={styles.notice}>{heartError}</Text> : null}
+          <ThemedButton title="심박 다시 불러오기" variant="outline" disabled={busy} onPress={() => void act(async () => { await reload.current?.(); })} />
+        </> : null}
+        {run.status === 'completed' && data?.healthExport && data.healthExport.status !== 'off' ? <>
+          <Text style={styles.subtitle}>{data.healthExport.status === 'saved' ? '건강 앱에 저장됨' : data.healthExport.status === 'pending' ? '건강 앱 저장 대기' : '건강 저장을 완료하지 못했어요. 운동 또는 부가 데이터가 남아 있을 수 있어요. 권한과 동기화 상태를 확인해 주세요.'}</Text>
+          {data.healthExport.status !== 'saved' && Tracking!.exportHealth ? <ThemedButton title="건강 저장 다시 시도" variant="outline" disabled={busy} onPress={() => void act(async () => { await Tracking!.exportHealth!(id); await reload.current?.(); })} /> : null}
+        </> : null}
         <RunDisclosure label={feedback ? '러닝 메모' : '러닝 메모 남기기'} open={memoOpen} onPress={() => setMemoOpen(value => !value)}>
           <Text style={styles.subtitle}>느낀 점이나 비교 앱의 거리·시간을 남겨 주세요. 선택 사항이에요.</Text>
           <TextInput style={[styles.text, { backgroundColor: Colors.bgCard, padding: 16, minHeight: 96, borderRadius: 16 }]} accessibilityLabel="러닝 메모" placeholder="오늘의 러닝은 어땠나요?" placeholderTextColor={Colors.textMuted} multiline maxLength={500} value={feedback} onChangeText={setFeedback} />
@@ -89,7 +129,7 @@ export default function RunDetail() {
           <Card><Text selectable style={styles.subtitle}>{diagnosticSummary(run, version, device)}</Text></Card>
           <Text style={styles.subtitle}>마지막 저장: {run.lastSaved ? new Date(run.lastSaved * 1000).toLocaleString('ko-KR') : '없음'} · 구간 {run.segments}</Text>
         </RunDisclosure>
-        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); router.back(); }) }])} />
+        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다. 건강 앱에 저장된 운동은 남습니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); goBackOrHome(); }) }])} />
       </> : null}
     </ScrollView>
   </SafeAreaView>;
