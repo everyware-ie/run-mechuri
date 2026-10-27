@@ -3,7 +3,7 @@ title: App Store 등록 정보
 product: running
 type: marketing
 status: draft
-updated: 2026-10-13
+updated: 2026-10-27
 ---
 
 # App Store 등록 정보
@@ -16,8 +16,10 @@ App Store Connect의 한국어 등록 정보에 그대로 넣을 문구다. 담�
 ## 부제 (30자 이내)
 
 ```
-오늘 뛴 길, 스토리로 자랑하기
+러닝 기록을 나만의 스토리로
 ```
+
+10/13 회의에서 이 문구로 확정했다. 처음 초안은 "오늘 뛴 길, 스토리로 자랑하기"였다 ([회의 종합](../../meetings/2026-10-13/synthesis.md)).
 
 ## 홍보 문구 (170자 이내)
 
@@ -77,7 +79,9 @@ Runary는 오늘 달린 길을 움직이는 영상으로 만들어 드려요.
 | `04-running-data.png` | 러닝 데이터 편집 | 페이스까지 내 맘대로 배치 |
 | `05-export.png` | 내보내기 | 완성한 순간을 SNS에 바로 공유 |
 
+10/13 회의에서 첫 이미지 문구를 "오늘의 러닝을 스토리로 남겨요"로 바꾸기로 했다. 실제 등록한 문구와 이미지는 App Store Connect에서 확인한다 `[확인 필요]`.
+
 ## 아직 비어 있는 것
 
 - 지원 URL
-- 개인정보 처리방침 URL. 베타 때 쓴 `https://phs00.notion.site/privacy`를 그대로 쓸지 정해야 한다
+- ~~개인정보 처리방침 URL~~ 10/13에 `https://runary.notion.site/privacy`로 등록했다. 노션 도메인을 `phs00`에서 `runary`로 바꿨다
