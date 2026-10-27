@@ -13,7 +13,35 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   private var motionCollecting = false
   private let health = HKHealthStore()
   private var store: TrackingStore?
-  private var engine: TrackingEngine? { didSet { mapRevision = UUID().uuidString; watchResponseAt = nil; watchRequestedAt = nil } }
+  private lazy var healthExport = TrackingHealthExport(root: FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0])
+  private var workoutEnabled: Bool { UserDefaults.standard.bool(forKey: "RunaryWatchWorkoutEnabled") }
+  private var workoutState = "off"
+  func setWatchWorkoutEnabled(_ value: Bool) throws {
+    try requireEnabled()
+    guard engine == nil else { throw problem("러닝을 마친 뒤 워치 연동을 변경해 주세요.") }
+    UserDefaults.standard.set(value, forKey: "RunaryWatchWorkoutEnabled"); syncWatch()
+  }
+  func setHealthExportEnabled(_ value: Bool, completion: @escaping (Error?) -> Void) {
+    guard Self.enabled else { completion(problem("측정 기능이 꺼져 있어요.")); return }
+    healthExport.enable(value, completion: completion)
+  }
+  func exportHealth(_ id: String, completion: @escaping (Error?) -> Void) throws {
+    try requireEnabled()
+    let saved = try store!.load(id)
+    guard saved.status == "completed" else { throw problem("완료한 기록만 건강에 저장할 수 있어요.") }
+    guard healthExport.enabledSince > 0 else { throw problem("건강 앱 자동 저장을 먼저 켜 주세요.") }
+    healthExport.prepareHeartLink(saved) { error in
+      guard error == nil else { completion(error); return }
+      self.healthExport.export(saved); completion(nil)
+    }
+  }
+  private func retryHealthExports() {
+    guard healthExport.enabledSince > 0, let store, let ids = try? store.ids() else { return }
+    for id in ids {
+      if let saved = try? store.load(id), saved.status == "completed" { healthExport.export(saved) }
+    }
+  }
+  private var engine: TrackingEngine? { didSet { mapRevision = UUID().uuidString; watchResponseAt = nil; watchRequestedAt = nil; workoutState = "off" } }
   private var mapRevision = UUID().uuidString
   private var pending: [TrackingEvent] = []
   private var watchRecoveryStart: Double?
@@ -71,6 +99,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     })
     observers.append(NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
       self?.liveActivity.foreground()
+      self?.retryHealthExports()
       self?.continuePhoneStart(); self?.validatePermissions(); self?.continueWatchRequest(); self?.syncWatch(); self?.restartHealthHeartIfNeeded()
       self?.syncLiveActivity(force: true)
     })
@@ -144,7 +173,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     guard engine == nil else { throw problem("진행 중인 기록을 먼저 마쳐 주세요.") }
     guard UIApplication.shared.applicationState == .active else { throw problem("아이폰에서 앱을 열고 시작해 주세요.") }
     if phoneStartPending { return }
-    cancelPreparation()
+    cancelPreparation(clearWatchRequest: false)
     notice = nil
     guard CLLocationManager.locationServicesEnabled() else { throw problem("앱 권한에서 위치 접근을 확인해 주세요.") }
     if location.authorizationStatus == .notDetermined {
@@ -281,6 +310,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     guard flush() else { throw problem("종료 기록을 저장하지 못했어요. 저장 재시도를 눌러 주세요.") }
     append(TrackingEvent(kind: "finish", time: engine.ended ?? now))
     guard flush() else { engine.status = "saving"; throw problem("완료 상태를 저장하지 못했어요.") }
+    healthExport.export(engine)
     self.engine = nil; pending = []; phase = "idle"; watchState = "off"
     syncWatch()
   }
@@ -500,6 +530,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       var summary = e.summary(at: e.ended ?? e.intervals.last?.end ?? e.started); summary.lastSaved = now
       try store.append(id: id, started: e.started, events: events, summary: summary)
       historyCache.removeValue(forKey: id)
+      healthExport.export(e)
     }
   }
   private func closeWatchRecovery() {
@@ -633,7 +664,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     guard Self.enabled else { return ["enabled": false, "phase": "disabled"] }
     let summary: Any = engine.map { json($0.summary(at: now)) } ?? NSNull()
     return ["enabled": true, "phase": phase, "notice": notice as Any? ?? NSNull(),
-      "summary": summary, "watchState": watchState, "healthHeartState": healthHeartState,
+      "summary": summary, "watchState": watchState, "watchWorkoutEnabled": workoutEnabled, "watchWorkoutState": now - (watchResponseAt ?? 0) <= 10 ? workoutState : "waiting", "healthExportEnabled": healthExport.enabledSince > 0, "healthHeartState": healthHeartState,
       "watchStartPending": watchRequest != nil, "phoneStartPending": phoneStartPending,
       "liveActivityState": liveActivity.availability,
       "unsavedEvents": pending.count, "storageError": writeFailedAt != nil,
@@ -684,12 +715,13 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     let e = engine?.id == id ? engine! : try store!.load(id)
     if e !== engine, e.status == "running" { e.apply(TrackingEvent(kind: "interrupt", time: e.lastSaved ?? e.started)) }
-    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points)]
+    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points), "healthExport": healthExport.state(id)]
   }
   func delete(_ id: String) throws {
     try requireEnabled()
     guard engine?.id != id else { throw problem("진행 중인 기록을 먼저 종료해 주세요.") }
-    try store!.delete(id); historyCache.removeValue(forKey: id); syncDeletions()
+    guard !healthExport.isBusy(id) else { throw problem("건강 저장이 끝난 뒤 삭제해 주세요.") }
+    try store!.delete(id); try healthExport.removeLocalReceipt(id); historyCache.removeValue(forKey: id); syncDeletions()
   }
   func feedback(_ id: String, text: String) throws {
     try requireEnabled()
@@ -711,9 +743,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     launchWatch()
   }
   private func launchWatch() {
-    guard let engine, engine.status == "running", WCSession.isSupported(), HKHealthStore.isHealthDataAvailable() else { return }
+    guard workoutEnabled, let engine, engine.status == "running", WCSession.isSupported(), HKHealthStore.isHealthDataAvailable() else { return }
     // Only explicit start/resume calls request a launch. Context/timer updates
-    // never reopen the Watch app or start a competing Watch workout.
+    // never reopen the Watch app. Workout creation also requires the saved opt-in.
     guard WCSession.default.activationState == .activated else {
       watchLaunch = (engine.id, now); return
     }
@@ -745,13 +777,16 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     if request.action == "resume", engine?.id != request.id || !["paused", "interrupted"].contains(engine?.status ?? "") {
       setWatchRequest(nil); syncWatch(); return
     }
+    if request.action == "resume", engine?.status == "paused" {
+      do { try requireStartPermission(); try resumeCurrentRun() }
+      catch { setWatchRequest(nil); notice = error.localizedDescription; syncWatch() }
+      return
+    }
     guard UIApplication.shared.applicationState == .active else {
-      notice = "워치에서 러닝을 요청했어요. 아이폰 Runary를 열면 GPS 준비 후 시작합니다."; syncWatch(); return
+      notice = "워치에서 러닝을 요청했어요. 아이폰 Runary를 열면 시작합니다."; syncWatch(); return
     }
     do {
-      if let ready, validPreparation(ready) {
-        if request.action == "start" { try start() } else { try resume() }
-      } else if !preparing { try prepare() }
+      if request.action == "start" { try startImmediately() } else { try resumeImmediately() }
     } catch { setWatchRequest(nil); notice = error.localizedDescription; syncWatch() }
   }
   private func watchReply(accepted: Bool, error: String? = nil) -> [String: Any] {
@@ -777,6 +812,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     var message = (json(engine.summary(at: now)) as? [String: Any]) ?? [:]
     message = message.filter { !($0.value is NSNull) }
     message["kind"] = "run"; message["sent"] = now; message["displayOnly"] = true
+    message["workoutEnabled"] = workoutEnabled
     message["startPending"] = watchRequest != nil; message["healthHeartState"] = healthHeartState
     message["startSupported"] = true
     message["requestPhase"] = watchPhase
@@ -804,6 +840,21 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
   }
   private func receive(_ message: [String: Any], live: Bool = false) -> [String: Any] {
     guard Self.enabled else { return ["accepted": false] }
+    if message["kind"] as? String == "stopRequest", let id = message["id"] as? String,
+       UUID(uuidString: id) != nil, let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2 {
+      var accepted = false
+      do {
+        if let current = engine, current.id == id, sent >= current.started {
+          append(TrackingEvent(kind: "watchStop", time: sent))
+          guard flush() else { return ["accepted": false] }
+          engine = try store!.load(id, repair: true)
+          try finish(); accepted = true
+        } else if let saved = try? store?.load(id), saved.status == "completed" { accepted = true }
+        else if store?.deletedIDs().contains(id) == true { accepted = true }
+      } catch { accepted = false }
+      if accepted, WCSession.default.activationState == .activated { WCSession.default.transferUserInfo(["kind": "stopAck", "id": id]) }
+      return ["accepted": accepted, "snapshot": watchMessage()]
+    }
     if message["kind"] as? String == "healthBatch" {
       guard let batch = TrackingWatchHealthBatch(message, at: now), let store else { return ["accepted": false] }
       var reply: [String: Any] = ["kind": "healthAck", "batchID": batch.batchID, "accepted": false]
@@ -857,6 +908,12 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
         watchAppInfo = info
         if engine != nil { append(TrackingEvent(kind: "watchApp", time: now, detail: info)) }
       }
+    }
+    if live, let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10,
+       sent >= (watchResponseAt ?? -.greatestFiniteMagnitude),
+       let id = message["workoutRunID"] as? String, id == engine?.id,
+       let state = message["workoutState"] as? String, ["off", "running", "paused", "waiting", "starting", "permission", "blocked"].contains(state) {
+      workoutState = state
     }
     if live, message["kind"] as? String == "displayReady" {
       if let sent = message["sent"] as? Double, sent.isFinite, now - sent >= -2, now - sent <= 10 {

@@ -50,6 +50,7 @@ struct TrackingPoint: Codable {
   var longitude: Double
   var time: Double
   var segment: Int
+  var accuracy: Double?
 }
 struct TrackingHeart: Codable {
   var id: String
@@ -219,7 +220,7 @@ final class TrackingEngine {
     let receipt = e.received ?? e.time
     if let lastReceipt { maxReceiptGap = max(maxReceiptGap, receipt - lastReceipt) }
     lastReceipt = receipt
-    let point = TrackingPoint(latitude: lat, longitude: lon, time: e.time, segment: segment)
+    let point = TrackingPoint(latitude: lat, longitude: lon, time: e.time, segment: segment, accuracy: e.accuracy)
     var next = point
     if let previous = points.last, previous.segment == segment, !breakPending {
       let dt = e.time - previous.time
