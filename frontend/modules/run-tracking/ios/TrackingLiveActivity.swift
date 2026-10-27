@@ -10,8 +10,15 @@ final class TrackingLiveActivity {
   private var lastPublished: Double = 0
   private var lastRevision: String?
   private var attemptedRun: String?
-  private var dismissedRun: String? = UserDefaults.standard.string(forKey: "RunaryDismissedLiveRun")
-  private var knownRun: String? = UserDefaults.standard.string(forKey: "RunaryKnownLiveRun")
+  private var presentation = TrackingLivePresentation(
+    knownRun: UserDefaults.standard.string(forKey: "RunaryKnownLiveRun"),
+    dismissedRun: UserDefaults.standard.string(forKey: "RunaryDismissedLiveRun")
+  ) {
+    didSet {
+      UserDefaults.standard.set(presentation.knownRun, forKey: "RunaryKnownLiveRun")
+      UserDefaults.standard.set(presentation.dismissedRun, forKey: "RunaryDismissedLiveRun")
+    }
+  }
   private(set) var availability = "off"
 
   func active(runID: String) -> Bool {
@@ -41,7 +48,16 @@ final class TrackingLiveActivity {
   func foreground() {
     // The process may have been suspended when the user swiped the card away.
     // Absence of a previously created card must not trigger recreation.
-    if let knownRun, !active(runID: knownRun) { suppress(knownRun) }
+    if let knownRun = presentation.knownRun, !active(runID: knownRun) { presentation.missingCard(for: knownRun) }
+    attemptedRun = nil
+  }
+  func restoreAfterResume(runID: String) {
+    guard !active(runID: runID) else { return }
+    // A suspended old observer may deliver its dismissal after the new card.
+    // Cancel it and invalidate its generation before allowing creation again.
+    for task in monitored.values { task.cancel() }
+    monitored.removeAll()
+    presentation.restore(runID)
     attemptedRun = nil
   }
   func waitForUpdates() async { if let worker { await worker.value } }
@@ -55,7 +71,7 @@ final class TrackingLiveActivity {
     }
     guard queued == nil else { return }
     guard let id, let state else { availability = "off"; return }
-    if let knownRun, knownRun == id, matching == nil { suppress(id) }
+    if matching == nil { presentation.missingCard(for: id) }
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { availability = "disabled"; return }
     let content = ActivityContent(state: state, staleDate: state.running ? Date(timeIntervalSince1970: state.nextRefresh) : nil)
     if let matching {
@@ -65,7 +81,7 @@ final class TrackingLiveActivity {
       availability = "active"
       return
     }
-    guard dismissedRun != id else { availability = "dismissed"; return }
+    guard presentation.dismissedRun != id else { availability = "dismissed"; return }
     guard UIApplication.shared.applicationState == .active else { availability = "waiting"; return }
     guard attemptedRun != id else { return }
     attemptedRun = id
@@ -77,11 +93,12 @@ final class TrackingLiveActivity {
   }
   private func observe(_ activity: Activity<RunaryLiveAttributes>) {
     guard monitored[activity.id] == nil else { return }
+    let generation = presentation.generation
     monitored[activity.id] = Task { @MainActor [weak self] in
       for await state in activity.activityStateUpdates {
-        guard let self else { return }
+        guard let self, !Task.isCancelled, generation == self.presentation.generation else { break }
         if state == .dismissed {
-          self.suppress(activity.attributes.runID)
+          self.presentation.dismissed(activity.attributes.runID, generation: generation)
           self.availability = "dismissed"
         }
         if state == .ended || state == .dismissed { break }
@@ -90,12 +107,7 @@ final class TrackingLiveActivity {
     }
   }
   private func remember(_ id: String) {
-    knownRun = id
-    UserDefaults.standard.set(id, forKey: "RunaryKnownLiveRun")
-  }
-  private func suppress(_ id: String) {
-    dismissedRun = id
-    UserDefaults.standard.set(id, forKey: "RunaryDismissedLiveRun")
+    presentation.knownRun = id
   }
 }
 

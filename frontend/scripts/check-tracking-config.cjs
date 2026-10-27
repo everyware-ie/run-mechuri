@@ -16,7 +16,7 @@ try {
   assert.equal(internal.extra.eas.build.experimental.ios.appExtensions[1].bundleIdentifier, `${internal.ios.bundleIdentifier}.liveactivity`);
   assert.equal(internal.extra.eas.build.experimental.ios.appExtensions[0].targetName, 'RunaryWatch');
   assert.deepEqual(internal.extra.eas.build.experimental.ios.appExtensions[0].entitlements, { 'com.apple.developer.healthkit': true });
-  assert.ok(internal.ios.infoPlist.NSHealthUpdateUsageDescription.includes('새 기록을 쓰거나 기존 기록을 수정하지 않습니다'));
+  assert.ok(internal.ios.infoPlist.NSHealthUpdateUsageDescription.includes('완료한 Runary 러닝'));
   delete process.env.RUNARY_INTERNAL_TRACKING;
   const publicConfig = configure();
   assert.equal(publicConfig.ios.infoPlist.RunaryInternalTracking, false);
@@ -41,6 +41,7 @@ try {
   assert.ok(project.hasFile('RunaryWatch/TrackingWatchDisplay.swift'));
   assert.ok(project.hasFile('RunaryWatch/TrackingWatchHealth.swift'));
   assert.ok(project.hasFile('RunaryWatch/WatchHealthReader.swift'));
+  assert.ok(project.hasFile('RunaryWatch/WatchWorkoutSession.swift'));
   assert.ok(project.getFirstTarget().firstTarget.dependencies.some(dependency => objects.PBXTargetDependency[dependency.value].target === targetID));
   const group = Object.values(objects.PBXGroup).filter(value => typeof value === 'object' && value.name === 'RunaryWatch').at(-1);
   assert.ok(group && !Object.hasOwn(group, 'path'));

@@ -11,7 +11,7 @@ import { Defs, FeGaussianBlur, FeMerge, FeMergeNode, Filter, Svg } from 'react-n
 import { CANVAS_HEIGHT, CANVAS_WIDTH, cumulativeCanvasDistances, pointAtDistance, projectPoints, toSvgPath, type Point } from '@/lib/route-projection';
 import { applySmoothing, type SmoothOptions } from '@/lib/route-smoothing';
 import { computeThumbnailFrame } from '@/lib/thumbnail-framing';
-import { DEFAULT_BACKGROUNDS } from '@/constants/default-backgrounds';
+import { DEFAULT_BACKGROUNDS, defaultBackgroundForPath } from '@/constants/default-backgrounds';
 
 import type { RunRecord } from '../../modules/health-kit-bridge/src/HealthKitBridge.types';
 import { computeStampBounds, IDENTITY_SMOOTH, IDENTITY_STAMP, StampLayer, type RoutePreset, type RouteTransform, type StampConfig } from './route-preview';
@@ -151,7 +151,7 @@ function ThumbnailBackground({ path, size, height, left, top, scale }: {
 }) {
   const [failed, setFailed] = useState(false);
   // 기본 배경은 앱 업데이트로 컨테이너 경로가 달라져도 원래 소재를 복원한다.
-  const bundled = DEFAULT_BACKGROUNDS.find(bg => path?.endsWith(`/backgrounds/${bg.id}.jpg`));
+  const bundled = defaultBackgroundForPath(path);
   const source = bundled?.source ?? (path && !failed
     ? (path.startsWith('/') ? `file://${path}` : path)
     : DEFAULT_BACKGROUNDS[0].source);

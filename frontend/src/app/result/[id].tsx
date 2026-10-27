@@ -12,6 +12,8 @@ import { ResultVideoPreview } from '@/components/result-video-preview';
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
+import { defaultBackgroundForPath } from '@/constants/default-backgrounds';
+import { persistDefaultBackground } from '@/lib/background-storage';
 import { deleteResult, getResult, type SavedResult } from '@/lib/results-store';
 import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
@@ -76,7 +78,17 @@ export default function ResultDetailScreen() {
     // 되니, 시작하기 전에 미리 확인해서 배경만 다시 고르게 안내한다 — 나머지
     // 편집값(프리셋·변형·다듬기·각인)은 그대로 유지.
     let bgInfo: FileSystem.FileInfo;
-    try { bgInfo = await FileSystem.getInfoAsync(result.backgroundImagePath); }
+    let backgroundImagePath = result.backgroundImagePath;
+    try {
+      bgInfo = await FileSystem.getInfoAsync(backgroundImagePath);
+      if (!isCurrent()) return;
+      const bundled = !result.backgroundPhoto && defaultBackgroundForPath(backgroundImagePath);
+      if (!bgInfo.exists && bundled) {
+        backgroundImagePath = await persistDefaultBackground(bundled);
+        if (!isCurrent()) return;
+        bgInfo = await FileSystem.getInfoAsync(backgroundImagePath);
+      }
+    }
     catch {
       if (isCurrent()) Alert.alert('배경을 확인하지 못했어요', '편집 내용은 유지했어요. 잠시 후 다시 편집을 눌러 주세요.');
       return;
@@ -110,7 +122,7 @@ export default function ResultDetailScreen() {
     loadDraft({
       selectedRun: result.run,
       track: result.track,
-      backgroundImagePath: result.backgroundImagePath,
+      backgroundImagePath,
       backgroundPhoto: result.backgroundPhoto,
       preset: result.preset,
       routeStyle: result.routeStyle,

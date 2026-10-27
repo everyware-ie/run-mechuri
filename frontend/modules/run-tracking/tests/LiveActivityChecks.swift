@@ -5,6 +5,23 @@ struct LiveActivityChecks {
   static var count = 0
   static func check(_ condition: @autoclosure () -> Bool, _ name: String) { precondition(condition(), name); count += 1 }
   static func main() throws {
+    var presentation = TrackingLivePresentation(knownRun: "run", dismissedRun: nil)
+    let oldGeneration = presentation.generation
+    presentation.missingCard(for: "run")
+    check(presentation.dismissedRun == "run", "Foreground refresh preserves a dismissed card")
+    presentation.restore("run")
+    presentation.missingCard(for: "run")
+    check(presentation.knownRun == nil && presentation.dismissedRun == nil, "Explicit resume permits recreation without re-suppressing the missing old card")
+    presentation.knownRun = "run"
+    presentation.dismissed("run", generation: oldGeneration)
+    check(presentation.dismissedRun == nil, "An old card's delayed dismissal cannot suppress its replacement")
+    presentation.dismissed("run", generation: presentation.generation)
+    check(presentation.dismissedRun == "run", "Dismissing the replacement suppresses it again")
+    var relaunched = TrackingLivePresentation(knownRun: presentation.knownRun, dismissedRun: presentation.dismissedRun)
+    relaunched.missingCard(for: "run")
+    check(relaunched.dismissedRun == "run", "Relaunch retains dismissal until another explicit resume")
+    relaunched.restore("other")
+    check(relaunched.dismissedRun == "run", "Resuming another run never clears this run's dismissal")
     var session = RunaryLiveSession()
     session.observe(runID: "run", phase: "running", storageError: false)
     let initial = session.revision

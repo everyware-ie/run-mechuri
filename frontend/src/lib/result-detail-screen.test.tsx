@@ -5,6 +5,7 @@ import ResultDetailScreen from '../app/result/[id]';
 import { getResult, type SavedResult } from './results-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
+import { persistDefaultBackground } from './background-storage';
 
 let mockID = 'first';
 jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() }, useLocalSearchParams: () => ({ id: mockID }),
@@ -15,6 +16,7 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() 
 }));
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('expo-file-system/legacy', () => ({ getInfoAsync: jest.fn() }));
+jest.mock('./background-storage', () => ({ persistDefaultBackground: jest.fn() }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
 jest.mock('@/components/internal-run-entry', () => ({ AppPermissionsLink: () => null }));
 jest.mock('@/components/instagram-missing-sheet', () => ({ InstagramMissingSheet: () => null }));
@@ -70,5 +72,33 @@ it.each(['다시 편집', '같은 기록으로 새로 만들기'])('%s 준비 �
   await act(async () => { finish(); });
   expect(mockLoadDraft).not.toHaveBeenCalled();
   if (isCurrent) expect(isCurrent()).toBe(false);
+  expect(router.push).not.toHaveBeenCalled();
+});
+
+it('이전 기본 배경 파일이 없으면 원래 소재를 복원해 같은 편집값으로 연다', async () => {
+  const saved = { ...result('first'), backgroundImagePath: 'file:///old/Documents/backgrounds/morning.jpg' };
+  jest.mocked(getResult).mockResolvedValueOnce(saved);
+  jest.mocked(FileSystem.getInfoAsync).mockResolvedValueOnce({ exists: false, isDirectory: false, uri: saved.backgroundImagePath })
+    .mockResolvedValueOnce({ exists: true, isDirectory: false, uri: 'file:///Documents/backgrounds/morning.jpg', size: 100, modificationTime: 0 });
+  jest.mocked(persistDefaultBackground).mockResolvedValueOnce('file:///Documents/backgrounds/morning.jpg');
+  await act(async () => { renderer = create(<ResultDetailScreen />); });
+  const button = renderer.root.findAll(node => node.props.title === '다시 편집' && typeof node.props.onPress === 'function')[0];
+  await act(async () => { await button.props.onPress(); });
+  expect(persistDefaultBackground).toHaveBeenCalledWith(expect.objectContaining({ id: 'morning' }));
+  expect(mockLoadDraft).toHaveBeenCalledWith(expect.objectContaining({ backgroundImagePath: 'file:///Documents/backgrounds/morning.jpg', transform: saved.transform, track: saved.track }));
+  expect(router.push).toHaveBeenCalledWith('/edit');
+});
+
+it('이전 배경 복원 중 화면을 떠나면 편집 화면으로 뒤늦게 이동하지 않는다', async () => {
+  jest.mocked(getResult).mockResolvedValueOnce({ ...result('first'), backgroundImagePath: 'file:///Documents/backgrounds/evening.jpg' });
+  jest.mocked(FileSystem.getInfoAsync).mockResolvedValueOnce({ exists: false, isDirectory: false, uri: '' });
+  let finish!: (path: string) => void;
+  jest.mocked(persistDefaultBackground).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  await act(async () => { renderer = create(<ResultDetailScreen />); });
+  const button = renderer.root.findAll(node => node.props.title === '다시 편집' && typeof node.props.onPress === 'function')[0];
+  await act(async () => { button.props.onPress(); });
+  await act(async () => renderer.unmount());
+  await act(async () => finish('file:///Documents/backgrounds/evening.jpg'));
+  expect(mockLoadDraft).not.toHaveBeenCalled();
   expect(router.push).not.toHaveBeenCalled();
 });

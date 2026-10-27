@@ -32,5 +32,6 @@ export function runaryTrack(detail: { summary: RunSummary; points: RunPoint[] })
   return { run: { ...runaryRecord(detail.summary), hasRoute: true }, track: { coordinates } };
 }
 export function mergeRunRecords(health: RunRecord[], own: RunRecord[]) {
-  return [...health, ...own].sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || a.id.localeCompare(b.id));
+  const localIDs = new Set(own.map(record => runaryRecordID(record.id)).filter(Boolean));
+  return [...health.filter(record => !record.runaryRunID || !localIDs.has(record.runaryRunID)), ...own].sort((a, b) => Date.parse(b.date) - Date.parse(a.date) || a.id.localeCompare(b.id));
 }

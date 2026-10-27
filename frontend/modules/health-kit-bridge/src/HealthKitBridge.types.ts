@@ -3,6 +3,7 @@
 /** §2-3 목록 항목. 모든 출처(건강 앱과 Runary)가 줄 수 있는 것으로 한정한다. */
 export type RunRecord = {
   id: string;
+  runaryRunID?: string;
   source?: 'healthkit' | 'runary';
   /** 러닝한 날 (ISO 8601). 만든 날이 아니다. */
   date: string;

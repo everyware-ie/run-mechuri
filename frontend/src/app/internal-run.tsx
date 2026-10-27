@@ -118,27 +118,34 @@ export default function InternalRunScreen() {
         </View>
         <View style={runUI.center}>
           <Text style={styles.subtitle}>{running ? (lastLocationAge == null ? 'GPS 연결 중' : lastLocationAge > 10 ? 'GPS 최신값 확인 중' : 'GPS 수신 중') : '아이폰 GPS 수집이 멈춰 있어요'} · {watchLabel[state?.watchState ?? 'off']}</Text>
+          {state?.watchWorkoutEnabled ? <Text style={styles.subtitle}>워치 운동: {({ running: '측정 중', paused: '일시정지', permission: '워치에서 운동 권한 확인 필요', blocked: '워치 측정 중단', starting: '시작 중' } as Record<string, string>)[state.watchWorkoutState ?? ''] ?? '연결 확인 중'}</Text> : null}
           {current.heartSource === 'health' && running ? <Text style={styles.subtitle}>{state?.healthHeartState === 'failed' ? '심박을 확인하지 못했어요. 건강 앱 권한을 확인해 주세요.' : state?.healthHeartState === 'authorizing' ? '심박 권한 요청 중' : current.heartRate != null ? '심박 수신 중' : current.lastHeart != null ? '심박 동기화 지연' : '건강 앱에 새 심박이 저장되기를 기다려요.'}</Text> : null}
           {current.heartSource === 'health' && running && current.heartRate == null && importedHeart ? <Text style={styles.subtitle}>{importedHeart}. 최신 심박을 기다리고 있어요.</Text> : null}
           {current.heartSource === 'health' && running && current.lastHeart == null ? <Text style={styles.subtitle}>Runary는 심박 센서의 연속 측정을 시작하지 않아요. 저장된 심박이 동기화되면 자동으로 표시해요.</Text> : null}
           {current.heartSource === 'health' && running && state?.healthHeartState === 'failed' ? <Pressable accessibilityRole="button" style={styles.smallButton} disabled={busy} onPress={() => void act(() => Tracking!.reconnectHealthHeart!())}><Text style={styles.link}>심박 다시 불러오기</Text></Pressable> : null}
           {current.incomplete ? <Text style={styles.notice}>경로 일부가 누락됐을 수 있어요.</Text> : null}
-          {!running && !state?.storageError && current.status !== 'saving' ? <RunStatus label={preparation} active={ready} /> : null}
+          {!running && !Tracking!.resumeImmediately && !state?.storageError && current.status !== 'saving' ? <RunStatus label={preparation} active={ready} /> : null}
           {!Tracking!.watchDisplayOnly ? <Text style={styles.subtitle}>워치 지표 표시에는 최신 아이폰·워치 앱이 필요해요.</Text> : null}
         </View>
       </> : <>
         <View style={runUI.center}>
           <Text style={[runUI.headline, runUI.mapHeadline]}>오늘의 러닝을 시작해 볼까요?</Text>
           <RunStatus label={preparation} active={ready} />
-          {state?.watchStartPending ? <Text style={styles.subtitle}>워치에서 요청한 러닝을 GPS 준비 후 자동으로 시작해요.</Text> : null}
+          {state?.watchStartPending ? <Text style={styles.subtitle}>워치에서 요청한 러닝의 시작을 확인하고 있어요.</Text> : null}
           {preparing || awaitingPermission ? <ActivityIndicator size="small" color={Colors.accent} /> : null}
         </View>
         <RunMap key={mapData.revision ?? 'prepare'} points={mapData.points} position={mapData.position} visible={mapVisible} clock={clock} height={300} unavailable={!Tracking!.mapSnapshot} />
         <Card>
           <Text style={styles.text}>심박 가져오기</Text>
-          <Text style={styles.subtitle}>건강 앱에 저장된 심박을 자동으로 불러와요. 다른 운동 앱의 측정은 계속되며, 동기화가 늦으면 러닝 후 다시 불러올 수 있어요.</Text>
+          <Text style={styles.subtitle}>건강 앱에 저장된 심박을 불러와요. 워치 연동을 켜면 Runary가 운동 중 심박을 측정해요.</Text>
+          {Tracking!.setWatchWorkoutEnabled ? <ThemedButton title={state?.watchWorkoutEnabled ? '워치 운동 연동 끄기' : '워치 운동 연동 켜기'} variant="outline" disabled={busy} onPress={() => {
+            if (state?.watchWorkoutEnabled) { void act(() => Tracking!.setWatchWorkoutEnabled!(false)); return; }
+            Alert.alert('워치 운동 연동', '워치에서 심박을 측정하고 러닝 화면을 표시해요. 다른 워치 운동이 진행 중이면 종료될 수 있어요.', [{ text: '나중에', style: 'cancel' }, { text: '연동 켜기', onPress: () => void act(() => Tracking!.setWatchWorkoutEnabled!(true)) }]);
+          }} /> : null}
+          {Tracking!.setHealthExportEnabled ? <ThemedButton title={state?.healthExportEnabled ? '건강 앱 자동 저장 끄기' : '건강 앱 자동 저장 켜기'} variant="outline" disabled={busy} onPress={() => void act(() => Tracking!.setHealthExportEnabled!(!state?.healthExportEnabled))} /> : null}
+          <Text style={styles.subtitle}>건강 저장을 허용하면 이후 완료한 러닝을 피트니스에서도 확인할 수 있어요. 워치가 없어도 저장돼요.</Text>
           <Text style={styles.subtitle}>Runary만 실행하면 새 심박 수집까지 시간이 걸릴 수 있어요. 심박 센서의 연속 측정을 시작하지 않아요.</Text>
-          <Text style={styles.subtitle}>워치에서 Runary를 열면 시간·거리·페이스·심박을 볼 수 있어요. 별도 워치 운동을 시작하지 않아요.</Text>
+          <Text style={styles.subtitle}>워치에서 Runary를 열면 같은 러닝을 확인하고 제어할 수 있어요. 운동 연동을 끈 상태에서는 건강에 저장된 심박만 읽어요.</Text>
           {!Tracking!.startWithHeartSource ? <Text style={styles.subtitle}>건강 앱 심박은 앱 업데이트 후 사용할 수 있어요.</Text> : null}
         </Card>
       </>}
@@ -164,7 +171,7 @@ export default function InternalRunScreen() {
         <ThemedButton title="마지막 저장분만 보관" variant="outline" disabled={busy || !current.lastSaved} onPress={() => Alert.alert('미저장 자료를 제외할까요?', '이미 저장된 기록은 보존합니다. 앱 종료 시 미저장 자료를 잃을 수 있어요.', [{ text: '취소', style: 'cancel' }, { text: '보관', onPress: () => void act(() => Tracking!.keepSaved()) }])} />
       </> : current ? <>
         {current.status === 'saving' ? <ThemedButton title="저장 재시도" disabled={busy} onPress={() => void act(() => Tracking!.retrySave())} /> : <View style={runUI.actions}>
-          <RunAction title={running ? '일시정지' : ready ? '이어서 달리기' : preparing ? 'GPS 준비 중' : 'GPS 준비'} symbol={running ? 'pause.fill' : 'play.fill'} primary={!running} disabled={busy || (!running && preparing)} onPress={() => void act(() => running ? Tracking!.pause() : ready ? Tracking!.resume() : Tracking!.prepare())} />
+          <RunAction title={running ? '일시정지' : Tracking!.resumeImmediately || ready ? '이어서 달리기' : preparing ? 'GPS 준비 중' : 'GPS 준비'} symbol={running ? 'pause.fill' : 'play.fill'} primary={!running} disabled={busy || (!running && !Tracking!.resumeImmediately && preparing)} onPress={() => void act(() => running ? Tracking!.pause() : Tracking!.resumeImmediately ? Tracking!.resumeImmediately() : ready ? Tracking!.resume() : Tracking!.prepare())} />
           <RunAction title={running ? '종료' : '여기까지 저장'} symbol="stop.fill" disabled={busy} onPress={finish} />
         </View>}
         <Text style={runUI.footnote}>{running ? '화면을 닫거나 잠가도 러닝을 이어갑니다.' : '일시정지·중단된 시간은 측정에 포함하지 않아요.'}</Text>
