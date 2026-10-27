@@ -624,3 +624,16 @@ LAN 8081 개발 서버에서 자체 측정 후 건강 저장을 검증했다. Ap
 
 
 21:40 권한 승인 후 기존 72초 QA 기록의 심박 샘플 13개 연결에 성공했다. 기존 운동 UUID를 유지하고 건강 저장 완료 상태를 확인했다. 수정 빌드는 개발 앱에만 적용됐으며 TestFlight 배포는 없다.
+
+
+## 2026-10-26: 워치 운동과 건강 저장 내부 빌드 44
+
+사용자가 추가 전체 코드 리뷰 대신 지금까지의 QA를 근거로 새 TestFlight 제출을 요청했다. 기능 브랜치의 커밋 `64f5f6ce2ccd1e116f1aa5caffb1614003474ecc`를 깨끗한 체크아웃으로 복사해 제출했다. 개인 설정과 생성된 개발 iOS 프로젝트는 제외했다. 제출 때는 main에 머지하지 않았고, 2026-10-27 사용자 요청으로 PR을 만들어 머지했다.
+
+- 버전: `1.0.0(44)`, 프로필과 채널: `internal-tracking`.
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/8a43e85c-1a25-497f-bbca-dc706eeb05e9): `FINISHED`.
+- [자동 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/e4b4c550-efe7-4aeb-bda7-c686d5265857): `FINISHED`, Apple 업로드 완료.
+
+기존 아이폰·워치·잠금화면 배포 인증서와 프로파일을 재사용했다. 타입 검사, 린트 오류 0개(기존 경고 30개), 공개/내부 설정과 확장 생성 검사, 문서 검사를 통과했다. 실기기에서 워치 심박 수신과 기존 운동에 심박 13개 연결, 건강 저장 완료 및 운동 중복 없음을 확인했다. 전체 코드 리뷰를 완료했다고 간주하지 않는다. 평균 심박 표시 차이, 워치 화면 자동 복귀와 건강 경로 구간 표시는 남은 검증이다.
+
+배포 IPA의 아이폰·워치·잠금화면 확장 버전이 모두 44번이며, 내부 측정과 Live Activity 설정 및 깊은 서명 검증을 통과했다. IPA SHA-256은 `a9758e41b8de3fd191ee16244090811be910a311f581cb1f1f978006eade0630`이다. Apple 업로드 시각은 2026-10-26 21:56 KST다. 업로드 직후 조회에는 44번이 아직 나타나지 않았다. 2026-10-27 `eas submit:status` 조회에서 `VALID / IN_BETA_TESTING`, 미만료를 확인했다. 등록된 내부 테스터는 TestFlight에서 받을 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크·외부 그룹에는 배정하지 않았다.
