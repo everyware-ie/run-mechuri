@@ -608,3 +608,32 @@ CoreDevice로 업데이트를 전송하던 중 연결 중단(3002 / IXRemoteErro
 `codex/feature/runary-record-editing`에서 기존 내부 개발 앱 `1.0.0(1)`에 자체 기록 선택과 경로 구간 렌더링을 추가했다. 새 Swift 소스 반영을 위해 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행하고 기존 DerivedData·개발 프로파일로 아이폰·워치·위젯 전체 iphoneos Debug 빌드를 완료했다. `codesign --verify --deep --strict`를 통과한 앱을 CoreDevice로 iPhone 11 Pro에 업데이트 설치했다. API 키나 새 기기 등록은 사용하지 않았다.
 
 8081 Metro에 연결한 미러링에서 실제 Runary 5.41km 기록 선택, 경로 편집, 영상 생성·사진 저장, 보관함에서 다시 편집을 확인했다. 워치 실제 업데이트 반영은 확인하지 않았으며 자체 기록 선택은 아이폰에서 검증했다. TestFlight 제출과 PR 머지는 수행하지 않았다. 자세한 결과는 [구현 노트](../product/features/runary-record-editing.md)에 둔다.
+
+
+## 2026-10-26: 건강 저장 개발 앱 설치와 QA
+
+`codex/feature/watch-workout-integration`의 아이폰·워치·잠금화면 확장을 기존 개발 인증서와 프로파일로 빌드했다. iphoneos Debug 빌드와 깊은 서명 검증을 통과한 `1.0.0(1)`을 iPhone 11 Pro에 업데이트 설치했다. 새 기기 등록이나 인증서 생성, API 키 재사용은 하지 않았다.
+
+LAN 8081 개발 서버에서 자체 측정 후 건강 저장을 검증했다. Apple 건강 원본에 출처 Runary로 저장됐고 피트니스에도 29초 운동이 표시됐다.워치 앱은 동봉됐지만 직접 설치는 연결 시간 초과로 확인하지 못했다. TestFlight는 제출하지 않았다. [실기기 결과와 남은 확인](../product/features/watch-workout-integration.md#실기기-결과)을 참고한다.
+
+
+같은 날 21:22에는 워치 개발 서비스 연결이 가능해져 최신 `RunaryWatch.app`을 직접 업데이트했다. 실제 설치 조회에서 `1.0.0(1)`과 실행 성공을 확인했다. 이후 제자리 심박 수신과 Runary 내부 저장은 통과했지만 건강 운동의 심박 연결은 권한 오류로 실패했다. [추가 QA](../product/features/watch-workout-integration.md#2124-심박-실기기-추가-검증)를 참고한다.
+
+
+같은 날 21:35 심박 연결 권한을 수정한 개발 앱 1번을 재설치했다. 기존 서명으로 빌드와 깊은 서명 검증을 통과했으며 이전 QA 기록에서 심박수 쓰기 요청 화면을 확인했다. 권한 승인 후 저장 완료 검증은 대기 중이다. TestFlight에는 제출하지 않았다.
+
+
+21:40 권한 승인 후 기존 72초 QA 기록의 심박 샘플 13개 연결에 성공했다. 기존 운동 UUID를 유지하고 건강 저장 완료 상태를 확인했다. 수정 빌드는 개발 앱에만 적용됐으며 TestFlight 배포는 없다.
+
+
+## 2026-10-26: 워치 운동과 건강 저장 내부 빌드 44
+
+사용자가 추가 전체 코드 리뷰 대신 지금까지의 QA를 근거로 새 TestFlight 제출을 요청했다. 기능 브랜치의 커밋 `64f5f6ce2ccd1e116f1aa5caffb1614003474ecc`를 깨끗한 체크아웃으로 복사해 제출했다. 개인 설정과 생성된 개발 iOS 프로젝트는 제외했다. 제출 때는 main에 머지하지 않았고, 2026-10-27 사용자 요청으로 PR을 만들어 머지했다.
+
+- 버전: `1.0.0(44)`, 프로필과 채널: `internal-tracking`.
+- [EAS 빌드](https://expo.dev/accounts/team-mechuri/projects/mechuri/builds/8a43e85c-1a25-497f-bbca-dc706eeb05e9): `FINISHED`.
+- [자동 제출](https://expo.dev/accounts/team-mechuri/projects/mechuri/submissions/e4b4c550-efe7-4aeb-bda7-c686d5265857): `FINISHED`, Apple 업로드 완료.
+
+기존 아이폰·워치·잠금화면 배포 인증서와 프로파일을 재사용했다. 타입 검사, 린트 오류 0개(기존 경고 30개), 공개/내부 설정과 확장 생성 검사, 문서 검사를 통과했다. 실기기에서 워치 심박 수신과 기존 운동에 심박 13개 연결, 건강 저장 완료 및 운동 중복 없음을 확인했다. 전체 코드 리뷰를 완료했다고 간주하지 않는다. 평균 심박 표시 차이, 워치 화면 자동 복귀와 건강 경로 구간 표시는 남은 검증이다.
+
+배포 IPA의 아이폰·워치·잠금화면 확장 버전이 모두 44번이며, 내부 측정과 Live Activity 설정 및 깊은 서명 검증을 통과했다. IPA SHA-256은 `a9758e41b8de3fd191ee16244090811be910a311f581cb1f1f978006eade0630`이다. Apple 업로드 시각은 2026-10-26 21:56 KST다. 업로드 직후 조회에는 44번이 아직 나타나지 않았다. 2026-10-27 `eas submit:status` 조회에서 `VALID / IN_BETA_TESTING`, 미만료를 확인했다. 등록된 내부 테스터는 TestFlight에서 받을 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크·외부 그룹에는 배정하지 않았다.

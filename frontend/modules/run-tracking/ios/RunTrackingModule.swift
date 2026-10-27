@@ -14,6 +14,19 @@ public final class RunTrackingModule: Module {
       guard TrackingManager.enabled else { throw NSError(domain: "RunaryTracking", code: 1) }
       UIPasteboard.general.string = text
     }.runOnQueue(.main)
+    AsyncFunction("setWatchWorkoutEnabled") { (value: Bool) throws in try TrackingManager.shared.setWatchWorkoutEnabled(value) }.runOnQueue(.main)
+    AsyncFunction("setHealthExportEnabled") { (value: Bool, promise: Promise) in
+      TrackingManager.shared.setHealthExportEnabled(value) { error in
+        if let error { promise.reject(error) } else { promise.resolve(nil) }
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("exportHealth") { (id: String, promise: Promise) in
+      do {
+        try TrackingManager.shared.exportHealth(id) { error in
+          if let error { promise.reject("ERR_HEALTH_EXPORT", error.localizedDescription) } else { promise.resolve(nil) }
+        }
+      } catch { promise.reject("ERR_HEALTH_EXPORT", error.localizedDescription) }
+    }.runOnQueue(.main)
     AsyncFunction("state") { TrackingManager.shared.snapshot() }.runOnQueue(.main)
     AsyncFunction("mapSnapshot") { (revision: String?, after: Int) throws -> [String: Any] in
       try TrackingManager.shared.mapSnapshot(revision, after: after)

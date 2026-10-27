@@ -39,6 +39,10 @@
 
 [자체 러닝 측정 내부 검증 FRD](internal-run-tracking.md)는 2026-10-05 사용자 착수 확인으로 `approved`다. [별도 PRD](../prd/internal-run-tracking.md)를 근거로 아이폰 측정·보관·복구·진단과 선택적 워치 심박·화면을 구현한다. 공개 MVP에 자동 포함하지 않으며 팀 내부 TestFlight와 야외 실측으로 검증한다.
 
+### 승인된 워치 운동 세션 연결 (2026-10-26)
+
+[워치 운동 세션 연동 FRD](watch-workout-integration.md)는 `approved`다. [별도 PRD](../prd/watch-workout-integration.md)를 근거로 일반 러닝의 운동 세션, 심박, 화면 복귀와 완료 기록의 건강 저장을 구현한다. 2026-10-26 사용자가 1·2번 구현 범위를 승인했다.
+
 ### 승인된 샘플 체험 (2026-10-12)
 
 [샘플 기록 체험 FRD](sample-record-experience.md)는 사용자에게 제시한 뒤 하트 경로 선택과 로컬 미러링 확인 요청을 받아 `approved`다. [샘플 PRD](../prd/sample-record-experience.md)를 근거로 건강 권한 없이 실제 편집·영상 생성을 제공한다. 일반 정식 앱에 포함하며 1차 제출의 측정 제외 범위는 유지한다. TestFlight 업로드는 사용자 로컬 확인 뒤 진행한다.

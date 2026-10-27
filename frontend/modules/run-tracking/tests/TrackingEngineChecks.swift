@@ -16,6 +16,21 @@ struct TrackingEngineChecks {
     engine.lastSaved = at
   }
   static func main() throws {
+    let offlineRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let offlineStore = try TrackingStore(root: offlineRoot)
+    defer { try? FileManager.default.removeItem(at: offlineRoot) }
+    let offline = TrackingEngine(id: UUID().uuidString, started: 100)
+    let offlineEvents = [gps(100, 0), gps(105, 10), gps(115, 30), TrackingEvent(kind: "watchStop", time: 110)]
+    for event in offlineEvents { offline.apply(event) }
+    try save(offlineStore, offline, offlineEvents, at: 120)
+    let stopped = try offlineStore.load(offline.id)
+    check(stopped.status == "saving" && stopped.ended == 110, "Offline Watch stop preserves original stop time")
+    check(stopped.points.count == 2 && stopped.duration(at: 120) == 10, "Samples and time after Watch stop are excluded")
+    check(stopped.points.first?.accuracy == 5, "Health route keeps measured accuracy")
+    let finishEvent = TrackingEvent(kind: "finish", time: 110)
+    stopped.apply(finishEvent); try save(offlineStore, stopped, [finishEvent], at: 130)
+    let reloadedStop = try offlineStore.load(offline.id)
+    check(reloadedStop.status == "completed" && reloadedStop.ended == 110 && reloadedStop.points.count == 2, "Delayed Watch stop survives another checkpoint and reload")
     let relayRun = UUID().uuidString
     let parent = UUID().uuidString
     let storedHeart = TrackingWatchHealthSample(parent: parent, index: nil, seriesCount: nil,

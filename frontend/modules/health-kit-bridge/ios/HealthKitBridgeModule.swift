@@ -6,6 +6,7 @@ import HealthKit
 
 struct RunRecordPayload: Record {
   @Field var id: String = ""
+  @Field var runaryRunID: String?
   @Field var date: String = ""
   @Field var distanceMeters: Double = 0
   @Field var durationSeconds: Double = 0
@@ -19,6 +20,7 @@ struct CoordinatePayload: Record {
   @Field var latitude: Double = 0
   @Field var longitude: Double = 0
   @Field var timestamp: String = ""
+  @Field var segment: Int = 0
 }
 
 struct TrackPayload: Record {
@@ -65,6 +67,9 @@ public class HealthKitBridgeModule: Module {
           group.addTask {
             var payload = RunRecordPayload()
             payload.id = workout.uuid.uuidString
+            if workout.sourceRevision.source.bundleIdentifier == Bundle.main.bundleIdentifier {
+              payload.runaryRunID = workout.metadata?["com.mechuri.runary.runID"] as? String
+            }
             payload.date = ISO8601DateFormatter().string(from: workout.startDate)
             payload.distanceMeters = workout.totalDistance?.doubleValue(for: .meter()) ?? 0
             payload.durationSeconds = workout.duration
@@ -95,19 +100,18 @@ public class HealthKitBridgeModule: Module {
         throw HealthKitBridgeError.workoutNotFound
       }
 
-      let route = try await self.fetchRoute(for: workout)
+      let routes = try await self.fetchRoutes(for: workout)
       var payload = TrackPayload()
-      guard let route = route else {
-        return payload
-      }
-
-      let locations = try await self.fetchLocations(for: route)
-      payload.coordinates = locations.map { location in
-        var coord = CoordinatePayload()
-        coord.latitude = location.coordinate.latitude
-        coord.longitude = location.coordinate.longitude
-        coord.timestamp = ISO8601DateFormatter().string(from: location.timestamp)
-        return coord
+      for (segment, route) in routes.sorted(by: { $0.startDate < $1.startDate }).enumerated() {
+        let locations = try await self.fetchLocations(for: route)
+        payload.coordinates += locations.map { location in
+          var coord = CoordinatePayload()
+          coord.latitude = location.coordinate.latitude
+          coord.longitude = location.coordinate.longitude
+          coord.timestamp = ISO8601DateFormatter().string(from: location.timestamp)
+          coord.segment = segment
+          return coord
+        }
       }
       return payload
     }
@@ -179,18 +183,18 @@ public class HealthKitBridgeModule: Module {
   }
 
   private func hasWorkoutRoute(_ workout: HKWorkout) async throws -> Bool {
-    let route = try await fetchRoute(for: workout)
-    return route != nil
+    let routes = try await fetchRoutes(for: workout)
+    return !routes.isEmpty
   }
 
-  private func fetchRoute(for workout: HKWorkout) async throws -> HKWorkoutRoute? {
+  private func fetchRoutes(for workout: HKWorkout) async throws -> [HKWorkoutRoute] {
     let predicate = HKQuery.predicateForObjects(from: workout)
     let routes: [HKWorkoutRoute] = try await withCheckedThrowingContinuation { continuation in
       let query = HKAnchoredObjectQuery(
         type: HKSeriesType.workoutRoute(),
         predicate: predicate,
         anchor: nil,
-        limit: 1
+        limit: HKObjectQueryNoLimit
       ) { _, samples, _, _, error in
         if let error = error {
           continuation.resume(throwing: error)
@@ -200,7 +204,7 @@ public class HealthKitBridgeModule: Module {
       }
       self.healthStore.execute(query)
     }
-    return routes.first
+    return routes
   }
 
   private func fetchLocations(for route: HKWorkoutRoute) async throws -> [CLLocation] {
