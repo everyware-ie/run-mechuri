@@ -25,5 +25,6 @@ updated: 2026-10-12
 | 2026-10-06 | [2차 스프린트는 정식 등재부터, 측정은 안정성 먼저](2026-10-06-second-sprint-app-store.md) | decided | [2026-10-06](../meetings/2026-10-06/synthesis.md) |
 
 | 2026-10-12 | [하트 샘플로 편집·영상 생성 체험 제공](2026-10-12-heart-sample-experience.md) | decided | 사용자 FRD 확인·경로 선택·로컬 미러링 요청 |
+| 2026-10-27 | [다음 주 정식 심사에 측정 기능을 모두 넣는다](2026-10-27-submit-with-tracking.md) | decided | [2026-10-27](../meetings/2026-10-27/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
