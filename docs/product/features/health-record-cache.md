@@ -3,7 +3,7 @@
 - FRD: [Runary 기록으로 만들기](../../specs/frd/runary-record-editing.md) §목록(2026-10-28 개정, "건강 앱 기록의 부가 정보는 기기에 보관해 다시 조회하지 않는다")
 - 근거 QA: [QA 기록](../../ops/qa-log.md) 2026-10-26 "새로 만들기에서 Runary 기록이 먼저 뜨고 건강 앱 기록이 뒤에 끼어들어 헷갈린다"(지응)
 - 관련 규칙: [홈과 보관함 FRD](../../specs/frd/home-and-library.md) 건강 기록 정보는 기기 백업에서 제외, [Apple 심사 지침 5.1.3(ii)](https://developer.apple.com/app-store/review/guidelines/#health-and-health-research)
-- 구현 상태: **FRD 개정안 확인 전.** 아직 코드를 고치지 않았다
+- 구현 상태: **구현했다**(2026-10-28, 사용자가 FRD 개정안을 확인). 실기기 확인 대기
 
 ## 왜 하나
 
@@ -11,7 +11,7 @@
 
 **느린 이유.** `HealthKitBridgeModule.swift`의 `getOutdoorRuns`가 모든 러닝 기록을 읽고(`HKObjectQueryNoLimit`), 기록마다 평균 심박과 경로 유무를 각각 조회한다. 기록 수 × 2번의 조회라서 기록이 쌓일수록 느려진다. 2026-09에 병렬로 바꿨지만 기록 수에 비례하는 구조는 그대로다.
 
-## 정한 것 (사용자 확인 대기)
+## 정한 것 (사용자 확인 2026-10-28)
 
 FRD의 새 규칙을 따른다.
 
@@ -40,6 +40,22 @@ FRD의 새 규칙을 따른다.
 5. 보관 정보 파일을 지우거나 망가뜨려도 목록이 나오는지
 6. 보관 정보가 기기 백업에서 제외되는지
 7. 개인정보 처리방침의 건강 데이터 보관 설명과 어긋나지 않는지 `[확인 필요]`
+
+## 구현
+
+- `frontend/modules/health-kit-bridge/ios/HealthRecordCache.swift`: 보관 규칙과 파일 읽기·쓰기. Foundation만 쓰므로 HealthKit 없이 검사할 수 있다
+  - `HealthRecordCache`: 24시간이 지난 기록만 보관·반환, 건강 앱 목록에 없는 기록 정리
+  - `HealthRecordCacheStore`: Application Support의 JSON 파일. 원자적으로 쓰고 폴더와 파일을 백업에서 제외한다. 읽지 못하거나 버전이 다르면 빈 보관 정보다
+- `HealthKitBridgeModule.swift`의 `getOutdoorRuns`: 목록은 그대로 매번 읽고, 보관한 기록은 심박·경로 유무 조회를 건너뛴다. 새로 조회한 기록은 보관하고 사라진 기록은 지운다. 보관에 실패해도 목록은 정상이다
+- JS 화면은 바꾸지 않았다
+- 새 Swift 파일이라 **`pod install`을 한 번 해야** Xcode가 인식한다(`cd frontend/ios && LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`). 파일 내용만 고치는 것과 달리 이 단계가 필요하다
+
+## 검증
+
+- Swift 검사 `scripts/check-health-record-cache.sh`: 24시간 경계(정확히 24시간은 보관, 23시간 59분 59초는 안 함), 최근 기록, 사라진 기록 정리, 저장·읽기 왕복(심박 없음·경로 없음 포함), 폴더와 파일의 백업 제외, 덮어쓰기, 망가진 파일·다른 버전·빈 파일, 쓸 수 없는 위치. 모두 통과했다
+- 일부러 규칙을 깨뜨린 4가지(24시간 기준, 백업 제외, 버전 확인, 정리 판단)를 검사가 모두 잡았다
+- 시뮬레이터용 전체 Swift 컴파일(`xcodebuild`, arm64·x86_64): **성공.** 새 파일과 수정한 브리지 모듈이 모두 컴파일됐다. 경고는 `payload`가 변경되지 않았다는 것으로 기존 코드에서도 나오는 것이다
+- 실기기에서 속도는 아직 재지 않았다. 느린 원인이 기록 수 × 2번 조회라는 코드 분석에 근거한 추정이고, 실제로 얼마나 빨라지는지는 진입 시간을 전후로 재서 확인한다
 
 ## 어긋남 기록
 
