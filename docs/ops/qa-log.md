@@ -3,7 +3,7 @@ title: 내부 테스트 QA 기록
 product: running
 type: ops
 status: draft
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # 내부 테스트 QA 기록
@@ -15,13 +15,40 @@ updated: 2026-10-28
 ### 잠금화면 알림의 정지·완료 버튼이 안 눌림
 
 - 제보: 지응. 정지와 완료를 각각 30번 정도 눌렀는데 동작 안 함. Face ID로 잠금을 푼 뒤에도 같음
-- 상태: 개선 진행 (회의에서 정함)
+- 상태: 개선 진행 (회의에서 정함). 원인은 아직 확정하지 못했다. 아래는 2026-10-29까지 확인한 것
+
+**확인한 것 (2026-10-29, 지응)**
+
+- 기기와 빌드: iPhone iOS 27.0.1, TestFlight 내부 측정 빌드 44. 러닝 중 시간·심박·km·평균 페이스는 정상으로 갱신되고 버튼만 반응이 없다. 잠금을 풀고 눌러도, 앱에서 정지가 적용됐는지 봐도 같다
+- 폰 Console 로그(맥의 Console 앱에서 폰을 선택해 확인): 버튼을 누르면 `chronod`가 동작을 받지만 `Failed to execute LNAction ... There is no metadata for RunaryRunIntent in com.mechuri.runmechuri`로 실패한다. 앱 프로세스의 `perform()`까지 도달하지 못한다
+- iOS 26.5 시뮬레이터에서는 같은 빌드가 `Found RunaryRunIntent matching RunaryRunIntent registered with AppManager`, `Invoking RunaryRunIntent.perform()` 순으로 정상 실행된다(약 4ms). 배포한 IPA 안의 인텐트 메타데이터도 시뮬레이터 빌드와 같은 것을 확인했다
+- 앱을 지우고 다시 설치해도 버튼은 그대로다. 이때 카드가 화면을 껐다 켜야만 뜨던 증상은 사라졌다. 카드 지연은 폰에 남은 낡은 상태가 원인이었던 것으로 본다
+
+**원인 후보 (모두 확인 못 함)**
+
+1. iOS 27 동작 차이. 지금까지의 증거로 가장 설명이 잘 되지만 공식 자료로는 확인하지 못했다 `[확인 필요]`
+2. 인텐트(`RunaryRunIntent`)가 `public`이 아니고, 앱과 위젯 확장에 같은 이름으로 둘 다 들어 있는 구성. 비슷한 사례가 `public`으로 해결됐다는 [Apple 개발자 포럼 글](https://developer.apple.com/forums/thread/746696)이 있으나 같은 원인인지는 확인하지 못했다 `[확인 필요]`
+3. 인텐트를 숨김(`isDiscoverable = false`)으로 등록한 설정. 에러가 단축어 실행기 쪽에서 나는 점이 걸리지만 근거는 약하다 `[확인 필요]`
+
+지운 후보: 폰에 남은 낡은 등록 정보(재설치로 버튼이 안 살아났다).
+
+**다음에 할 것**
+
+1. 현수·지민 기기에서 버튼이 되는지와 iOS 버전을 묻는다. 다른 버전에서 되면 후보 1이고, 모두 안 되면 코드 문제다
+2. 코드 문제면 `public`과 숨김 해제를 한 빌드에 넣어 시험한다. 측정 코드와 `plugins/with-run-live-activity.cjs`를 건드리므로 구현 노트와 FRD 확인을 먼저 받는다. 안 되면 같은 빌드에 로그를 심어 원인을 본다
+3. 단축어 앱에 "러닝 제어" 동작이 보이는 부작용이 있는지 같이 확인한다
+
+**환경 주의**
+
+- Xcode Run으로는 내부 측정 빌드를 폰에 올릴 수 없다. 개인 계정(Jimin Kim, 팀 BT2KSYYPDF)이라 `.liveactivity`와 `.watch` 프로비저닝 프로파일이 안 만들어진다. 실기기 확인은 EAS `internal-tracking` 빌드를 TestFlight로 올려야 하고 한 번에 한 시간쯤 걸린다
+- 시뮬레이터에서는 `xcodebuild -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO`로 빌드해 확인할 수 있지만 iOS 26.5라 이 문제가 재현되지 않는다
 
 ### 지민·지응 기기에서 건강 앱 저장이 안 됨
 
 - 제보: 지응. 10/27에 달린 Runary 기록이 피트니스에 안 들어감. 피트니스에 Runary 로고도 안 뜸
 - 현수 기기에서는 저장됨. 두 사람의 건강 앱 쓰기 권한과 "건강 앱 자동 저장" 설정을 켰는지부터 확인 필요
-- 상태: 확인 필요
+- 상태: 확인 필요. 권한 상태를 앱 화면에서 확정해 보여주는 변경을 2026-10-29에 구현했다(`jieung/feature/permission-status-health-write`, [구현 노트](../product/features/permission-status-health-write.md))
+- 다음에 할 것: 이 변경이 들어간 새 내부 측정 빌드를 TestFlight로 올린 뒤, 지응·지민 기기의 앱 권한 화면에서 "건강 앱 운동 저장"과 "건강 앱 자동 저장"이 어떻게 나오는지 본다. 운동 저장이 "허용 안 됨"이면 권한 문제, "허용됨"인데도 저장이 안 되면 다른 원인이다
 
 ### 아이폰에서 측정을 시작해도 워치에 바로 안 뜸
 
