@@ -21,6 +21,8 @@ export type RunMapPage = {
 export type TrackingState = {
   enabled: boolean; phase: string; notice?: string | null; summary?: RunSummary | null;
   watchWorkoutEnabled?: boolean; watchWorkoutState?: string; healthExportEnabled?: boolean;
+  // HealthKit write authorization: 0 not requested, 1 denied, 2 allowed. Absent in older native builds.
+  healthWorkoutWrite?: number; healthRouteWrite?: number; healthHeartWrite?: number;
   watchState: string; healthHeartState?: string; storageError: boolean; unsavedEvents: number;
   watchStartPending?: boolean; phoneStartPending?: boolean;
   liveActivityState?: 'off' | 'active' | 'disabled' | 'waiting' | 'dismissed' | 'unavailable';

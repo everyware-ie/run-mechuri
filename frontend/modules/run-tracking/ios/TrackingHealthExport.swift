@@ -11,6 +11,11 @@ final class TrackingHealthExport {
   static let runKey = "com.mechuri.runary.runID"
   static let enabledKey = "RunaryHealthExportEnabledSince"
   var enabledSince: Double { UserDefaults.standard.double(forKey: Self.enabledKey) }
+  // Write authorization is the only HealthKit status the OS reports to the app
+  // (0 not requested, 1 denied, 2 allowed). Read authorization is never exposed.
+  var workoutWriteStatus: Int { health.authorizationStatus(for: HKObjectType.workoutType()).rawValue }
+  var routeWriteStatus: Int { health.authorizationStatus(for: HKSeriesType.workoutRoute()).rawValue }
+  var heartWriteStatus: Int { health.authorizationStatus(for: HKObjectType.quantityType(forIdentifier: .heartRate)!).rawValue }
   init(root: URL) { self.root = root.appendingPathComponent("HealthExports", isDirectory: true) }
   func enable(_ enabled: Bool, completion: @escaping (Error?) -> Void) {
     guard enabled else { UserDefaults.standard.removeObject(forKey: Self.enabledKey); completion(nil); return }

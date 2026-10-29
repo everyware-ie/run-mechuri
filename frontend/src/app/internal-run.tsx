@@ -11,6 +11,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Card, ThemedButton } from '@/components/ui';
 import { trackingStyles as styles } from '@/components/internal-run-styles';
 import { heartImportNotice, runNumber, runPace, runStatus, runTime } from '@/lib/tracking-display';
+import { toggleText } from '@/lib/tracking-permissions';
 import { Tracking, trackingEnabled, type RunSummary, type TrackingState } from '../../modules/run-tracking/src/RunTracking';
 
 export default function InternalRunScreen() {
@@ -138,10 +139,13 @@ export default function InternalRunScreen() {
         <Card>
           <Text style={styles.text}>심박 가져오기</Text>
           <Text style={styles.subtitle}>건강 앱에 저장된 심박을 불러와요. 워치 연동을 켜면 Runary가 운동 중 심박을 측정해요.</Text>
+          {Tracking!.setWatchWorkoutEnabled ? <Text style={styles.text}>워치 운동 연동: {toggleText(state ? !!state.watchWorkoutEnabled : undefined)}</Text> : null}
           {Tracking!.setWatchWorkoutEnabled ? <ThemedButton title={state?.watchWorkoutEnabled ? '워치 운동 연동 끄기' : '워치 운동 연동 켜기'} variant="outline" disabled={busy} onPress={() => {
             if (state?.watchWorkoutEnabled) { void act(() => Tracking!.setWatchWorkoutEnabled!(false)); return; }
             Alert.alert('워치 운동 연동', '워치에서 심박을 측정하고 러닝 화면을 표시해요. 다른 워치 운동이 진행 중이면 종료될 수 있어요.', [{ text: '나중에', style: 'cancel' }, { text: '연동 켜기', onPress: () => void act(() => Tracking!.setWatchWorkoutEnabled!(true)) }]);
           }} /> : null}
+          {Tracking!.setHealthExportEnabled ? <Text style={styles.text}>건강 앱 자동 저장: {toggleText(state ? !!state.healthExportEnabled : undefined)}</Text> : null}
+          {Tracking!.setHealthExportEnabled && state?.healthExportEnabled && state.healthWorkoutWrite === 1 ? <Text style={styles.notice}>자동 저장은 켜져 있지만 건강 앱의 운동 쓰기가 허용되지 않아 저장되지 않아요. 앱 권한에서 확인해 주세요.</Text> : null}
           {Tracking!.setHealthExportEnabled ? <ThemedButton title={state?.healthExportEnabled ? '건강 앱 자동 저장 끄기' : '건강 앱 자동 저장 켜기'} variant="outline" disabled={busy} onPress={() => void act(() => Tracking!.setHealthExportEnabled!(!state?.healthExportEnabled))} /> : null}
           <Text style={styles.subtitle}>건강 저장을 허용하면 이후 완료한 러닝을 피트니스에서도 확인할 수 있어요. 워치가 없어도 저장돼요.</Text>
           <Text style={styles.subtitle}>Runary만 실행하면 새 심박 수집까지 시간이 걸릴 수 있어요. 심박 센서의 연속 측정을 시작하지 않아요.</Text>

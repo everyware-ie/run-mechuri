@@ -665,6 +665,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     let summary: Any = engine.map { json($0.summary(at: now)) } ?? NSNull()
     return ["enabled": true, "phase": phase, "notice": notice as Any? ?? NSNull(),
       "summary": summary, "watchState": watchState, "watchWorkoutEnabled": workoutEnabled, "watchWorkoutState": now - (watchResponseAt ?? 0) <= 10 ? workoutState : "waiting", "healthExportEnabled": healthExport.enabledSince > 0, "healthHeartState": healthHeartState,
+      "healthWorkoutWrite": healthExport.workoutWriteStatus, "healthRouteWrite": healthExport.routeWriteStatus, "healthHeartWrite": healthExport.heartWriteStatus,
       "watchStartPending": watchRequest != nil, "phoneStartPending": phoneStartPending,
       "liveActivityState": liveActivity.availability,
       "unsavedEvents": pending.count, "storageError": writeFailedAt != nil,
