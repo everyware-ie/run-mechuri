@@ -2,6 +2,16 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-02: 워치 시작 보완 로컬 개발 빌드 47
+
+`codex/feature/tracking-screen-refinement`에서 명시적 운동 실행 요청 뒤의 백그라운드 세션 시작 조건을 보완했다. 기존 서명과 DerivedData를 재사용하고 아이폰·워치·잠금화면 타깃을 로컬 47번으로 빌드했다. 전체 Debug 빌드, 세 타깃 버전과 깊은 서명 검증 후 아이폰에 업데이트 설치했다. 생성 프로젝트의 `Info.plist`는 빌드 뒤 원본으로 복원했다. 새 인증서·프로파일·기기 등록은 없다.
+
+실제 워치 응답 `build:47,sync:4,launchHandled:true`와 심박 수신, 사용자의 앱 목록 이후 측정 화면 자동 복귀 확인을 받았다. 아이폰 앱 응답을 40초 멈췄다가 자동 복구한 뒤 같은 러닝의 새 심박도 수신했다. Mac의 워치 직접 개발 연결은 여전히 복구되지 않았으며 동봉 앱 업데이트로 확인했다.
+
+빌드 로그는 `/private/tmp/runary-watch-handoff-build47.log`, Swift 검사 로그는 `/private/tmp/runary-watch-handoff-swift.log`다. [구현 노트](../product/features/tracking-screen-refinement.md#로컬-47번의-시작과-자동-복귀-재검증)에 실기기 범위와 남은 항목을 기록했다. 47번은 로컬 개발 앱 번호이며 새 TestFlight 제출이나 main 머지는 없다.
+
+종료 후 재시작도 `requested:reachable` 요청 성공과 새 심박 수신을 확인했다. 최종 기기 사본 `/private/tmp/runary-watch47-final-20261102`의 51건은 모두 완료 상태이며 QA 전 47건의 파일은 변경되지 않았다.
+
 ## 2026-10-25: 앱 재개와 현황 복구 실기기 QA
 
 [PR #125](https://github.com/everyware-ie/run-mechuri/pull/125)의 `ce89946`에서 내부 개발 앱을 빌드했다. 기존 `/private/tmp/runary-live-build` DerivedData와 개발 인증서·프로파일을 재사용했으며 아이폰·워치·잠금화면 확장의 iphoneos Debug 빌드와 깊은 서명 검증을 통과했다. 새 인증서나 기기 등록은 없다.

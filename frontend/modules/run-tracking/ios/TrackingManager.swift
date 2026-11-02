@@ -753,11 +753,13 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       watchLaunch = (engine.id, now); return
     }
     watchLaunch = nil
-    guard WCSession.default.isPaired, WCSession.default.isWatchAppInstalled, !WCSession.default.isReachable else { return }
+    // Reachable also includes a background extension; it does not confirm a
+    // foreground app or an active workout. Explicit starts still need the handoff.
+    guard WCSession.default.isPaired, WCSession.default.isWatchAppInstalled else { return }
     let id = engine.id
     let configuration = HKWorkoutConfiguration()
     configuration.activityType = .running; configuration.locationType = .outdoor
-    append(TrackingEvent(kind: "watchLaunch", time: now, detail: "requested"))
+    append(TrackingEvent(kind: "watchLaunch", time: now, detail: WCSession.default.isReachable ? "requested:reachable" : "requested"))
     health.startWatchApp(with: configuration) { [weak self] success, error in
       DispatchQueue.main.async {
         guard let self, self.engine?.id == id, self.engine?.status == "running" else { return }

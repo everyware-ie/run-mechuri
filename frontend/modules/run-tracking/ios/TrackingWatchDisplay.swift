@@ -1,5 +1,25 @@
 import Foundation
 
+// A HealthKit launch permits one fresh, live phone reply to start its run in
+// the background. Cached contexts and later replies cannot reuse that permit.
+struct TrackingWatchLaunchPermit {
+  private(set) var token: UUID?
+  private var requestedAt = -Double.greatestFiniteMagnitude
+  mutating func begin(at time: Double) {
+    token = UUID(); requestedAt = time
+  }
+  mutating func consume(_ candidate: UUID, payload: [String: Any], at time: Double) -> String? {
+    guard candidate == token else { return nil }
+    token = nil
+    guard time.isFinite, requestedAt.isFinite, time - requestedAt >= 0, time - requestedAt <= 10,
+          payload["kind"] as? String == "run", payload["displayOnly"] as? Bool == true,
+          payload["workoutEnabled"] as? Bool == true, payload["status"] as? String == "running",
+          let id = payload["id"] as? String, UUID(uuidString: id) != nil,
+          let sent = payload["sent"] as? Double, sent.isFinite, time - sent >= -2, time - sent <= 10 else { return nil }
+    return id
+  }
+}
+
 // Internal QA telemetry only. This payload cannot control a run or carry sensor values.
 struct TrackingWatchProbe: Codable {
   let id: String

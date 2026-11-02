@@ -123,6 +123,24 @@ struct TrackingEngineChecks {
     let displayPayload: [String: Any] = ["kind": "run", "displayOnly": true, "id": displayID,
       "sent": 100.0, "status": "running", "duration": 30.0, "heartRate": 155.0, "lastHeart": 98.0,
       "watchEnabled": false]
+    var launchReply = displayPayload; launchReply["workoutEnabled"] = true
+    var permit = TrackingWatchLaunchPermit()
+    check(permit.consume(UUID(), payload: launchReply, at: 102) == nil, "Cached context without a HealthKit launch cannot start a background workout")
+    permit.begin(at: 100); let firstLaunch = permit.token!
+    check(permit.consume(firstLaunch, payload: launchReply, at: 102) == displayID, "A fresh live reply binds a HealthKit launch to its actual running record")
+    check(permit.consume(firstLaunch, payload: launchReply, at: 103) == nil, "A launch reply cannot be reused to create another session")
+    permit.begin(at: 100); let superseded = permit.token!
+    permit.begin(at: 101); let latestLaunch = permit.token!
+    check(permit.consume(superseded, payload: launchReply, at: 102) == nil && permit.consume(latestLaunch, payload: launchReply, at: 102) == displayID,
+      "A superseded request cannot consume the newer launch handshake")
+    permit.begin(at: 100); var staleLaunch = launchReply; staleLaunch["sent"] = 80.0
+    check(permit.consume(permit.token!, payload: staleLaunch, at: 102) == nil, "A stale phone reply cannot authorize background creation")
+    permit.begin(at: 100)
+    check(permit.consume(permit.token!, payload: launchReply, at: 111) == nil, "An expired launch cannot start a later run")
+    permit.begin(at: 100); var optedOut = launchReply; optedOut["workoutEnabled"] = false
+    check(permit.consume(permit.token!, payload: optedOut, at: 102) == nil, "The launch callback cannot bypass workout opt-out")
+    permit.begin(at: 100); var endedLaunch = launchReply; endedLaunch["status"] = "completed"
+    check(permit.consume(permit.token!, payload: endedLaunch, at: 102) == nil, "A launch arriving after phone finalization cannot resurrect the finished run")
     check(watchDisplay.accept(displayPayload) && watchDisplay.metrics["id"] as? String == displayID,
       "HealthKit run appears on Watch without direct Watch collection enabled")
     check(watchDisplay.heart(at: 105) == 155, "Watch displays fresh phone HealthKit heart")

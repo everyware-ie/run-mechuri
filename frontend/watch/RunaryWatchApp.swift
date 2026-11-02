@@ -16,9 +16,7 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
   func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
     // The latest phone state and explicit opt-in decide whether to start a workout.
     DispatchQueue.main.async {
-      WatchRun.shared.launchHandled = true
-      WatchRun.shared.healthReader.refreshPermission()
-      WatchRun.shared.refreshFromPhone(force: true)
+      WatchRun.shared.handlePhoneLaunch()
     }
   }
 }
@@ -46,6 +44,7 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
   private var active = false
   private var timer: Timer?
   private var refreshToken: UUID?
+  private var phoneLaunchPermit = TrackingWatchLaunchPermit()
   private var commandToken: UUID?
   private var lastAttempt = -Double.greatestFiniteMagnitude
   private var deleted = Set<String>()
@@ -62,7 +61,7 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
     healthReader.deliver = { [weak self] id, samples, deleted in self?.enqueueHealth(id: id, samples: samples, deleted: deleted) }
     if WCSession.isSupported() { WCSession.default.delegate = self; WCSession.default.activate() }
   }
-  @discardableResult private func accept(_ payload: [String: Any]) -> Bool {
+  @discardableResult private func accept(_ payload: [String: Any], phoneLaunchToken: UUID? = nil) -> Bool {
     if payload["kind"] as? String == "stopAck", payload["id"] as? String == pendingStop?["id"] as? String {
       pendingStop = nil; UserDefaults.standard.removeObject(forKey: "RunaryPendingStop"); error = nil; return true
     }
@@ -86,7 +85,8 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
     }
     if let id = payload["id"] as? String, deleted.contains(id) { return false }
     guard display.accept(payload) else { return false }
-    workout.accept(payload)
+    let launchedRunID = phoneLaunchToken.flatMap { phoneLaunchPermit.consume($0, payload: payload, at: Date().timeIntervalSince1970) }
+    workout.accept(payload, launchedRunID: launchedRunID)
     healthReader.sync(display, at: Date().timeIntervalSince1970)
     error = nil
     return true
@@ -102,19 +102,28 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
       self?.refreshFromPhone(); self?.flushHealthOutbox(); self?.flushStop()
     }
   }
+  func handlePhoneLaunch() {
+    launchHandled = true
+    phoneLaunchPermit.begin(at: Date().timeIntervalSince1970)
+    // Replies requested before the HealthKit callback are not a launch handshake.
+    refreshToken = nil
+    healthReader.refreshPermission()
+    refreshFromPhone(force: true)
+  }
   func refreshFromPhone(force: Bool = false) {
     guard WCSession.default.activationState == .activated else { return }
     _ = accept(WCSession.default.receivedApplicationContext)
     let now = Date().timeIntervalSince1970
     guard refreshToken == nil, force || now - lastAttempt >= 3 else { return }
     let token = UUID(); refreshToken = token; lastAttempt = now
+    let launchToken = phoneLaunchPermit.token
     // A Watch message can wake the phone in the background. Do not silently
     // skip the request based on a cached reachability check; handle its result.
     var message = handshake; message["kind"] = "displayReady"; message["sent"] = now
     WCSession.default.sendMessage(message, replyHandler: { [weak self] payload in
       DispatchQueue.main.async {
         guard let self, self.refreshToken == token else { return }
-        self.refreshToken = nil; _ = self.accept(payload)
+        self.refreshToken = nil; _ = self.accept(payload, phoneLaunchToken: launchToken)
       }
     }, errorHandler: { [weak self] _ in
       DispatchQueue.main.async { if self?.refreshToken == token { self?.refreshToken = nil } }
