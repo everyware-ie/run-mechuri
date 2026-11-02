@@ -58,11 +58,18 @@ public class HealthKitBridgeModule: Module {
     AsyncFunction("getOutdoorRuns") { () async throws -> [RunRecordPayload] in
       let outdoorWorkouts = try await self.fetchOutdoorRunWorkouts()
 
+      // 2026-10-28: 평균 심박·경로 유무는 한 번 조회한 기록이면 보관한 값을 쓴다
+      // (HealthRecordCache.swift, FRD runary-record-editing §목록). 목록 자체는 위처럼
+      // 매번 건강 앱에서 새로 읽으므로 지운 기록은 바로 사라진다. 보관 정보는 메모일 뿐이다.
+      let now = Date()
+      let cacheURL = try? HealthRecordCacheStore.defaultURL()
+      let cache = cacheURL.map { HealthRecordCacheStore.load(from: $0) } ?? HealthRecordCache()
+
       // 실기기 피드백(2026-09): 워크아웃 수만큼 심박·경로 유무 쿼리를 for-await로
       // 하나씩 직렬로 기다렸더니, 기록이 많을수록(왕복 시간 × 워크아웃 수 × 2) 목록
       // 진입 자체가 눈에 띄게 느렸다. 워크아웃마다·쿼리마다 서로 독립적이라 전부
       // 병렬로 실행하고, 완료 순서가 뒤섞이므로 인덱스로 원래(최신순) 정렬을 되살린다.
-      let indexed = try await withThrowingTaskGroup(of: (Int, RunRecordPayload).self) { group in
+      let indexed = try await withThrowingTaskGroup(of: (Int, RunRecordPayload, Bool).self) { group in
         for (index, workout) in outdoorWorkouts.enumerated() {
           group.addTask {
             var payload = RunRecordPayload()
@@ -76,19 +83,38 @@ public class HealthKitBridgeModule: Module {
             payload.averagePaceSecPerKm = payload.distanceMeters > 0
               ? payload.durationSeconds / (payload.distanceMeters / 1000)
               : 0
+            if let cached = cache.extras(for: payload.id, end: workout.endDate, now: now) {
+              payload.averageHeartRate = cached.averageHeartRate
+              payload.hasRoute = cached.hasRoute
+              return (index, payload, false)
+            }
             async let heartRate = self.averageHeartRate(for: workout)
             async let hasRoute = self.hasWorkoutRoute(workout)
             payload.averageHeartRate = try await heartRate
             payload.hasRoute = try await hasRoute
-            return (index, payload)
+            return (index, payload, true)
           }
         }
-        var collected: [(Int, RunRecordPayload)] = []
+        var collected: [(Int, RunRecordPayload, Bool)] = []
         for try await result in group {
           collected.append(result)
         }
         return collected
       }
+
+      // 새로 조회한 기록을 보관하고, 건강 앱에서 사라진 기록은 보관 정보에서도 지운다.
+      // 보관 실패는 목록에 영향을 주지 않는다. 다음에 다시 조회하면 된다.
+      if let cacheURL {
+        var updated = cache
+        var changed = updated.prune(keeping: Set(outdoorWorkouts.map { $0.uuid.uuidString }))
+        for (index, payload, fresh) in indexed where fresh {
+          let workout = outdoorWorkouts[index]
+          if updated.store(HealthRecordExtras(averageHeartRate: payload.averageHeartRate, hasRoute: payload.hasRoute),
+                           for: payload.id, end: workout.endDate, now: now) { changed = true }
+        }
+        if changed { try? HealthRecordCacheStore.save(updated, to: cacheURL) }
+      }
+
       // 최신순 정렬 (startDate 내림차순은 쿼리 단계에서 이미 적용됨) — 병렬 완료 순서와
       // 무관하게 원래 순서를 되살린다.
       return indexed.sorted { $0.0 < $1.0 }.map { $0.1 }
