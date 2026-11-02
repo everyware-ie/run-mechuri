@@ -1,21 +1,27 @@
-import { Redirect, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { goBackOrHome } from '@/lib/navigation';
 import * as Device from 'expo-device';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, AppState, ScrollView, Text, TextInput, View } from 'react-native';
-import { RunDisclosure, RunMetric, RunStatus, runUI } from '@/components/run-tracking-ui';
+import { RunDisclosure, RunStatus, runUI } from '@/components/run-tracking-ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { RunDistanceSummary } from '@/components/run-measurement';
+import { useCreationFlow } from '@/state/creation-flow';
+import { runaryTrack } from '@/lib/runary-records';
 import { RunMap } from '@/components/run-map';
 import { ScreenHeader } from '@/components/screen-header';
 import { Card, ThemedButton } from '@/components/ui';
 import { Colors } from '@/constants/theme';
-import { diagnosticSummary, runNumber, runPace, runStatus, runTime } from '@/lib/tracking-display';
+import { diagnosticSummary, runNumber, runStatus, runTime } from '@/lib/tracking-display';
 import { Tracking, trackingEnabled, type RunPoint, type RunSummary } from '../../../modules/run-tracking/src/RunTracking';
 import { trackingStyles as styles } from '@/components/internal-run-styles';
 
 export default function RunDetail() {
+  const { setSelectedRun } = useCreationFlow();
+  const focused = useRef(true);
+  const selectionEpoch = useRef(0);
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [data, setData] = useState<{ summary: RunSummary; points: RunPoint[]; healthExport?: { status: string } } | null>(null);
+  const [data, setData] = useState<{ summary: RunSummary; points: RunPoint[]; heartChart?: { time: number; bpm: number }[]; healthExport?: { status: string } } | null>(null);
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
   const [heartError, setHeartError] = useState('');
@@ -27,7 +33,7 @@ export default function RunDetail() {
   const reload = useRef<(() => Promise<void>) | null>(null);
   useFocusEffect(useCallback(() => {
     if (!trackingEnabled || !id) return;
-    setMapVisible(true);
+    setMapVisible(true); focused.current = true; selectionEpoch.current++;
     setData(null); setFeedback(''); setHeartError(''); setMemoOpen(false); setDiagnosticOpen(false);
     let alive = true, request = 0, feedbackLoaded = false;
     const load = async () => {
@@ -58,7 +64,7 @@ export default function RunDetail() {
     reload.current = load;
     void load();
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') void load(); else request++; });
-    return () => { alive = false; request++; reload.current = null; subscription.remove(); setMapVisible(false); };
+    return () => { focused.current = false; selectionEpoch.current++; alive = false; request++; reload.current = null; subscription.remove(); setMapVisible(false); };
   }, [id]));
   const exportPending = data?.healthExport?.status === 'pending';
   useEffect(() => {
@@ -94,14 +100,15 @@ export default function RunDetail() {
           <Text style={styles.subtitle}>{new Date(run.started * 1000).toLocaleString('ko-KR')}</Text>
           <RunStatus label={run.status === 'completed' ? '기록 저장 완료' : runStatus[run.status]} />
         </View>
-        <RunMap key={run.id} points={data?.points ?? []} overview visible={mapVisible} height={300} />
+        <RunMap key={run.id} points={data?.points ?? []} overview visible={mapVisible} height={230} />
         <Text style={runUI.footnote}>지도 배경은 Apple 지도 서비스를 사용해요.</Text>
-        <View style={runUI.grid}>
-          <RunMetric title="시간" value={runTime(run.duration)} unit="측정 시간" />
-          <RunMetric title="거리" value={(run.distance / 1000).toFixed(2)} unit="km" />
-          <RunMetric title="평균 페이스" value={runPace(run.averagePace)} unit="/km" />
-          <RunMetric title="평균 심박" value={runNumber(run.averageHeartRate)} unit="bpm" />
-        </View>
+        <RunDistanceSummary run={run} completed />
+        {data?.heartChart?.length ? <View style={{ gap: 12 }}>
+          <View style={styles.row}><Text style={styles.text}>심박</Text><Text style={styles.subtitle}>구간 평균 · 최대 {runNumber(run.maxHeartRate)} bpm</Text></View>
+          <View accessibilityLabel="저장된 심박 추이" style={{ height: 76, position: 'relative', marginHorizontal: 4 }}>
+            {data.heartChart.map(point => <View key={point.time} style={{ position: 'absolute', bottom: 0, left: `${Math.min(99, Math.max(0, (point.time - run.started) / Math.max(run.elapsed, 1) * 100))}%`, height: Math.max(4, Math.min(72, point.bpm / Math.max(run.maxHeartRate ?? point.bpm, 1) * 72)), width: 4, borderRadius: 2, backgroundColor: Colors.accent }} />)}
+          </View><View style={styles.row}><Text style={styles.subtitle}>0:00</Text><Text style={styles.subtitle}>{runTime(run.elapsed)}</Text></View>
+        </View> : null}
         {run.incomplete ? <View style={runUI.error}><Text style={styles.notice}>경로 일부가 누락됐을 수 있어요. 없는 구간은 연결하지 않았습니다.</Text></View> : null}
         <View style={runUI.support}>
           <View style={runUI.supportItem}><Text style={runUI.label}>걸음</Text><Text style={runUI.supportValue}>{run.lastMotion != null || run.steps > 0 ? run.steps : '-'}</Text></View>
@@ -132,5 +139,17 @@ export default function RunDetail() {
         <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다. 건강 앱에 저장된 운동은 남습니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); goBackOrHome(); }) }])} />
       </> : null}
     </ScrollView>
+    {run?.status === 'completed' ? <View style={runUI.footer}>
+      <ThemedButton title={busy ? '경로를 준비하고 있어요' : '이 기록으로 영상 만들기'} disabled={busy || !run.hasDrawableRoute || !Tracking!.editorRoutes} onPress={() => void act(async () => {
+        const epoch = selectionEpoch.current;
+        const isCurrent = () => focused.current && epoch === selectionEpoch.current;
+        const detail = await Tracking!.detail(id);
+        if (!isCurrent() || detail.summary.id !== id) return;
+        const selected = runaryTrack(detail);
+        await setSelectedRun(selected.run, selected.track, isCurrent);
+        if (isCurrent()) router.push('/background-selection');
+      })} />
+      {!run.hasDrawableRoute ? <Text style={runUI.footnote}>영상으로 만들 수 있는 경로가 없어요.</Text> : null}
+    </View> : null}
   </SafeAreaView>;
 }

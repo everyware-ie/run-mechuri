@@ -715,7 +715,7 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     let e = engine?.id == id ? engine! : try store!.load(id)
     if e !== engine, e.status == "running" { e.apply(TrackingEvent(kind: "interrupt", time: e.lastSaved ?? e.started)) }
-    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points), "healthExport": healthExport.state(id)]
+    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points), "heartChart": trackingHeartChart(e.hearts, started: e.started, ended: e.ended ?? now), "healthExport": healthExport.state(id)]
   }
   func delete(_ id: String) throws {
     try requireEnabled()

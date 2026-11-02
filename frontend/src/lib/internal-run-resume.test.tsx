@@ -11,6 +11,7 @@ jest.mock('expo-router', () => ({ router: { push: jest.fn() }, Redirect: () => n
     React.useEffect(callback, [callback]);
   },
 }));
+jest.mock('react-native-safe-area-context', () => jest.requireActual('react-native-safe-area-context/jest/mock').default);
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('@/components/run-map', () => ({ RunMap: () => null }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
@@ -38,7 +39,7 @@ it.each(['paused', 'interrupted'] as const)('%s 기록은 자동 재개 없이 �
   expect(Tracking!.resumeImmediately).not.toHaveBeenCalled();
   expect(Tracking!.prepare).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(Text).map(node => node.props.children).flat().join(' ')).not.toContain('GPS를 준비해 주세요');
-  await act(async () => { button('이어서 달리기').props.onPress(); });
+  await act(async () => { button('재개').props.onPress(); });
   expect(Tracking!.resumeImmediately).toHaveBeenCalledTimes(1);
   expect(Tracking!.resume).not.toHaveBeenCalled();
   expect(Tracking!.prepare).not.toHaveBeenCalled();
@@ -55,7 +56,7 @@ it('즉시 재개가 없는 이전 네이티브 앱은 기존 준비 흐름을 �
 it('권한 오류를 표시하고 재개 요청을 자동으로 반복하지 않는다', async () => {
   jest.mocked(Tracking!.resumeImmediately!).mockRejectedValueOnce(new Error('위치와 정확한 위치를 확인해 주세요.'));
   await act(async () => { renderer = create(<InternalRunScreen />); });
-  await act(async () => { button('이어서 달리기').props.onPress(); });
+  await act(async () => { button('재개').props.onPress(); });
   await act(async () => { jest.advanceTimersByTime(3000); });
   expect(Tracking!.resumeImmediately).toHaveBeenCalledTimes(1);
   expect(renderer.root.findAllByType(Text).map(node => node.props.children).flat().join(' ')).toContain('위치와 정확한 위치를 확인해 주세요.');

@@ -2,6 +2,8 @@ import { act, createElement } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, Text, type AppStateStatus } from 'react-native';
 import RunScreen from '../app/internal-run';
+import { RunSheet } from '@/components/run-measurement';
+import { ThemedButton } from '@/components/ui';
 import { RunAction } from '@/components/run-tracking-ui';
 import { Tracking } from '../../modules/run-tracking/src/RunTracking';
 
@@ -12,6 +14,7 @@ jest.setTimeout(15_000);
 // Jest hoists module factories before imports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('expo-router', () => ({ useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { push: jest.fn() } }));
+jest.mock('react-native-safe-area-context', () => jest.requireActual('react-native-safe-area-context/jest/mock').default);
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('@/components/run-map', () => ({ RunMap: () => null }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
@@ -59,7 +62,8 @@ test('new runs only read HealthKit and expose no heart source options', async ()
   await act(async () => { renderer = create(createElement(RunScreen)); });
   expect(renderer.root.findAll(node => node.props.accessibilityRole === 'radio')).toHaveLength(0);
   expect(text()).not.toContain('Runary 워치 직접 측정');
-  expect(text()).toContain('워치에서 Runary를 열면');
+  expect(text()).toContain('Apple Watch');
+  expect(text()).toContain('연동 꺼짐');
   const start = renderer.root.findAllByType(RunAction).find(node => node.props.title === '러닝 시작')!;
   await act(async () => { start.props.onPress(); });
   expect(Tracking!.startWithHeartSource).toHaveBeenCalledWith('health');
@@ -87,4 +91,22 @@ test('an imported but delayed heart displays its average and measured time while
   expect(text()).toContain('건강 앱에서 불러온 평균 심박 66 bpm · 마지막 측정 22:58');
   expect(text()).toContain('최신 심박을 기다리고 있어요.');
   expect(text()).not.toContain('건강 앱에 새 심박이 저장되기를 기다려요.');
+});
+
+
+test('finish sheet cancellation preserves the run and duplicate confirmation finishes once', async () => {
+  state.mockResolvedValue({ ...snapshot, summary: { id: 'same-run', status: 'running', duration: 60, distance: 100 } });
+  Tracking!.finish = jest.fn().mockResolvedValue(undefined);
+  await act(async () => { renderer = create(createElement(RunScreen)); });
+  const stop = () => renderer.root.findAllByType(RunAction).find(node => node.props.title === '종료')!;
+  await act(async () => { stop().props.onPress(); });
+  const sheet = () => renderer.root.findAllByType(RunSheet).find(node => node.props.title === '러닝을 종료할까요?')!;
+  expect(sheet().props.visible).toBe(true);
+  await act(async () => { sheet().props.onClose(); });
+  expect(Tracking!.finish).not.toHaveBeenCalled();
+  expect(sheet().props.visible).toBe(false);
+  await act(async () => { stop().props.onPress(); });
+  const confirm = renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '종료')!;
+  await act(async () => { confirm.props.onPress(); confirm.props.onPress(); });
+  expect(Tracking!.finish).toHaveBeenCalledTimes(1);
 });

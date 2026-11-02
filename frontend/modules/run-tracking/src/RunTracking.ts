@@ -42,7 +42,7 @@ type Module = {
   start(watch: boolean): Promise<TrackingState>; pause(): Promise<void>; resume(): Promise<void>; finish(): Promise<void>;
   retrySave(): Promise<void>; keepSaved(): Promise<void>; recover(id: string): Promise<void>;
   records(): Promise<{ records: RunSummary[]; damaged: string[] }>;
-  detail(id: string): Promise<{ summary: RunSummary; points: RunPoint[]; healthExport?: { status: string; workoutID?: string } }>;
+  detail(id: string): Promise<{ summary: RunSummary; points: RunPoint[]; heartChart?: { time: number; bpm: number }[]; healthExport?: { status: string; workoutID?: string } }>;
   deleteRecord(id: string): Promise<void>; feedback(id: string, text: string): Promise<void>; connectWatch(): Promise<void>;
   copySummary(text: string): Promise<void>;
 };

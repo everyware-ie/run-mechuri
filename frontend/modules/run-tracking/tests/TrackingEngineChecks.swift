@@ -383,6 +383,20 @@ struct TrackingEngineChecks {
     }
     try store.delete(journal.id); let ids = try store.ids(); check(!ids.contains(journal.id), "Explicit record deletion")
     check(store.deletedIDs().contains(journal.id), "Deletion marker blocks delayed Watch resurrection")
+    let chartSamples = [
+      TrackingHeart(id: "a", time: 100, bpm: 80, received: 100),
+      TrackingHeart(id: "b", time: 101, bpm: 100, received: 101),
+      TrackingHeart(id: "c", time: 179, bpm: 120, received: 179),
+      TrackingHeart(id: "d", time: 99, bpm: 240, received: 100),
+      TrackingHeart(id: "e", time: 110, bpm: .nan, received: 110)
+    ]
+    let chart = trackingHeartChart(chartSamples, started: 100, ended: 180)
+    check(chart.count == 2 && chart[0]["bpm"] == 90, "Heart chart averages actual samples within a time bucket")
+    check(chart[1]["time"] == 178, "Heart chart preserves missing time windows instead of filling them")
+    check(trackingHeartChart([], started: 100, ended: 180).isEmpty, "No heart chart for missing data")
+    check(trackingHeartChart(chartSamples, started: .nan, ended: 180).isEmpty, "Invalid chart intervals cannot overflow bucket indices")
+    let many = (0...400).map { TrackingHeart(id: String($0), time: Double($0), bpm: 100, received: Double($0)) }
+    check(trackingHeartChart(many, started: 0, ended: 400).count == 40, "Long runs have bounded chart output including the end boundary")
     print("Tracking engine and journal: \(count) checks passed (synthetic coordinates only)")
   }
 }
