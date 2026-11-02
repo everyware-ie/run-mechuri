@@ -670,4 +670,4 @@ LAN 8081 개발 서버에서 자체 측정 후 건강 저장을 검증했다. Ap
 
 PR 128·130 머지 후 `codex/feature/tracking-screen-refinement`에서 측정 UI를 개선했다. 새 건강 기록 캐시 Swift 파일을 반영하기 위해 기존 iOS 프로젝트에서 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행했다. 기존 인증서와 프로파일로 아이폰·워치·잠금화면 전체 Debug 빌드와 깊은 서명 검증을 통과했다.
 
-최종 `1.0.0(1)` 개발 앱을 iPhone 11 Pro에 업데이트 설치했다. LAN 개발 서버는 192.168.0.7:8081이다. 실행 시 아이폰 잠금으로 거절됐고 Mac도 잠겨 미러링 UI 검증은 대기 중이다. 워치 직접 설치는 연결이 끊겨 확인하지 못했다. 새 TestFlight 제출은 없다. [구현 노트](../product/features/tracking-screen-refinement.md)의 최종 검증 범위를 참고한다.
+최종 `1.0.0(1)` 개발 앱을 iPhone 11 Pro에 업데이트 설치했다. LAN 개발 서버는 192.168.0.7:8081이다. Mac 잠금 해제 후 미러링에서 준비·연결 시트·시작·일시정지·재개·종료 취소·저장과 기존 5.41km 기록의 심박 그래프·영상 제작 진입을 확인했다. 새 QA 기록은 39초·0km이며 기존 43건의 파일은 변경되지 않았다. 워치 직접 설치와 실물 화면 확인은 연결이 끊겨 남아 있다. 새 TestFlight 제출은 없다. [구현 노트](../product/features/tracking-screen-refinement.md)의 최종 검증 범위를 참고한다.
