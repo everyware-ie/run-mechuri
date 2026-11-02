@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { SymbolView } from 'expo-symbols';
-import { Tracking, trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
+import { Tracking, trackingEnabled, trackingDiagnosticsEnabled } from '../../modules/run-tracking/src/RunTracking';
 import { runStatus } from '@/lib/tracking-display';
 
 export function InternalRunEntry() {
@@ -29,7 +29,7 @@ export function InternalRunEntry() {
   if (!trackingEnabled) return null;
   return <View><Pressable accessibilityRole="button" onPress={() => router.push('/internal-run')} style={styles.entry}>
     <View style={styles.icon}><SymbolView name="figure.run" size={24} tintColor={Colors.accent} /></View>
-    <View style={styles.content}><View style={styles.titleRow}><Text style={styles.title}>{state ? '러닝으로 돌아가기' : '러닝 시작'}</Text><Text style={styles.badge}>팀 테스트</Text></View><Text style={styles.text}>{state || '한 걸음씩, 나만의 경로를 기록해요.'}</Text></View>
+    <View style={styles.content}><View style={styles.titleRow}><Text style={styles.title}>{state ? '러닝으로 돌아가기' : '러닝 시작'}</Text>{trackingDiagnosticsEnabled ? <Text style={styles.badge}>팀 테스트</Text> : null}</View><Text style={styles.text}>{state || '한 걸음씩, 나만의 경로를 기록해요.'}</Text></View>
     <SymbolView name="chevron.right" size={15} tintColor={Colors.textMuted} />
   </Pressable><AppPermissionsLink /></View>;
 }

@@ -51,3 +51,5 @@ type Module = {
 // Immutable native build flag, rather than a JS-only flag, guards every API.
 export const Tracking = requireOptionalNativeModule<Module>('RunTracking');
 export const trackingEnabled = Tracking?.enabled === true;
+// Store builds share the tracking feature but do not expose team QA controls.
+export const trackingDiagnosticsEnabled = trackingEnabled && __DEV__;

@@ -13,7 +13,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Card, ThemedButton } from '@/components/ui';
 import { Colors } from '@/constants/theme';
 import { diagnosticSummary, runNumber, runStatus, runTime } from '@/lib/tracking-display';
-import { Tracking, trackingEnabled, type RunPoint, type RunSummary } from '../../../modules/run-tracking/src/RunTracking';
+import { Tracking, trackingEnabled, trackingDiagnosticsEnabled, type RunPoint, type RunSummary } from '../../../modules/run-tracking/src/RunTracking';
 import { trackingStyles as styles } from '@/components/internal-run-styles';
 
 export default function RunDetail() {
@@ -130,13 +130,13 @@ export default function RunDetail() {
           <TextInput style={[styles.text, { backgroundColor: Colors.bgCard, padding: 16, minHeight: 96, borderRadius: 16 }]} accessibilityLabel="러닝 메모" placeholder="오늘의 러닝은 어땠나요?" placeholderTextColor={Colors.textMuted} multiline maxLength={500} value={feedback} onChangeText={setFeedback} />
           <ThemedButton title="메모 저장" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => void act(async () => { await Tracking!.feedback(id, feedback); setData(await Tracking!.detail(id)); })} />
         </RunDisclosure>
-        <RunDisclosure label="팀 테스트 진단" open={diagnosticOpen} onPress={() => setDiagnosticOpen(value => !value)}>
+        {trackingDiagnosticsEnabled ? <RunDisclosure label="팀 테스트 진단" open={diagnosticOpen} onPress={() => setDiagnosticOpen(value => !value)}>
           <Text style={styles.subtitle}>측정 상태를 팀과 확인할 때 사용해요. 원본 좌표와 개별 심박은 복사하지 않습니다.</Text>
           <ThemedButton title="진단 요약 복사" variant="outline" disabled={busy} onPress={() => void act(async () => { const latest = await Tracking!.detail(id); await Tracking!.copySummary(diagnosticSummary(latest.summary, version, device)); Alert.alert('복사했어요', '팀에 공유할 진단 요약을 복사했습니다.'); })} />
           <Card><Text selectable style={styles.subtitle}>{diagnosticSummary(run, version, device)}</Text></Card>
           <Text style={styles.subtitle}>마지막 저장: {run.lastSaved ? new Date(run.lastSaved * 1000).toLocaleString('ko-KR') : '없음'} · 구간 {run.segments}</Text>
-        </RunDisclosure>
-        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '원본 좌표와 진단도 함께 삭제됩니다. 건강 앱에 저장된 운동은 남습니다.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); goBackOrHome(); }) }])} />
+        </RunDisclosure> : null}
+        <ThemedButton title="기록 삭제" variant="outline" disabled={busy || run.status !== 'completed'} onPress={() => Alert.alert('기록을 삭제할까요?', '이 기기에 보관한 측정 기록을 삭제해요.\n건강 앱에 저장한 운동은 남아요.', [{ text: '취소', style: 'cancel' }, { text: '삭제', style: 'destructive', onPress: () => void act(async () => { await Tracking!.deleteRecord(id); goBackOrHome(); }) }])} />
       </> : null}
     </ScrollView>
     {run?.status === 'completed' ? <View style={runUI.footer}>

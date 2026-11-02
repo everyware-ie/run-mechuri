@@ -8,7 +8,7 @@ import { Tracking } from '../../modules/run-tracking/src/RunTracking';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]) }));
 jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
-jest.mock('../../modules/run-tracking/src/RunTracking', () => ({ trackingEnabled: true, Tracking: { state: jest.fn(), prepare: jest.fn(), start: jest.fn() } }));
+jest.mock('../../modules/run-tracking/src/RunTracking', () => ({ trackingEnabled: true, trackingDiagnosticsEnabled: false, Tracking: { state: jest.fn(), prepare: jest.fn(), start: jest.fn() } }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = Tracking!.state as jest.Mock;
 let renderer: ReactTestRenderer;
@@ -29,6 +29,7 @@ test('native pause and completion change the mounted home card without starting 
   state.mockResolvedValue({ summary: { status: 'running' } });
   await act(async () => { renderer = create(createElement(InternalRunEntry)); });
   expect(text()).toContain('측정 중');
+  expect(text()).not.toContain('팀 테스트');
   state.mockResolvedValue({ summary: { status: 'paused' } });
   await act(async () => { jest.advanceTimersByTime(5000); });
   expect(text()).toContain('일시정지');

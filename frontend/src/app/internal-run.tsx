@@ -93,7 +93,7 @@ export default function InternalRunScreen() {
   const awaitingPermission = state?.phoneStartPending === true;
   const preparation = awaitingPermission ? '위치 권한 확인 중' : ready ? '현재 위치 확인됨' : preparing ? 'GPS 연결 중' : '시작하면 위치 연결';
   const watchSession = state?.watchWorkoutEnabled ? ({ running: '워치 측정 중', paused: '워치도 일시정지', permission: '워치 권한 확인 필요', blocked: '워치 측정 중단', starting: '워치 시작 중' } as Record<string, string>)[state.watchWorkoutState ?? ''] ?? '워치 연결 확인 중' : '워치 운동 연동 꺼짐';
-  const gpsMessage = !running ? '일시정지한 시간은 기록에 포함하지 않아요.' : current?.lastLocation == null ? 'GPS 연결 중 · 시간은 측정하고 있어요.' : clock - current.lastLocation > 10 ? 'GPS 최신값 확인 중 · 러닝은 계속돼요.' : 'GPS 수신 중 · 화면을 잠가도 계속 측정해요.';
+  const gpsMessage = !running ? '일시정지한 시간은 기록에 포함하지 않아요.' : current?.lastLocation == null ? 'GPS 연결 중이에요. 시간은 측정하고 있어요.' : clock - current.lastLocation > 10 ? 'GPS 최신값을 확인하고 있어요. 러닝은 계속돼요.' : 'GPS 수신 중이에요.\n화면을 잠가도 계속 측정해요.';
   const importedHeart = current && current.heartRate == null && current.lastHeart != null ? heartImportNotice(current) : null;
   const heartMessage = state?.healthHeartState === 'failed' ? '심박을 불러오지 못했어요. 건강 앱 권한을 확인해 주세요.' : state?.healthHeartState === 'authorizing' ? '심박 권한 확인 중이에요.' : running && current?.heartRate == null ? current?.lastHeart ? '최신 심박을 기다리고 있어요.' : state?.watchWorkoutEnabled ? '워치에서 새 심박을 기다리고 있어요.' : '건강 앱에 저장된 새 심박을 기다려요.' : null;
   const confirmFinish = async () => {
@@ -119,11 +119,11 @@ export default function InternalRunScreen() {
           <Text style={measureUI.statusNotice}>{gpsMessage}</Text>
           {heartMessage ? <Text style={measureUI.statusNotice}>{importedHeart ? `${importedHeart}. ` : ''}{heartMessage}</Text> : null}
           {state?.watchState === 'notInstalled' ? <Text style={measureUI.statusNotice}>워치 앱 설치·업데이트 필요</Text> : null}
-          {state?.watchWorkoutState === 'blocked' ? <Text style={styles.notice}>워치 측정이 중단됐어요. 아이폰 러닝은 계속돼요. 워치에서 다시 시작할 수 있어요.</Text> : null}
+          {state?.watchWorkoutState === 'blocked' ? <Text style={styles.notice}>{'워치 측정이 중단됐어요. 아이폰 러닝은 계속돼요.\n워치에서 다시 시작할 수 있어요.'}</Text> : null}
           {state?.watchWorkoutState === 'permission' ? <Text style={styles.notice}>워치 Runary에서 운동 연결 권한을 확인해 주세요.</Text> : null}
           {state?.healthHeartState === 'failed' && Tracking!.reconnectHealthHeart ? <Pressable accessibilityRole="button" style={styles.smallButton} disabled={busy} onPress={() => void act(() => Tracking!.reconnectHealthHeart!())}><Text style={styles.link}>심박 다시 불러오기</Text></Pressable> : null}
           {current.incomplete ? <Text style={styles.notice}>경로 일부가 누락됐을 수 있어요.</Text> : null}
-          {['disabled', 'unavailable'].includes(state?.liveActivityState ?? '') ? <Text style={styles.subtitle}>잠금화면 현황을 표시할 수 없어요. 앱 권한에서 실시간 현황 설정을 확인해 주세요.</Text> : null}
+          {['disabled', 'unavailable'].includes(state?.liveActivityState ?? '') ? <Text style={styles.subtitle}>{'잠금화면 현황을 표시할 수 없어요.\n앱 권한에서 실시간 현황 설정을 확인해 주세요.'}</Text> : null}
         </View>
       </> : <>
         <RunMap key={mapData.revision ?? 'prepare'} points={mapData.points} position={mapData.position} visible={mapVisible} clock={clock} height={Math.min(280, height * 0.32)} unavailable={!Tracking!.mapSnapshot} />
@@ -151,9 +151,9 @@ export default function InternalRunScreen() {
     </ScrollView>
     <View style={runUI.footer}>
       {state?.storageError && current ? <>
-        <Text style={styles.notice}>저장되지 않은 자료가 있어요. 마지막 저장: {current.lastSaved ? new Date(current.lastSaved * 1000).toLocaleTimeString('ko-KR') : '아직 없음'}</Text>
+        <Text style={styles.notice}>{'저장되지 않은 자료가 있어요.\n마지막 저장: '}{current.lastSaved ? new Date(current.lastSaved * 1000).toLocaleTimeString('ko-KR') : '아직 없음'}</Text>
         <ThemedButton title="저장 재시도" disabled={busy} onPress={() => void act(() => Tracking!.retrySave())} />
-        <ThemedButton title="마지막 저장분만 보관" variant="outline" disabled={busy || !current.lastSaved} onPress={() => Alert.alert('미저장 자료를 제외할까요?', '이미 저장된 기록은 보존합니다. 앱 종료 시 미저장 자료를 잃을 수 있어요.', [{ text: '취소', style: 'cancel' }, { text: '보관', onPress: () => void act(() => Tracking!.keepSaved()) }])} />
+        <ThemedButton title="마지막 저장분만 보관" variant="outline" disabled={busy || !current.lastSaved} onPress={() => Alert.alert('미저장 자료를 제외할까요?', '이미 저장된 기록은 보존해요.\n앱 종료 시 미저장 자료를 잃을 수 있어요.', [{ text: '취소', style: 'cancel' }, { text: '보관', onPress: () => void act(() => Tracking!.keepSaved()) }])} />
       </> : current ? <>
         {current.status === 'saving' ? <ThemedButton title="저장 재시도" disabled={busy} onPress={() => void act(() => Tracking!.retrySave())} /> : <View style={runUI.actions}>
           <RunAction title="종료" symbol="stop.fill" iconOnly disabled={busy} onPress={() => setFinishRunID(current.id)} />
@@ -166,9 +166,9 @@ export default function InternalRunScreen() {
     </View>
     <RunSheet visible={connectionsOpen && !current} title="워치와 건강 앱 연결" onClose={() => setConnectionsOpen(false)}>
       <Text style={styles.subtitle}>한 번 켜두면 러닝을 시작할 때 자동으로 연결해요.</Text>
-      <View style={measureUI.setting}><View style={measureUI.settingHeader}><Text style={measureUI.settingTitle}>워치 운동 연동</Text><Switch accessibilityLabel="워치 운동 연동" value={!!state?.watchWorkoutEnabled} disabled={busy || !Tracking!.setWatchWorkoutEnabled} trackColor={{ true: Colors.accent }} onValueChange={value => void act(() => Tracking!.setWatchWorkoutEnabled!(value))} /></View><Text style={styles.subtitle}>워치에서 심박을 측정하고 러닝 화면을 표시해요. 다른 워치 운동이 진행 중이면 종료될 수 있어요.</Text></View>
-      <View style={measureUI.setting}><View style={measureUI.settingHeader}><Text style={measureUI.settingTitle}>건강 앱 자동 저장</Text><Switch accessibilityLabel="건강 앱 자동 저장" value={!!state?.healthExportEnabled} disabled={busy || !Tracking!.setHealthExportEnabled} trackColor={{ true: Colors.accent }} onValueChange={value => void act(() => Tracking!.setHealthExportEnabled!(value))} /></View><Text style={styles.subtitle}>완료한 러닝을 건강 앱에 저장해요. 피트니스에서도 확인할 수 있고, 워치가 없어도 저장돼요.</Text></View>
-      <Text style={styles.subtitle}>연결하지 않아도 아이폰 측정과 저장은 계속할 수 있어요. 건강 심박 읽기는 운동 연동과 별개예요.</Text>
+      <View style={measureUI.setting}><View style={measureUI.settingHeader}><Text style={measureUI.settingTitle}>워치 운동 연동</Text><Switch accessibilityLabel="워치 운동 연동" value={!!state?.watchWorkoutEnabled} disabled={busy || !Tracking!.setWatchWorkoutEnabled} trackColor={{ true: Colors.accent }} onValueChange={value => void act(() => Tracking!.setWatchWorkoutEnabled!(value))} /></View><Text style={styles.subtitle}>{'워치에서 심박을 측정하고 러닝 화면을 표시해요.\n다른 워치 운동이 진행 중이면 종료될 수 있어요.'}</Text></View>
+      <View style={measureUI.setting}><View style={measureUI.settingHeader}><Text style={measureUI.settingTitle}>건강 앱 자동 저장</Text><Switch accessibilityLabel="건강 앱 자동 저장" value={!!state?.healthExportEnabled} disabled={busy || !Tracking!.setHealthExportEnabled} trackColor={{ true: Colors.accent }} onValueChange={value => void act(() => Tracking!.setHealthExportEnabled!(value))} /></View><Text style={styles.subtitle}>{'완료한 러닝을 건강 앱에 저장해요. 피트니스에서도 확인할 수 있어요.\n워치가 없어도 저장돼요.'}</Text></View>
+      <Text style={styles.subtitle}>{'연결하지 않아도 아이폰 측정과 저장은 계속할 수 있어요.\n건강 심박 읽기는 운동 연동과 별개예요.'}</Text>
       {error ? <Text style={styles.notice}>{error}</Text> : null}
       <ThemedButton title="완료" onPress={() => setConnectionsOpen(false)} />
     </RunSheet>
