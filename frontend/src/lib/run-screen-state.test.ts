@@ -28,6 +28,7 @@ let listener: (status: AppStateStatus) => void;
 const text = () => renderer.root.findAllByType(Text).map(node => node.props.children).flat().join(' ');
 beforeEach(() => {
   jest.clearAllMocks(); jest.useFakeTimers();
+  delete Tracking!.finishRun;
   Object.defineProperty(AppState, 'currentState', { configurable: true, writable: true, value: 'active' });
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => { listener = callback; return { remove: jest.fn() }; });
   (Tracking!.records as jest.Mock).mockResolvedValue({ records: [], damaged: [] });
@@ -109,4 +110,37 @@ test('finish sheet cancellation preserves the run and duplicate confirmation fin
   const confirm = renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '종료')!;
   await act(async () => { confirm.props.onPress(); confirm.props.onPress(); });
   expect(Tracking!.finish).toHaveBeenCalledTimes(1);
+});
+
+test('a finish sheet for a run cannot reappear or finish a replacement run', async () => {
+  const run = (id: string) => ({ ...snapshot, summary: { id, status: 'running', duration: 60, distance: 100 } });
+  state.mockResolvedValue(run('first'));
+  Tracking!.finish = jest.fn().mockResolvedValue(undefined);
+  await act(async () => { renderer = create(createElement(RunScreen)); });
+  await act(async () => { renderer.root.findAllByType(RunAction).find(node => node.props.title === '종료')!.props.onPress(); });
+  const oldConfirm = renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '종료')!.props.onPress;
+  state.mockResolvedValue(run('replacement'));
+  await act(async () => { jest.advanceTimersByTime(1000); });
+  expect(renderer.root.findAllByType(RunSheet).find(node => node.props.title === '러닝을 종료할까요?')!.props.visible).toBe(false);
+  await act(async () => { oldConfirm(); });
+  expect(Tracking!.finish).not.toHaveBeenCalled();
+});
+
+test('confirmation rechecks native identity before the next screen poll and sends a bound finish command', async () => {
+  const run = (id: string) => ({ ...snapshot, summary: { id, status: 'running', duration: 60, distance: 100 } });
+  state.mockResolvedValue(run('first'));
+  Tracking!.finishRun = jest.fn().mockResolvedValue(undefined);
+  Tracking!.finish = jest.fn().mockResolvedValue(undefined);
+  await act(async () => { renderer = create(createElement(RunScreen)); });
+  const open = async () => act(async () => { renderer.root.findAllByType(RunAction).find(node => node.props.title === '종료')!.props.onPress(); });
+  const confirm = () => renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '종료')!.props.onPress();
+  await open();
+  state.mockResolvedValue(run('replacement'));
+  await act(async () => { confirm(); });
+  expect(Tracking!.finishRun).not.toHaveBeenCalled();
+  await open();
+  await act(async () => { confirm(); confirm(); });
+  expect(Tracking!.finishRun).toHaveBeenCalledTimes(1);
+  expect(Tracking!.finishRun).toHaveBeenCalledWith('replacement');
+  expect(Tracking!.finish).not.toHaveBeenCalled();
 });

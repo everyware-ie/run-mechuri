@@ -59,6 +59,11 @@ struct TrackingWatchDisplay {
   func canStart(at time: Double) -> Bool {
     stateFresh(at: time) && startSupported && metrics.isEmpty && !startPending && ["idle", "ready"].contains(phonePhase)
   }
+  // Stop can be queued while disconnected, but only for the run the user confirmed.
+  func canControl(runID: String?) -> Bool {
+    guard let runID, metrics["id"] as? String == runID else { return false }
+    return ["running", "paused", "interrupted"].contains(metrics["status"] as? String ?? "")
+  }
   func heart(at time: Double) -> Double? {
     guard fresh(at: time), metrics["status"] as? String == "running",
           let measured = metrics["lastHeart"] as? Double, measured.isFinite,

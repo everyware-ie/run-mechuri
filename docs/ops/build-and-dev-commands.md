@@ -679,3 +679,9 @@ PR 128·130 머지 후 `codex/feature/tracking-screen-refinement`에서 측정 U
 아이폰 동봉 앱으로 워치 업데이트가 반영됐다. 실제 QA 로그의 `build:45,sync:4` 응답과 사용자의 새 첫 화면 확인으로 검증했다. 워치 측정 첫 페이지 배치·심박 표시, 워치 일시정지의 아이폰 반영과 아이폰 재개 후 워치 측정 중·심박 재수신, 3:01 기록의 심박 35건 저장을 확인했다. 기존 기록은 유지됐고 두 QA 러닝도 모두 종료했다. Mac의 직접 워치 개발 연결과 OS 자동 화면 복귀를 검증한 결과는 아니다.
 
 45번은 이번 로컬 개발 앱 번호다. EAS나 TestFlight에 새 빌드를 제출하지 않았다. 빌드 로그는 `/private/tmp/runary-watch-companion-refresh-build.log`, 최종 QA 사본은 `/private/tmp/runary-watch-ui-complete-20261102`에 있다. [검증 범위](../product/features/tracking-screen-refinement.md#워치-업데이트와-실기기-검증-완료)를 참고한다.
+
+### 같은 날 코드 리뷰 수정: 로컬 개발 빌드 46
+
+워치 제어 유지, 종료 확인의 기록 ID 검증과 심박 그래프 시간축을 수정했다. 같은 방식으로 세 타깃의 로컬 빌드 번호를 46으로 맞춰 전체 Debug 빌드·깊은 서명 검증을 완료했다. 생성 프로젝트의 번호는 원래 값으로 복원했다. 새 서명 자산 없이 아이폰에 `1.0.0(46)`을 업데이트 설치했다.
+
+기존 46건의 기록 파일은 보존됐으며, 아이폰에서 7초 QA 러닝의 종료 취소와 저장을 확인했다. Jest 381개와 Swift 184개, 타입 검사를 통과했고 린트 오류는 없다. 워치는 동봉 빌드했으며 권한 오류 상태의 새 상단 버튼 배치는 실기기에서 재현하지 않았다. TestFlight 제출과 main 머지는 하지 않았다. 빌드 로그는 `/private/tmp/runary-review-build46.log`다. [리뷰 결과](../product/features/tracking-screen-refinement.md#코드-리뷰와-수정)를 참고한다.

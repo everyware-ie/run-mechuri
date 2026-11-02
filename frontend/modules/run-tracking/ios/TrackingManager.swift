@@ -299,8 +299,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
       heartRate: summary.heartRate, lastHeart: summary.lastHeart, storageError: writeFailedAt != nil, actionError: liveActionError)
     liveActivity.publish(id: summary.id, state: state, force: force)
   }
-  func finish() throws {
+  func finish(expectedID: String? = nil) throws {
     try requireEnabled()
+    if let expectedID, engine?.id != expectedID { throw problem("러닝 상태가 바뀌었어요. 종료할 기록을 다시 확인해 주세요.") }
     guard let engine else { return }
     setWatchRequest(nil)
     if engine.status == "completed" { self.engine = nil; pending = []; phase = "idle"; watchState = "off"; syncWatch(); return }
@@ -715,7 +716,9 @@ final class TrackingManager: NSObject, CLLocationManagerDelegate, WCSessionDeleg
     try requireEnabled()
     let e = engine?.id == id ? engine! : try store!.load(id)
     if e !== engine, e.status == "running" { e.apply(TrackingEvent(kind: "interrupt", time: e.lastSaved ?? e.started)) }
-    return ["summary": json(e.summary(at: e.ended ?? (e === engine ? now : e.lastSaved ?? e.started))), "points": json(e.points), "heartChart": trackingHeartChart(e.hearts, started: e.started, ended: e.ended ?? now), "healthExport": healthExport.state(id)]
+    let snapshotAt = e.ended ?? (e === engine ? now : e.lastSaved ?? e.started)
+    let summary = e.summary(at: snapshotAt)
+    return ["summary": json(summary), "points": json(e.points), "heartChart": trackingHeartChart(e.hearts, summary: summary), "healthExport": healthExport.state(id)]
   }
   func delete(_ id: String) throws {
     try requireEnabled()

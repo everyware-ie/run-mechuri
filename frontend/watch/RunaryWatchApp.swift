@@ -123,7 +123,8 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
       if self?.refreshToken == token { self?.refreshToken = nil }
     }
   }
-  func request(_ command: String) {
+  func request(_ command: String, expectedRunID: String? = nil) {
+    if let expectedRunID, !display.canControl(runID: expectedRunID) { return }
     if command == "finish", let id = metrics["id"] as? String {
       pendingStop = ["kind": "stopRequest", "id": id, "sent": Date().timeIntervalSince1970]
       UserDefaults.standard.set(pendingStop, forKey: "RunaryPendingStop")
@@ -277,20 +278,30 @@ struct WatchRunView: View {
   @ObservedObject private var healthReader = WatchRun.shared.healthReader
   @Environment(\.scenePhase) private var scenePhase
   @State private var confirmFinish = false
+  @State private var finishRunID: String?
   private let accent = Color(red: 1, green: 0.35, blue: 0.17)
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { context in
       let now = context.date.timeIntervalSince1970
       let fresh = model.display.fresh(at: now)
       let status = model.metrics["status"] as? String ?? "idle"
+      let workoutAction = workout.needsPermission || workout.state == "blocked"
       if model.metrics["id"] != nil {
         TabView {
           GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 5) {
-              Text(header(status, fresh: fresh)).font(.system(size: 12, weight: .semibold)).foregroundStyle(status == "running" ? accent : .primary).lineLimit(1).minimumScaleFactor(0.7)
+              HStack(spacing: 4) {
+                Text(header(status, fresh: fresh)).font(.system(size: 12, weight: .semibold)).foregroundStyle(status == "running" ? accent : .primary).lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+                if workoutAction {
+                  Button { if workout.needsPermission { workout.requestPermission() } else { workout.retry() } } label: {
+                    Image(systemName: workout.needsPermission ? "exclamationmark.circle" : "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle())
+                  }.buttonStyle(.plain).tint(accent).accessibilityLabel(workout.needsPermission ? "워치 운동 연결" : "워치 측정 다시 시작").disabled(!fresh || model.pending || model.display.startPending)
+                }
+              }
               if status == "completed" { Label("기록 저장됨", systemImage: "checkmark.circle.fill").font(.caption2).foregroundStyle(accent) }
               HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(String(format: "%.2f", (model.metrics["distance"] as? Double ?? 0) / 1000)).font(.system(size: geometry.size.height < 180 ? 38 : 50, weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                Text(String(format: "%.2f", (model.metrics["distance"] as? Double ?? 0) / 1000)).font(.system(size: workoutAction ? (geometry.size.height < 180 ? 28 : 36) : (geometry.size.height < 180 ? 38 : 50), weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
                 Text("km").font(.caption2).foregroundStyle(.secondary)
               }.opacity(fresh || status == "completed" ? 1 : 0.45)
               HStack(alignment: .top, spacing: 5) {
@@ -302,16 +313,12 @@ struct WatchRunView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
               }.opacity(fresh || status == "completed" ? 1 : 0.45)
               Spacer(minLength: 0)
-              if workout.needsPermission {
-                Button("워치 운동 연결") { workout.requestPermission() }.font(.caption2)
-              } else if workout.state == "blocked" {
-                Button("워치 측정 다시 시작") { workout.retry() }.font(.caption2)
-              } else if model.pending || model.display.startPending {
+              if model.pending || model.display.startPending {
                 ProgressView().frame(maxWidth: .infinity)
                 Text("아이폰 반영 확인 중").font(.caption2).frame(maxWidth: .infinity)
-              } else if ["running", "paused", "interrupted"].contains(status) {
+              } else if model.display.canControl(runID: model.metrics["id"] as? String) {
                 HStack(spacing: 6) {
-                  Button { confirmFinish = true } label: { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 44).background(Color.gray.opacity(0.22), in: Capsule()) }
+                  Button { finishRunID = model.metrics["id"] as? String; confirmFinish = true } label: { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 44).background(Color.gray.opacity(0.22), in: Capsule()) }
                     .accessibilityLabel("종료").tint(.gray)
                   Button { model.request(status == "running" ? "pause" : "resume") } label: { Image(systemName: status == "running" ? "pause.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 44).background(status == "running" ? Color.gray.opacity(0.22) : accent, in: Capsule()).foregroundStyle(status == "running" ? Color.primary : Color.black) }
                     .accessibilityLabel(status == "running" ? "일시정지" : "재개").tint(status == "running" ? .gray : accent).disabled(!fresh)
@@ -360,13 +367,20 @@ struct WatchRunView: View {
     .onAppear { model.setActive(scenePhase == .active) }
     .onChange(of: scenePhase) { _, phase in model.setActive(phase == .active) }
     .onDisappear { model.setActive(false) }
+    .onChange(of: model.metrics["id"] as? String) { _, _ in confirmFinish = false; finishRunID = nil }
+    .onChange(of: model.metrics["status"] as? String) { _, _ in
+      if !model.display.canControl(runID: finishRunID) { confirmFinish = false; finishRunID = nil }
+    }
     .sheet(isPresented: $confirmFinish) {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           Text("러닝을\n종료할까요?").font(.title3).bold()
           Text(String(format: "%.2f km", (model.metrics["distance"] as? Double ?? 0) / 1000) + " · " + duration(Date())).font(.caption)
           Text("평균 " + pace(model.metrics["averagePace"] as? Double)).font(.caption).foregroundStyle(.secondary)
-          Button("종료") { confirmFinish = false; model.request("finish") }.tint(accent).disabled(model.pending)
+          Button("종료") {
+            let id = finishRunID; confirmFinish = false; finishRunID = nil
+            if let id { model.request("finish", expectedRunID: id) }
+          }.tint(accent).disabled(model.pending || !model.display.canControl(runID: finishRunID))
           Button("돌아가기") { confirmFinish = false }
         }
       }

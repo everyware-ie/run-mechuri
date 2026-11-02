@@ -56,6 +56,7 @@ public final class RunTrackingModule: Module {
     AsyncFunction("resume") { () throws in try TrackingManager.shared.resume() }.runOnQueue(.main)
     AsyncFunction("resumeImmediately") { () throws in try TrackingManager.shared.resumeImmediately() }.runOnQueue(.main)
     AsyncFunction("finish") { () throws in try TrackingManager.shared.finish() }.runOnQueue(.main)
+    AsyncFunction("finishRun") { (id: String) throws in try TrackingManager.shared.finish(expectedID: id) }.runOnQueue(.main)
     AsyncFunction("retrySave") { () throws in try TrackingManager.shared.retrySave() }.runOnQueue(.main)
     AsyncFunction("keepSaved") { () throws in try TrackingManager.shared.keepSaved() }.runOnQueue(.main)
     AsyncFunction("recover") { (id: String) throws in try TrackingManager.shared.recover(id) }.runOnQueue(.main)

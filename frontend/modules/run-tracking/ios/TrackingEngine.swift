@@ -61,6 +61,9 @@ struct TrackingHeart: Codable {
   var parentSampleID: String?
 }
 // Bounded display aggregates only; never fill gaps or alter saved HR samples.
+func trackingHeartChart(_ hearts: [TrackingHeart], summary: TrackingSummary) -> [[String: Double]] {
+  trackingHeartChart(hearts, started: summary.started, ended: summary.started + summary.elapsed)
+}
 func trackingHeartChart(_ hearts: [TrackingHeart], started: Double, ended: Double) -> [[String: Double]] {
   let span = ended - started
   guard started.isFinite, ended.isFinite, span.isFinite, span >= 0 else { return [] }

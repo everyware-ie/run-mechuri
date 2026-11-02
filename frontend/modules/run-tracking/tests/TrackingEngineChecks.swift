@@ -128,12 +128,15 @@ struct TrackingEngineChecks {
     check(watchDisplay.heart(at: 105) == 155, "Watch displays fresh phone HealthKit heart")
     check(watchDisplay.heart(at: 111) == nil, "Stale phone context never displays current heart")
     check(watchDisplay.duration(at: 125) == 40, "Disconnected Watch stops extrapolating time after 10 seconds")
+    check(watchDisplay.canControl(runID: displayID), "Disconnected display keeps an offline Stop for the same run")
+    check(!watchDisplay.canControl(runID: nil) && !watchDisplay.canControl(runID: UUID().uuidString), "A missing or changed confirmation ID cannot control a different run")
     var oldDisplay = displayPayload; oldDisplay["sent"] = 99.0; oldDisplay["status"] = "completed"
     check(!watchDisplay.accept(oldDisplay) && watchDisplay.metrics["status"] as? String == "running",
       "Delayed application context cannot replace newer Watch display")
     var pausedDisplay = displayPayload; pausedDisplay["sent"] = 106.0; pausedDisplay["status"] = "paused"
     check(watchDisplay.accept(pausedDisplay) && watchDisplay.duration(at: 110) == 30 && watchDisplay.heart(at: 110) == nil,
       "Paused phone run stops Watch duration and current heart without touching a workout")
+    check(watchDisplay.canControl(runID: displayID), "Paused phone GPS remains controllable without a Watch workout session")
     var lateHeartDisplay = displayPayload; lateHeartDisplay["sent"] = 107.0; lateHeartDisplay["lastHeart"] = 80.0
     check(watchDisplay.accept(lateHeartDisplay) && watchDisplay.heart(at: 108) == nil, "Fresh phone message does not revive stale HealthKit heart")
     var invalidDisplay = displayPayload; invalidDisplay["sent"] = Double.nan
@@ -144,6 +147,7 @@ struct TrackingEngineChecks {
       "Legacy direct-workout payload cannot switch the display app into a collection mode")
     check(watchDisplay.accept(["kind": "noRun", "sent": 201.0, "startSupported": true]) && watchDisplay.metrics.isEmpty,
       "Opening Watch after phone finalization shows no active workout")
+    check(!watchDisplay.canControl(runID: displayID), "A confirmation opened before finalization cannot stop a later run")
     check(watchDisplay.canStart(at: 202), "Confirmed idle state enables a Watch request without a reconnect action")
     check(!watchDisplay.canStart(at: 212), "A stale idle context cannot claim there is no phone run")
     check(!TrackingWatchDisplay().canStart(at: 100), "Before synchronization the Watch does not claim the phone is idle")
@@ -397,6 +401,15 @@ struct TrackingEngineChecks {
     check(trackingHeartChart(chartSamples, started: .nan, ended: 180).isEmpty, "Invalid chart intervals cannot overflow bucket indices")
     let many = (0...400).map { TrackingHeart(id: String($0), time: Double($0), bpm: 100, received: Double($0)) }
     check(trackingHeartChart(many, started: 0, ended: 400).count == 40, "Long runs have bounded chart output including the end boundary")
+    let pausedChart = TrackingEngine(id: UUID().uuidString, started: 100)
+    pausedChart.apply(TrackingEvent(kind: "heartSource", time: 100, detail: "health"))
+    pausedChart.apply(.healthHeart(parentID: UUID().uuidString, time: 110, received: 110, bpm: 90, source: "com.apple.health"))
+    pausedChart.apply(.healthHeart(parentID: UUID().uuidString, time: 190, received: 190, bpm: 120, source: "com.apple.health"))
+    pausedChart.apply(TrackingEvent(kind: "pause", time: 200))
+    let pausedSummary = pausedChart.summary(at: 900_000)
+    let frozenChart = trackingHeartChart(pausedChart.hearts, summary: pausedSummary)
+    check(pausedSummary.elapsed == 100 && frozenChart.count == 2, "Opening an old paused record retains separate heart windows within its frozen timeline")
+    check(frozenChart.last?["time"] == 190, "Chart positions and the displayed elapsed axis use the same cutoff after a long pause")
     print("Tracking engine and journal: \(count) checks passed (synthetic coordinates only)")
   }
 }

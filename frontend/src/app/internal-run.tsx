@@ -17,7 +17,7 @@ import { Tracking, trackingEnabled, type RunSummary, type TrackingState } from '
 export default function InternalRunScreen() {
   const { height } = useWindowDimensions();
   const [connectionsOpen, setConnectionsOpen] = useState(false);
-  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishRunID, setFinishRunID] = useState<string | null>(null);
   const [state, setState] = useState<TrackingState | null>(null);
   const [records, setRecords] = useState<RunSummary[]>([]);
   const [damaged, setDamaged] = useState<string[]>([]);
@@ -96,7 +96,13 @@ export default function InternalRunScreen() {
   const gpsMessage = !running ? '일시정지한 시간은 기록에 포함하지 않아요.' : current?.lastLocation == null ? 'GPS 연결 중 · 시간은 측정하고 있어요.' : clock - current.lastLocation > 10 ? 'GPS 최신값 확인 중 · 러닝은 계속돼요.' : 'GPS 수신 중 · 화면을 잠가도 계속 측정해요.';
   const importedHeart = current && current.heartRate == null && current.lastHeart != null ? heartImportNotice(current) : null;
   const heartMessage = state?.healthHeartState === 'failed' ? '심박을 불러오지 못했어요. 건강 앱 권한을 확인해 주세요.' : state?.healthHeartState === 'authorizing' ? '심박 권한 확인 중이에요.' : running && current?.heartRate == null ? current?.lastHeart ? '최신 심박을 기다리고 있어요.' : state?.watchWorkoutEnabled ? '워치에서 새 심박을 기다리고 있어요.' : '건강 앱에 저장된 새 심박을 기다려요.' : null;
-  const confirmFinish = async () => { const id = current?.id; await Tracking!.finish(); setFinishOpen(false); if (id) router.push(`/internal-run/${id}`); };
+  const confirmFinish = async () => {
+    const id = finishRunID;
+    if (!id || (await Tracking!.state()).summary?.id !== id) { setFinishRunID(null); return; }
+    if (Tracking!.finishRun) await Tracking!.finishRun(id);
+    else await Tracking!.finish();
+    setFinishRunID(null); router.push(`/internal-run/${id}`);
+  };
   return <SafeAreaView style={styles.safe}>
     <ScreenHeader title="러닝" right={<Pressable accessibilityRole="button" accessibilityLabel="앱 권한 확인" hitSlop={12} onPress={() => router.push('/app-permissions')}><SymbolView name="gearshape" size={19} tintColor={Colors.textMuted} /></Pressable>} />
     <ScrollView contentContainerStyle={[runUI.body, runUI.mapBody]}>
@@ -150,7 +156,7 @@ export default function InternalRunScreen() {
         <ThemedButton title="마지막 저장분만 보관" variant="outline" disabled={busy || !current.lastSaved} onPress={() => Alert.alert('미저장 자료를 제외할까요?', '이미 저장된 기록은 보존합니다. 앱 종료 시 미저장 자료를 잃을 수 있어요.', [{ text: '취소', style: 'cancel' }, { text: '보관', onPress: () => void act(() => Tracking!.keepSaved()) }])} />
       </> : current ? <>
         {current.status === 'saving' ? <ThemedButton title="저장 재시도" disabled={busy} onPress={() => void act(() => Tracking!.retrySave())} /> : <View style={runUI.actions}>
-          <RunAction title="종료" symbol="stop.fill" iconOnly disabled={busy} onPress={() => setFinishOpen(true)} />
+          <RunAction title="종료" symbol="stop.fill" iconOnly disabled={busy} onPress={() => setFinishRunID(current.id)} />
           <RunAction title={running ? '일시정지' : Tracking!.resumeImmediately || ready ? '재개' : preparing ? 'GPS 준비 중' : 'GPS 준비'} symbol={running ? 'pause.fill' : 'play.fill'} iconOnly primary={!running} disabled={busy || (!running && !Tracking!.resumeImmediately && preparing)} onPress={() => void act(() => running ? Tracking!.pause() : Tracking!.resumeImmediately ? Tracking!.resumeImmediately() : ready ? Tracking!.resume() : Tracking!.prepare())} />
         </View>}
       </> : <>
@@ -166,11 +172,11 @@ export default function InternalRunScreen() {
       {error ? <Text style={styles.notice}>{error}</Text> : null}
       <ThemedButton title="완료" onPress={() => setConnectionsOpen(false)} />
     </RunSheet>
-    <RunSheet visible={finishOpen && !!current} title="러닝을 종료할까요?" onClose={() => { if (!busy) setFinishOpen(false); }}>
+    <RunSheet visible={finishRunID != null && finishRunID === current?.id} title="러닝을 종료할까요?" onClose={() => { if (!busy) setFinishRunID(null); }}>
       {current ? <Text style={styles.text}>{(current.distance / 1000).toFixed(2)} km · {runTime(current.duration)} · 평균 {runPace(current.averagePace)}</Text> : null}
       <View style={{ gap: 12 }}><Text style={styles.text}>1. 아이폰에 기록 저장</Text>{state?.watchWorkoutEnabled ? <Text style={styles.text}>2. 워치 운동 종료 요청</Text> : null}{state?.healthExportEnabled ? <Text style={styles.text}>건강 앱에도 저장해요. 결과는 기록에서 확인할 수 있어요.</Text> : <Text style={styles.subtitle}>건강 앱 자동 저장은 꺼져 있어요.</Text>}</View>
       {error ? <Text style={styles.notice}>{error}</Text> : null}
-      <View style={runUI.actions}><ThemedButton title="돌아가기" variant="outline" style={{ flex: 1 }} disabled={busy} onPress={() => setFinishOpen(false)} /><ThemedButton title={busy ? '저장 중' : '종료'} style={{ flex: 1 }} disabled={busy} onPress={() => void act(confirmFinish)} /></View>
+      <View style={runUI.actions}><ThemedButton title="돌아가기" variant="outline" style={{ flex: 1 }} disabled={busy} onPress={() => setFinishRunID(null)} /><ThemedButton title={busy ? '저장 중' : '종료'} style={{ flex: 1 }} disabled={busy} onPress={() => void act(confirmFinish)} /></View>
     </RunSheet>
   </SafeAreaView>;
 }
