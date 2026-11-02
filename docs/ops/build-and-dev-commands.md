@@ -2,6 +2,16 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-02: 워치 예외 상황 수정 로컬 개발 빌드 48
+
+같은 측정 UI 브랜치에서 종료 요청의 ID·시각 보존과 대기 상태 표시를 수정했다. 실제 워치 제어 본문을 사용하는 `sh scripts/check-watch-exceptions.sh`의 33개 예외 검사를 추가했다. Apple API는 테스트 대역이며 SwiftUI 화면이나 실제 HealthKit 충돌을 대신 검증하지 않는다.
+
+기존 서명과 DerivedData로 세 타깃을 48번으로 빌드하고 깊은 서명을 검증했다. 생성 프로젝트의 세 `Info.plist`는 빌드 후 복원했으며 새 서명 자산이나 기기 등록은 없다. 아이폰에 업데이트 설치한 뒤 워치의 실제 `build:48,sync:4,launchHandled:true` 응답과 심박 수신을 확인했다.
+
+빌드 로그는 `/private/tmp/runary-watch-exceptions-build48.log`, 예외 검사 로그는 `/private/tmp/runary-watch-exceptions-final.log`다. 기존 기록의 설치 전 사본은 `/private/tmp/runary-watch-exception-before48`에 있다. [QA 범위](../product/features/tracking-screen-refinement.md#예외-상황-qa와-종료-요청-보존)를 참고한다. 새 TestFlight 제출이나 main 머지는 하지 않았다.
+
+워치에서 응답 지연 중 종료를 요청하고 아이폰 복구 후 같은 러닝의 종료 시각·단일 저장을 확인했다. 최종 사본 `/private/tmp/runary-watch48-exceptions-final`의 53건은 모두 완료됐으며 기존 51건의 기록 파일은 보존됐다. 두 QA를 모두 종료하고 워치 연동과 건강 자동 저장은 기존 꺼짐으로 복원했다.
+
 ## 2026-11-02: 워치 시작 보완 로컬 개발 빌드 47
 
 `codex/feature/tracking-screen-refinement`에서 명시적 운동 실행 요청 뒤의 백그라운드 세션 시작 조건을 보완했다. 기존 서명과 DerivedData를 재사용하고 아이폰·워치·잠금화면 타깃을 로컬 47번으로 빌드했다. 전체 Debug 빌드, 세 타깃 버전과 깊은 서명 검증 후 아이폰에 업데이트 설치했다. 생성 프로젝트의 `Info.plist`는 빌드 뒤 원본으로 복원했다. 새 인증서·프로파일·기기 등록은 없다.
