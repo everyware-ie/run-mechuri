@@ -13,8 +13,8 @@ import { CreationFlowProvider } from '@/state/creation-flow';
 
 SplashScreen.preventAutoHideAsync();
 
-// 2026-08-25 결정: 하단 탭을 쓰지 않는다. 홈 하나에 선형 루프.
-// [홈] → [기록 선택] → [배경 선택] → [편집] → [공유] (v0)
+// 2026-11-03 개정: 측정 빌드는 보관함/러닝 탭을 사용한다.
+// 제작·편집·공유는 루트 Stack에 남겨 탭 바가 나타나지 않게 한다.
 //
 // 디자인 "1a 야간 네온"(결정문 확정) — 다크 고정. 라이트/다크 전환 없음.
 // AnimatedSplashOverlay가 자체적으로 스플래시를 내리므로, 폰트 로딩 중에는
@@ -58,7 +58,9 @@ export default function RootLayout() {
               fullScreenGestureEnabled: false,
               gestureResponseDistance: { start: 24 },
             }}
-          />
+          >
+            <Stack.Screen name="(home)" options={{ headerShown: false }} />
+          </Stack>
         </CreationFlowProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

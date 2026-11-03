@@ -20,9 +20,9 @@ export function RunDisclosure({ label, open, onPress, children }: { label: strin
     </Pressable>{open ? <View style={runUI.disclosureContent}>{children}</View> : null}
   </View>;
 }
-export function RunAction({ title, symbol, primary = false, disabled = false, onPress }: { title: string; symbol: SymbolViewProps['name']; primary?: boolean; disabled?: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={({ pressed }) => [runUI.action, primary && runUI.actionPrimary, disabled && { opacity: 0.4 }, pressed && !disabled && { opacity: 0.75 }]}>
-    <SymbolView name={symbol} size={19} tintColor={primary ? Colors.accentText : Colors.text} /><Text style={[runUI.actionText, primary && { color: Colors.accentText }]}>{title}</Text>
+export function RunAction({ title, symbol, primary = false, disabled = false, iconOnly = false, onPress }: { title: string; symbol: SymbolViewProps['name']; primary?: boolean; disabled?: boolean; iconOnly?: boolean; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [runUI.action, primary && runUI.actionPrimary, disabled && { opacity: 0.4 }, pressed && !disabled && { opacity: 0.75 }]}>
+    <SymbolView name={symbol} size={iconOnly ? 25 : 19} tintColor={primary ? Colors.accentText : Colors.text} />{!iconOnly ? <Text style={[runUI.actionText, primary && { color: Colors.accentText }]}>{title}</Text> : null}
   </Pressable>;
 }
 export const runUI = StyleSheet.create({

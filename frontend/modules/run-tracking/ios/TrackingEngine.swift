@@ -60,6 +60,22 @@ struct TrackingHeart: Codable {
   var source: String?
   var parentSampleID: String?
 }
+// Bounded display aggregates only; never fill gaps or alter saved HR samples.
+func trackingHeartChart(_ hearts: [TrackingHeart], summary: TrackingSummary) -> [[String: Double]] {
+  trackingHeartChart(hearts, started: summary.started, ended: summary.started + summary.elapsed)
+}
+func trackingHeartChart(_ hearts: [TrackingHeart], started: Double, ended: Double) -> [[String: Double]] {
+  let span = ended - started
+  guard started.isFinite, ended.isFinite, span.isFinite, span >= 0 else { return [] }
+  let width = max(1, span / 40)
+  let groups = Dictionary(grouping: hearts.filter { $0.time.isFinite && $0.bpm.isFinite && $0.bpm > 0 && $0.time >= started && $0.time <= ended }) {
+    min(39, max(0, Int(($0.time - started) / width)))
+  }
+  return groups.keys.sorted().map { index in
+    let samples = groups[index]!
+    return ["time": started + Double(index) * width, "bpm": samples.reduce(0) { $0 + $1.bpm / Double(samples.count) }]
+  }
+}
 struct TrackingInterval: Codable {
   var start: Double
   var end: Double?

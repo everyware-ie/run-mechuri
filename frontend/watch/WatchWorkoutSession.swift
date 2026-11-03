@@ -17,14 +17,20 @@ final class WatchWorkoutSession: NSObject, ObservableObject, HKWorkoutSessionDel
   private var requesting = false
   private var recovering = false
   private var desiredPaused = false
+  private var launchedRunID: String?
+  private var launchExpires: Double = 0
   override init() {
     super.init()
     blockedID = UserDefaults.standard.string(forKey: "RunaryBlockedWorkout")
     timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.reconcile() }
   }
   var payload: [String: Any] { ["workoutState": state, "workoutRunID": runID ?? latest["id"] as? String ?? ""] }
-  func accept(_ message: [String: Any]) {
-    guard let sent = message["sent"] as? Double, sent.isFinite, sent > lastSent else { return }
+  func accept(_ message: [String: Any], launchedRunID: String? = nil) {
+    guard let sent = message["sent"] as? Double, sent.isFinite,
+          sent > lastSent || (sent == lastSent && launchedRunID != nil) else { return }
+    if let launchedRunID, message["id"] as? String == launchedRunID {
+      self.launchedRunID = launchedRunID; launchExpires = Date().timeIntervalSince1970 + 10
+    }
     lastSent = sent; latest = message; reconcile()
   }
   func requestPermission() {
@@ -79,8 +85,11 @@ final class WatchWorkoutSession: NSObject, ObservableObject, HKWorkoutSessionDel
       if !desiredPaused && session.state == .paused { session.resume() }
       return
     }
-    // Never resurrect a session from stale application context or in the background.
-    guard age <= 10, status == "running", WKExtension.shared().applicationState == .active else { publish("waiting"); return }
+    // A fresh HealthKit launch handshake can start in the background. Ordinary
+    // cached context still needs the foreground and cannot resurrect a session.
+    let explicitLaunch = launchedRunID == id && Date().timeIntervalSince1970 <= launchExpires
+    guard age <= 10, status == "running", WKExtension.shared().applicationState == .active || explicitLaunch else { publish("waiting"); return }
+    launchedRunID = nil; launchExpires = 0
     stop()
     do {
       let configuration = HKWorkoutConfiguration(); configuration.activityType = .running; configuration.locationType = .outdoor

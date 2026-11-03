@@ -11,6 +11,7 @@ import { Colors, Fonts, Spacing } from '@/constants/theme';
 import { markConnectedOnce } from '@/lib/connection-store';
 import { createSampleRun } from '@/lib/sample-run';
 import type { Point } from '@/lib/route-projection';
+import { trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
 
 // FRD: docs/specs/frd/run-record-selection.md §3 권한,
 // docs/specs/frd/sample-record-experience.md §1 진입.
@@ -76,13 +77,13 @@ export default function ConnectScreen() {
       <View style={styles.body}>
         <Text style={styles.title}>{'달린 길이\n그림으로 남는다'}</Text>
         <Text style={styles.subtitle}>
-          이미 기록해 둔 러닝을 불러온다. 이 앱은 달리기를 새로 기록하지 않는다.
+          {trackingEnabled ? '러닝을 직접 기록하거나\n건강 앱 기록과 샘플로 영상을 만들어 보세요.' : '이미 기록해 둔 러닝을 불러온다. 이 앱은 달리기를 새로 기록하지 않는다.'}
         </Text>
 
         <View style={styles.actions}>
           <ThemedButton title="러너리 시작하기" onPress={handleConnect} />
           <SampleRunEntry fromWelcome />
-          <InternalRunEntry />
+          <InternalRunEntry fromWelcome />
           <PrivacyPolicyLink />
         </View>
       </View>

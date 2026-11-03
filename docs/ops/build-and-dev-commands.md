@@ -2,6 +2,57 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-03: 보관함과 러닝 탭 TestFlight 1.0.1(47)
+
+사용자가 하단 탭과 경로 아이콘을 선택하고 [FRD](../specs/frd/home-running-tabs.md) 2~4절의 구현을 승인했다. 같은 측정 UI 브랜치에서 두 화면을 탭으로 연결하고 편집의 경로 아이콘을 공유했다. 첫 실행 안내의 낡은 측정 제외 문구와 안내 반복 경로도 리뷰에서 수정했다.
+
+전체 Jest 53개 묶음 391개, 타입·린트·구성·문서 검사와 iOS Hermes 번들 생성이 통과했다. 린트는 오류 0개와 기존 경고 30개다. 실기기 탭 전환과 측정 중 복귀를 확인했으며 자세한 범위는 [구현 노트](../product/features/home-running-tabs.md)에 남긴다.
+
+기존 서명 자산을 고정하는 `--freeze-credentials`로 1.0.0(46)을 요청해 계약과 서명 준비를 통과했다. 이어 성공한 Apple 조회에서는 기존 39번이 `READY_FOR_DISTRIBUTION`으로 바뀌었다. 새 정식 제출에 사용할 수 있도록 46번 빌드를 취소하고 앱 버전을 1.0.1로 올렸다. 기존 버전의 빌드 선택은 유지했고 공개 문서의 본문과 수정 시각도 전후 동일하다.
+
+- 새 버전: `1.0.1(47)`. 프로필과 채널은 `internal-tracking`이며 측정 플래그를 포함한다.
+- 소스: `1b55232d2a7bf53a8db3f7cffc0f0c6d41a63053`.
+- EAS 빌드: `a9a9548b-0cce-4abe-bc80-8df2b2af0dc3`, `FINISHED`. 생성부터 완료까지 약 8분 9초다.
+- IPA: `/private/tmp/runary-tabs-1.0.1-47.ipa`. SHA-256은 `c63fbfb4ffbc2c908d37fe9475371366caefde6d878e214d543d17f21ac41aa2`다.
+
+최종 IPA에서 아이폰·워치·잠금화면 확장 세 타깃의 버전과 번호가 모두 일치했다. 측정 플래그, 배경 위치, 워치 운동 처리, 실시간 현황, 위치·동작·건강 권한 설명과 개인정보 매니페스트 13개를 확인했다. 시스템 신뢰 저장소를 이용한 깊은 서명 검증도 통과했다.
+
+테스트 안내문 자동 등록은 EAS 요금제 제한으로 접수 전에 실패해 해당 옵션만 제외했다. 같은 빌드 ID로 다시 요청한 제출 ID는 `fe9913d3-7975-414c-aaf5-40c37829b5e6`이며 최종 상태는 `FINISHED`다. 새 테스터 그룹을 만들지 않았다.
+
+제출 대기열 뒤 Apple 업로드를 완료했다. 전체 상태 조회에서 Apple 500 오류가 반복돼 Connect 화면과 빌드만 읽는 API로 확인했다. Apple 빌드 ID `2db16544-ab7b-457a-a44c-c01e4aff5b4b`는 **`1.0.1(47) / VALID / IN_BETA_TESTING / expired:false`**다. 기존 내부 그룹 `Team (Expo)`의 테스터 3명에게 연결된 것도 화면에서 확인했다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 외부 그룹이나 정식 제출 빌드는 바꾸지 않았다.
+
+최종 조회는 `/private/tmp/runary-tabs-build-apple-status.json`, 구성 검사는 `/private/tmp/runary-tabs-47-ipa-check.json`, 제출 로그는 `/private/tmp/runary-tabs-submit47-retry.log`에 있다. 실제 TestFlight 재설치 검증은 이번 배포에서 수행하지 않았으며 개발 앱의 실기기 QA와 구분한다.
+
+## 2026-11-02~03: 측정 UI 최종 검토와 TestFlight 중단
+
+측정 브랜치의 `41c627a`에서 안내 문구와 줄바꿈을 다듬고, 스토어 빌드의 팀 테스트 배지·진단을 숨겼다. 기존 전체 Jest 381개와 새 표시 조건을 포함한 관련 14개, 타입·린트·구성 검사를 통과했다. 기존 Swift 225개와 개발 앱 47·48의 실기기 QA 근거는 유지한다.
+
+별도 깨끗한 체크아웃에서 `internal-tracking` 스토어 빌드를 요청했다. EAS 번호는 44에서 45로 증가했지만 Apple 개발자 계약 동의 요구로 서명 준비가 실패했다. 계정 소유자 Jimin Kim이 최신 Program License Agreement에 직접 동의해야 한다. **새 EAS 빌드 ID·IPA·TestFlight 등록은 없다.**
+
+대화형 자격 증명 관리 명령도 자동 승인 검토에서 거절돼 실행하지 않았다. 새 서명 자산, 기기 등록과 계약 동의는 진행하지 않았다. 기존 정식 심사 `1.0.0(39) / WAITING_FOR_REVIEW`는 전후 조회에서 같고 공개 문서도 변경하지 않았다.
+
+[배포 재개와 다음 정식 심사 준비](measurement-release-2026-11-02.md)에 고정 소스, 검사 결과, 실패 로그와 비공개 Notion 초안을 모았다. 계약 동의 뒤 새로 생성되는 빌드 ID로 업로드하고 Apple 내부 설치 가능 상태를 확인한 뒤 번호를 안내한다.
+
+## 2026-11-02: 워치 예외 상황 수정 로컬 개발 빌드 48
+
+같은 측정 UI 브랜치에서 종료 요청의 ID·시각 보존과 대기 상태 표시를 수정했다. 실제 워치 제어 본문을 사용하는 `sh scripts/check-watch-exceptions.sh`의 33개 예외 검사를 추가했다. Apple API는 테스트 대역이며 SwiftUI 화면이나 실제 HealthKit 충돌을 대신 검증하지 않는다.
+
+기존 서명과 DerivedData로 세 타깃을 48번으로 빌드하고 깊은 서명을 검증했다. 생성 프로젝트의 세 `Info.plist`는 빌드 후 복원했으며 새 서명 자산이나 기기 등록은 없다. 아이폰에 업데이트 설치한 뒤 워치의 실제 `build:48,sync:4,launchHandled:true` 응답과 심박 수신을 확인했다.
+
+빌드 로그는 `/private/tmp/runary-watch-exceptions-build48.log`, 예외 검사 로그는 `/private/tmp/runary-watch-exceptions-final.log`다. 기존 기록의 설치 전 사본은 `/private/tmp/runary-watch-exception-before48`에 있다. [QA 범위](../product/features/tracking-screen-refinement.md#예외-상황-qa와-종료-요청-보존)를 참고한다. 새 TestFlight 제출이나 main 머지는 하지 않았다.
+
+워치에서 응답 지연 중 종료를 요청하고 아이폰 복구 후 같은 러닝의 종료 시각·단일 저장을 확인했다. 최종 사본 `/private/tmp/runary-watch48-exceptions-final`의 53건은 모두 완료됐으며 기존 51건의 기록 파일은 보존됐다. 두 QA를 모두 종료하고 워치 연동과 건강 자동 저장은 기존 꺼짐으로 복원했다.
+
+## 2026-11-02: 워치 시작 보완 로컬 개발 빌드 47
+
+`codex/feature/tracking-screen-refinement`에서 명시적 운동 실행 요청 뒤의 백그라운드 세션 시작 조건을 보완했다. 기존 서명과 DerivedData를 재사용하고 아이폰·워치·잠금화면 타깃을 로컬 47번으로 빌드했다. 전체 Debug 빌드, 세 타깃 버전과 깊은 서명 검증 후 아이폰에 업데이트 설치했다. 생성 프로젝트의 `Info.plist`는 빌드 뒤 원본으로 복원했다. 새 인증서·프로파일·기기 등록은 없다.
+
+실제 워치 응답 `build:47,sync:4,launchHandled:true`와 심박 수신, 사용자의 앱 목록 이후 측정 화면 자동 복귀 확인을 받았다. 아이폰 앱 응답을 40초 멈췄다가 자동 복구한 뒤 같은 러닝의 새 심박도 수신했다. Mac의 워치 직접 개발 연결은 여전히 복구되지 않았으며 동봉 앱 업데이트로 확인했다.
+
+빌드 로그는 `/private/tmp/runary-watch-handoff-build47.log`, Swift 검사 로그는 `/private/tmp/runary-watch-handoff-swift.log`다. [구현 노트](../product/features/tracking-screen-refinement.md#로컬-47번의-시작과-자동-복귀-재검증)에 실기기 범위와 남은 항목을 기록했다. 47번은 로컬 개발 앱 번호이며 새 TestFlight 제출이나 main 머지는 없다.
+
+종료 후 재시작도 `requested:reachable` 요청 성공과 새 심박 수신을 확인했다. 최종 기기 사본 `/private/tmp/runary-watch47-final-20261102`의 51건은 모두 완료 상태이며 QA 전 47건의 파일은 변경되지 않았다.
+
 ## 2026-10-25: 앱 재개와 현황 복구 실기기 QA
 
 [PR #125](https://github.com/everyware-ie/run-mechuri/pull/125)의 `ce89946`에서 내부 개발 앱을 빌드했다. 기존 `/private/tmp/runary-live-build` DerivedData와 개발 인증서·프로파일을 재사용했으며 아이폰·워치·잠금화면 확장의 iphoneos Debug 빌드와 깊은 서명 검증을 통과했다. 새 인증서나 기기 등록은 없다.
@@ -664,3 +715,24 @@ LAN 8081 개발 서버에서 자체 측정 후 건강 저장을 검증했다. Ap
 기존 아이폰·워치·잠금화면 배포 인증서와 프로파일을 재사용했다. 타입 검사, 린트 오류 0개(기존 경고 30개), 공개/내부 설정과 확장 생성 검사, 문서 검사를 통과했다. 실기기에서 워치 심박 수신과 기존 운동에 심박 13개 연결, 건강 저장 완료 및 운동 중복 없음을 확인했다. 전체 코드 리뷰를 완료했다고 간주하지 않는다. 평균 심박 표시 차이, 워치 화면 자동 복귀와 건강 경로 구간 표시는 남은 검증이다.
 
 배포 IPA의 아이폰·워치·잠금화면 확장 버전이 모두 44번이며, 내부 측정과 Live Activity 설정 및 깊은 서명 검증을 통과했다. IPA SHA-256은 `a9758e41b8de3fd191ee16244090811be910a311f581cb1f1f978006eade0630`이다. Apple 업로드 시각은 2026-10-26 21:56 KST다. 업로드 직후 조회에는 44번이 아직 나타나지 않았다. 2026-10-27 `eas submit:status` 조회에서 `VALID / IN_BETA_TESTING`, 미만료를 확인했다. 등록된 내부 테스터는 TestFlight에서 받을 수 있다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 공개 링크·외부 그룹에는 배정하지 않았다.
+
+
+## 2026-11-02: 시안 기반 측정 UI 개발 앱 설치
+
+PR 128·130 머지 후 `codex/feature/tracking-screen-refinement`에서 측정 UI를 개선했다. 새 건강 기록 캐시 Swift 파일을 반영하기 위해 기존 iOS 프로젝트에서 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 pod install`을 실행했다. 기존 인증서와 프로파일로 아이폰·워치·잠금화면 전체 Debug 빌드와 깊은 서명 검증을 통과했다.
+
+최종 `1.0.0(1)` 개발 앱을 iPhone 11 Pro에 업데이트 설치했다. LAN 개발 서버는 192.168.0.7:8081이다. Mac 잠금 해제 후 미러링에서 준비·연결 시트·시작·일시정지·재개·종료 취소·저장과 기존 5.41km 기록의 심박 그래프·영상 제작 진입을 확인했다. 새 QA 기록은 39초·0km이며 기존 43건의 파일은 변경되지 않았다. 워치 직접 설치와 실물 화면 확인은 연결이 끊겨 남아 있다. 새 TestFlight 제출은 없다. [구현 노트](../product/features/tracking-screen-refinement.md)의 최종 검증 범위를 참고한다.
+
+### 같은 날 후속: 동봉 워치 업데이트용 로컬 개발 빌드 45
+
+워치 재시동 뒤에도 CoreDevice 직접 설치가 연결 시간 초과로 실패했다. 기능 소스는 유지하고 생성된 iOS 프로젝트의 세 `Info.plist` 빌드 번호를 임시로 45로 맞췄다. 기존 빌드 명령에 `CURRENT_PROJECT_VERSION=45`를 추가해 아이폰·워치·잠금화면을 함께 빌드했으며, 작업 후 생성 프로젝트의 원본 번호를 복원했다. 전체 Debug 빌드·깊은 서명 검증을 통과한 `1.0.0(45)`를 아이폰에 업데이트 설치했다. 새 인증서·프로파일·기기 등록은 사용하지 않았다.
+
+아이폰 동봉 앱으로 워치 업데이트가 반영됐다. 실제 QA 로그의 `build:45,sync:4` 응답과 사용자의 새 첫 화면 확인으로 검증했다. 워치 측정 첫 페이지 배치·심박 표시, 워치 일시정지의 아이폰 반영과 아이폰 재개 후 워치 측정 중·심박 재수신, 3:01 기록의 심박 35건 저장을 확인했다. 기존 기록은 유지됐고 두 QA 러닝도 모두 종료했다. Mac의 직접 워치 개발 연결과 OS 자동 화면 복귀를 검증한 결과는 아니다.
+
+45번은 이번 로컬 개발 앱 번호다. EAS나 TestFlight에 새 빌드를 제출하지 않았다. 빌드 로그는 `/private/tmp/runary-watch-companion-refresh-build.log`, 최종 QA 사본은 `/private/tmp/runary-watch-ui-complete-20261102`에 있다. [검증 범위](../product/features/tracking-screen-refinement.md#워치-업데이트와-실기기-검증-완료)를 참고한다.
+
+### 같은 날 코드 리뷰 수정: 로컬 개발 빌드 46
+
+워치 제어 유지, 종료 확인의 기록 ID 검증과 심박 그래프 시간축을 수정했다. 같은 방식으로 세 타깃의 로컬 빌드 번호를 46으로 맞춰 전체 Debug 빌드·깊은 서명 검증을 완료했다. 생성 프로젝트의 번호는 원래 값으로 복원했다. 새 서명 자산 없이 아이폰에 `1.0.0(46)`을 업데이트 설치했다.
+
+기존 46건의 기록 파일은 보존됐으며, 아이폰에서 7초 QA 러닝의 종료 취소와 저장을 확인했다. Jest 381개와 Swift 184개, 타입 검사를 통과했고 린트 오류는 없다. 워치는 동봉 빌드했으며 권한 오류 상태의 새 상단 버튼 배치는 실기기에서 재현하지 않았다. TestFlight 제출과 main 머지는 하지 않았다. 빌드 로그는 `/private/tmp/runary-review-build46.log`다. [리뷰 결과](../product/features/tracking-screen-refinement.md#코드-리뷰와-수정)를 참고한다.

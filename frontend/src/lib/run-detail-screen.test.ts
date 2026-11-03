@@ -9,9 +9,12 @@ import { ThemedButton } from '@/components/ui';
 jest.setTimeout(15_000);
 
 let mockId = 'a';
+const mockSelect = jest.fn();
 // Jest hoists module factories before imports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ id: mockId }), useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { back: jest.fn() } }));
+jest.mock('expo-router', () => ({ useLocalSearchParams: () => ({ id: mockId }), useFocusEffect: (callback: () => unknown) => require('react').useEffect(callback, [callback]), router: { back: jest.fn(), push: jest.fn() } }));
+jest.mock('@/state/creation-flow', () => ({ useCreationFlow: () => ({ setSelectedRun: mockSelect }) }));
+jest.mock('expo-symbols', () => ({ SymbolView: () => null }));
 jest.mock('expo-device', () => ({ modelName: 'test', osName: 'iOS', osVersion: 'test' }));
 jest.mock('@/components/run-map', () => ({ RunMap: () => null }));
 jest.mock('@/components/screen-header', () => ({ ScreenHeader: () => null }));
@@ -25,7 +28,7 @@ const text = () => renderer.root.findAllByType(Text).map(node => node.props.chil
 const record = (id: string) => ({ summary: { id, started: 1, status: 'completed', duration: 30, distance: 100, segments: 1, steps: 0, maxSampleGap: 0, maxReceiptGap: 0, rejected: {}, errors: [] }, points: [] });
 beforeEach(() => {
   jest.clearAllMocks(); mockId = 'a';
-  detail.mockReset();
+  detail.mockReset(); mockSelect.mockResolvedValue(undefined);
   (Tracking!.refreshHealthHeart as jest.Mock).mockReset();
   Object.defineProperty(AppState, 'currentState', { configurable: true, writable: true, value: 'active' });
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, callback) => { listener = callback; return { remove: jest.fn() }; });
@@ -90,4 +93,28 @@ test('return from settings reimports heart history without opening a permission 
   await act(async () => { AppState.currentState = 'background'; listener('background'); });
   await act(async () => { AppState.currentState = 'active'; listener('active'); });
   expect(Tracking!.refreshHealthHeart).toHaveBeenCalledTimes(2);
+});
+
+
+test('a record without a drawable route cannot enter video creation', async () => {
+  detail.mockResolvedValue(record('a'));
+  await act(async () => { renderer = create(createElement(RunDetail)); });
+  const button = renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '이 기록으로 영상 만들기');
+  expect(button?.props.disabled).toBe(true);
+  expect(mockSelect).not.toHaveBeenCalled();
+});
+
+test('leaving the detail while its route loads cannot select a previous run', async () => {
+  const drawable = { ...record('a'), summary: { ...record('a').summary, hasDrawableRoute: true } };
+  detail.mockResolvedValue(drawable);
+  (Tracking as unknown as { editorRoutes: boolean }).editorRoutes = true;
+  await act(async () => { renderer = create(createElement(RunDetail)); });
+  let resolve!: (value: unknown) => void;
+  detail.mockReturnValueOnce(new Promise(yes => { resolve = yes; }));
+  const button = renderer.root.findAllByType(ThemedButton).find(node => node.props.title === '이 기록으로 영상 만들기')!;
+  await act(async () => { button.props.onPress(); });
+  mockId = 'b'; detail.mockResolvedValue(record('b'));
+  await act(async () => { renderer.update(createElement(RunDetail)); });
+  await act(async () => { resolve(drawable); });
+  expect(mockSelect).not.toHaveBeenCalled();
 });

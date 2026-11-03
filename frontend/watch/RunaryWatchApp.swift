@@ -16,9 +16,7 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate {
   func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
     // The latest phone state and explicit opt-in decide whether to start a workout.
     DispatchQueue.main.async {
-      WatchRun.shared.launchHandled = true
-      WatchRun.shared.healthReader.refreshPermission()
-      WatchRun.shared.refreshFromPhone(force: true)
+      WatchRun.shared.handlePhoneLaunch()
     }
   }
 }
@@ -42,10 +40,12 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
      "launchHandled": launchHandled, "syncVersion": 4].merging(workout.payload) { _, new in new }
   }
   private var stopSendToken: UUID?
-  private var pendingStop: [String: Any]? = UserDefaults.standard.dictionary(forKey: "RunaryPendingStop")
+  @Published private var pendingStop: [String: Any]? = UserDefaults.standard.dictionary(forKey: "RunaryPendingStop")
+  var stopping: Bool { pendingStop != nil }
   private var active = false
   private var timer: Timer?
   private var refreshToken: UUID?
+  private var phoneLaunchPermit = TrackingWatchLaunchPermit()
   private var commandToken: UUID?
   private var lastAttempt = -Double.greatestFiniteMagnitude
   private var deleted = Set<String>()
@@ -62,7 +62,7 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
     healthReader.deliver = { [weak self] id, samples, deleted in self?.enqueueHealth(id: id, samples: samples, deleted: deleted) }
     if WCSession.isSupported() { WCSession.default.delegate = self; WCSession.default.activate() }
   }
-  @discardableResult private func accept(_ payload: [String: Any]) -> Bool {
+  @discardableResult private func accept(_ payload: [String: Any], phoneLaunchToken: UUID? = nil) -> Bool {
     if payload["kind"] as? String == "stopAck", payload["id"] as? String == pendingStop?["id"] as? String {
       pendingStop = nil; UserDefaults.standard.removeObject(forKey: "RunaryPendingStop"); error = nil; return true
     }
@@ -86,9 +86,10 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
     }
     if let id = payload["id"] as? String, deleted.contains(id) { return false }
     guard display.accept(payload) else { return false }
-    workout.accept(payload)
+    let launchedRunID = phoneLaunchToken.flatMap { phoneLaunchPermit.consume($0, payload: payload, at: Date().timeIntervalSince1970) }
+    workout.accept(payload, launchedRunID: launchedRunID)
     healthReader.sync(display, at: Date().timeIntervalSince1970)
-    error = nil
+    error = stopping ? "종료 요청 전달 중" : nil
     return true
   }
   func setActive(_ value: Bool) {
@@ -102,19 +103,28 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
       self?.refreshFromPhone(); self?.flushHealthOutbox(); self?.flushStop()
     }
   }
+  func handlePhoneLaunch() {
+    launchHandled = true
+    phoneLaunchPermit.begin(at: Date().timeIntervalSince1970)
+    // Replies requested before the HealthKit callback are not a launch handshake.
+    refreshToken = nil
+    healthReader.refreshPermission()
+    refreshFromPhone(force: true)
+  }
   func refreshFromPhone(force: Bool = false) {
     guard WCSession.default.activationState == .activated else { return }
     _ = accept(WCSession.default.receivedApplicationContext)
     let now = Date().timeIntervalSince1970
     guard refreshToken == nil, force || now - lastAttempt >= 3 else { return }
     let token = UUID(); refreshToken = token; lastAttempt = now
+    let launchToken = phoneLaunchPermit.token
     // A Watch message can wake the phone in the background. Do not silently
     // skip the request based on a cached reachability check; handle its result.
     var message = handshake; message["kind"] = "displayReady"; message["sent"] = now
     WCSession.default.sendMessage(message, replyHandler: { [weak self] payload in
       DispatchQueue.main.async {
         guard let self, self.refreshToken == token else { return }
-        self.refreshToken = nil; _ = self.accept(payload)
+        self.refreshToken = nil; _ = self.accept(payload, phoneLaunchToken: launchToken)
       }
     }, errorHandler: { [weak self] _ in
       DispatchQueue.main.async { if self?.refreshToken == token { self?.refreshToken = nil } }
@@ -123,8 +133,11 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
       if self?.refreshToken == token { self?.refreshToken = nil }
     }
   }
-  func request(_ command: String) {
+  func request(_ command: String, expectedRunID: String? = nil) {
+    if let expectedRunID, !display.canControl(runID: expectedRunID) { return }
     if command == "finish", let id = metrics["id"] as? String {
+      // Retries retain the original record and stop time until its own ack.
+      guard pendingStop == nil else { flushStop(); return }
       pendingStop = ["kind": "stopRequest", "id": id, "sent": Date().timeIntervalSince1970]
       UserDefaults.standard.set(pendingStop, forKey: "RunaryPendingStop")
       workout.stopLocally(); error = "종료 요청 전달 중"; flushStop(); return
@@ -189,7 +202,7 @@ final class WatchRun: NSObject, ObservableObject, WCSessionDelegate {
     }
   }
   func sessionReachabilityDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { [weak self] in self?.refreshFromPhone(force: true); self?.flushHealthOutbox() }
+    DispatchQueue.main.async { [weak self] in self?.refreshFromPhone(force: true); self?.flushHealthOutbox(); self?.flushStop() }
   }
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
     DispatchQueue.main.async { [weak self] in _ = self?.accept(userInfo) }
@@ -277,93 +290,130 @@ struct WatchRunView: View {
   @ObservedObject private var healthReader = WatchRun.shared.healthReader
   @Environment(\.scenePhase) private var scenePhase
   @State private var confirmFinish = false
+  @State private var finishRunID: String?
+  private let accent = Color(red: 1, green: 0.35, blue: 0.17)
   var body: some View {
     TimelineView(.periodic(from: .now, by: 1)) { context in
       let now = context.date.timeIntervalSince1970
       let fresh = model.display.fresh(at: now)
-      let running = model.metrics["status"] as? String == "running"
-      ScrollView {
-        Text("Runary").font(.headline).foregroundStyle(Color.orange)
-        if workout.needsPermission {
-          Button("워치 운동 연결") { workout.requestPermission() }
-        }
-        if workout.state == "blocked" {
-          Text("워치 측정이 중단됐어요. 아이폰 기록은 계속돼요.").font(.caption2)
-          Button("워치 측정 다시 시작") { workout.retry() }
-        }
-        if model.metrics["id"] != nil {
-          let heart = model.display.heart(at: now)
-          Text(String(format: "%.2f", (model.metrics["distance"] as? Double ?? 0) / 1000))
-            .font(.system(size: 46, weight: .bold)).monospacedDigit()
-          Text("km").font(.caption).foregroundStyle(.secondary)
-          HStack(alignment: .top, spacing: 8) {
-            metric("시간", duration(context.date))
-            metric("평균 페이스", pace(model.metrics["averagePace"] as? Double))
-            metric("♥ bpm", heart.map { String(Int($0.rounded())) } ?? "-")
-          }
-          Text(runMessage).font(.caption2).foregroundStyle(.secondary)
-          if healthReader.needsPermission {
-            Button("건강 심박 연결") { healthReader.requestPermission() }.disabled(healthReader.requesting)
-          }
-          if running { Text(healthReader.message).font(.caption2).foregroundStyle(.secondary) }
-          if !fresh { Text("아이폰 상태를 자동으로 확인하고 있어요.").font(.caption2).foregroundStyle(.orange) }
-          else if running && heart == nil {
-            Text(model.metrics["lastHeart"] == nil ? "건강 앱에 새 심박이 저장되면 표시해요." : "심박 동기화가 늦어지고 있어요.")
-              .font(.caption2).foregroundStyle(.secondary)
-          }
-          if ["running", "paused", "interrupted"].contains(model.metrics["status"] as? String ?? ""), !model.display.startPending {
-            HStack {
-              Button { model.request(running ? "pause" : "resume") } label: { Image(systemName: running ? "pause.fill" : "play.fill").frame(minWidth: 44, minHeight: 44) }
-                .tint(.orange).accessibilityLabel(running ? "일시정지" : "재개").disabled(model.pending || !fresh)
-              Button { confirmFinish = true } label: { Image(systemName: "stop.fill").frame(minWidth: 44, minHeight: 44) }
-                .accessibilityLabel("종료").disabled(model.pending)
+      let status = model.metrics["status"] as? String ?? "idle"
+      let workoutAction = workout.needsPermission || workout.state == "blocked"
+      if model.metrics["id"] != nil {
+        TabView {
+          GeometryReader { geometry in
+            VStack(alignment: .leading, spacing: 5) {
+              HStack(spacing: 4) {
+                Text(header(status, fresh: fresh)).font(.system(size: 12, weight: .semibold)).foregroundStyle(status == "running" ? accent : .primary).lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+                if workoutAction {
+                  Button { if workout.needsPermission { workout.requestPermission() } else { workout.retry() } } label: {
+                    Image(systemName: workout.needsPermission ? "exclamationmark.circle" : "arrow.clockwise").frame(width: 44, height: 44).contentShape(Rectangle())
+                  }.buttonStyle(.plain).tint(accent).accessibilityLabel(workout.needsPermission ? "워치 운동 연결" : "워치 측정 다시 시작").disabled(!fresh || model.pending || model.display.startPending || model.stopping)
+                }
+              }
+              if status == "completed" { Label("기록 저장됨", systemImage: "checkmark.circle.fill").font(.caption2).foregroundStyle(accent) }
+              HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(String(format: "%.2f", (model.metrics["distance"] as? Double ?? 0) / 1000)).font(.system(size: workoutAction ? (geometry.size.height < 180 ? 28 : 36) : (geometry.size.height < 180 ? 38 : 50), weight: .bold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                Text("km").font(.caption2).foregroundStyle(.secondary)
+              }.opacity(fresh || status == "completed" ? 1 : 0.45)
+              HStack(alignment: .top, spacing: 5) {
+                metric("시간", duration(context.date))
+                metric("평균 페이스", pace(model.metrics["averagePace"] as? Double))
+                VStack(alignment: .leading, spacing: 2) {
+                  Label("bpm", systemImage: "heart.fill").font(.system(size: 9)).foregroundStyle(accent)
+                  Text(model.display.heart(at: now).map { String(Int($0.rounded())) } ?? "-").font(.system(size: 16, weight: .semibold)).monospacedDigit()
+                }.frame(maxWidth: .infinity, alignment: .leading)
+              }.opacity(fresh || status == "completed" ? 1 : 0.45)
+              Spacer(minLength: 0)
+              if model.stopping {
+                ProgressView().frame(maxWidth: .infinity)
+                Text("종료 요청 전달 중").font(.caption2).frame(maxWidth: .infinity)
+              } else if model.pending || model.display.startPending {
+                ProgressView().frame(maxWidth: .infinity)
+                Text("아이폰 반영 확인 중").font(.caption2).frame(maxWidth: .infinity)
+              } else if model.display.canControl(runID: model.metrics["id"] as? String) {
+                HStack(spacing: 6) {
+                  Button { finishRunID = model.metrics["id"] as? String; confirmFinish = true } label: { Image(systemName: "stop.fill").frame(maxWidth: .infinity, minHeight: 44).background(Color.gray.opacity(0.22), in: Capsule()) }
+                    .accessibilityLabel("종료").tint(.gray)
+                  Button { model.request(status == "running" ? "pause" : "resume") } label: { Image(systemName: status == "running" ? "pause.fill" : "play.fill").frame(maxWidth: .infinity, minHeight: 44).background(status == "running" ? Color.gray.opacity(0.22) : accent, in: Capsule()).foregroundStyle(status == "running" ? Color.primary : Color.black) }
+                    .accessibilityLabel(status == "running" ? "일시정지" : "재개").tint(status == "running" ? .gray : accent).disabled(!fresh)
+                }.buttonStyle(.plain)
+              } else { Text(status == "saving" ? "아이폰에서 저장 중" : "아이폰에서 영상을 만들 수 있어요").font(.caption2) }
+            }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+          }.tag(0)
+          ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+              Text("연결과 러닝 정보").font(.headline)
+              if !fresh { Text("연결 확인 중\n아이폰 상태를 다시 확인하고 있어요.").font(.caption) }
+              Text("케이던스 \(fresh && status == "running" && now - (model.metrics["lastMotion"] as? Double ?? 0) <= 10 ? (model.metrics["cadence"] as? Double).map { String(Int($0.rounded())) } ?? "-" : "-") spm").font(.caption)
+              if workout.needsPermission { Button("워치 운동 연결") { workout.requestPermission() }.disabled(model.stopping || !fresh) }
+              if workout.state == "blocked" {
+                Text("워치 측정이 중단됐어요. 아이폰 러닝은 계속돼요.").font(.caption2)
+                Button("워치 측정 다시 시작") { workout.retry() }.disabled(model.stopping || !fresh)
+              }
+              if healthReader.needsPermission { Button("건강 심박 연결") { healthReader.requestPermission() }.disabled(healthReader.requesting) }
+              if status == "running" { Text(healthReader.message).font(.caption2).foregroundStyle(.secondary) }
+              if model.display.startPending { Button("요청 취소") { model.request("cancelStart") }.disabled(model.pending) }
+              if let notice = model.display.notice { Text(notice).font(.caption2).foregroundStyle(accent) }
+              if let error = model.error { Text(error).font(.caption2).foregroundStyle(accent) }
+              if let notice = model.healthRelayNotice { Text(notice).font(.caption2).foregroundStyle(accent) }
             }
+          }.tag(1)
+        }.tabViewStyle(.page(indexDisplayMode: .automatic))
+      } else {
+        VStack(spacing: 12) {
+          Text(model.stopping ? "종료 요청 전달 중" : model.display.startPending ? "시작 확인 중" : "Runary").font(.headline).foregroundStyle(accent)
+          Spacer(minLength: 0)
+          if model.stopping {
+            ProgressView()
+            Text("아이폰의 저장 확인을\n기다리고 있어요").font(.caption).multilineTextAlignment(.center)
+          } else if model.display.startPending {
+            ProgressView()
+            Text(model.display.phonePhase == "needsPhone" ? "아이폰에서 시작 확인" : "아이폰에서 시작을\n확인하고 있어요").font(.caption).multilineTextAlignment(.center)
+            Button("요청 취소") { model.request("cancelStart") }.disabled(model.pending)
+          } else {
+            Button { model.request("start") } label: {
+              Image(systemName: "play.fill").font(.system(size: 28)).frame(width: 76, height: 76).background(model.display.canStart(at: now) ? accent : Color.gray.opacity(0.3), in: Circle()).foregroundStyle(.black)
+            }.buttonStyle(.plain).accessibilityLabel("러닝 시작").disabled(model.pending || !model.display.canStart(at: now))
+            Text("러닝 시작").font(.headline)
           }
-          let cadence = fresh && running && now - (model.metrics["lastMotion"] as? Double ?? 0) <= 10 ? model.metrics["cadence"] as? Double : nil
-          Text("케이던스 \(cadence.map { String(Int($0.rounded())) } ?? "-") spm").font(.caption)
-        } else if model.display.startPending {
-          Text(model.display.phonePhase == "needsPhone" ? "아이폰 Runary를 열어 시작을 확인해 주세요." : "아이폰에서 시작을 확인하고 있어요.").font(.caption)
-          ProgressView()
-        } else if model.display.canStart(at: now) {
-          Text("러닝을 시작해 볼까요?").font(.caption)
-          Button("러닝 시작") { model.request("start") }.disabled(model.pending)
-          Text("아이폰 GPS로 측정해요.").font(.caption2).foregroundStyle(.secondary)
-        } else if model.display.stateFresh(at: now) && !model.display.startSupported {
-          Text("워치에서 시작하려면 아이폰 Runary를 업데이트해 주세요.").font(.caption)
-        } else if model.display.stateFresh(at: now) && model.display.phonePhase == "preparing" {
-          Text("아이폰 GPS를 준비하고 있어요.").font(.caption)
-          ProgressView()
-        } else {
-          Text("아이폰 상태를 자동으로 확인하고 있어요.").font(.caption)
-          ProgressView()
+          Spacer(minLength: 0)
+          Text(model.display.canStart(at: now) ? "아이폰 GPS로 측정해요" : model.display.notice ?? model.error ?? "아이폰 상태 확인 중").font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
-        if model.display.startPending {
-          if model.metrics["id"] != nil { Text(model.metrics["requestPhase"] as? String == "needsPhone" ? "아이폰 Runary를 열면 재개해요." : "아이폰 GPS 준비 후 재개해요.").font(.caption) }
-          Button("요청 취소") { model.request("cancelStart") }.disabled(model.pending)
-        }
-        if let notice = model.display.notice { Text(notice).font(.caption2).foregroundStyle(.orange) }
-        if let error = model.error { Text(error).font(.caption2).foregroundStyle(.orange) }
-        if let notice = model.healthRelayNotice { Text(notice).font(.caption2).foregroundStyle(.orange) }
       }
     }
     .onAppear { model.setActive(scenePhase == .active) }
     .onChange(of: scenePhase) { _, phase in model.setActive(phase == .active) }
     .onDisappear { model.setActive(false) }
-    .confirmationDialog("러닝을 종료할까요?", isPresented: $confirmFinish, titleVisibility: .visible) {
-      Button("측정 종료", role: .destructive) { model.request("finish") }
+    .onChange(of: model.metrics["id"] as? String) { _, _ in confirmFinish = false; finishRunID = nil }
+    .onChange(of: model.metrics["status"] as? String) { _, _ in
+      if !model.display.canControl(runID: finishRunID) { confirmFinish = false; finishRunID = nil }
+    }
+    .sheet(isPresented: $confirmFinish) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("러닝을\n종료할까요?").font(.title3).bold()
+          Text(String(format: "%.2f km", (model.metrics["distance"] as? Double ?? 0) / 1000) + " · " + duration(Date())).font(.caption)
+          Text("평균 " + pace(model.metrics["averagePace"] as? Double)).font(.caption).foregroundStyle(.secondary)
+          Button("종료") {
+            let id = finishRunID; confirmFinish = false; finishRunID = nil
+            if let id { model.request("finish", expectedRunID: id) }
+          }.tint(accent).disabled(model.pending || !model.display.canControl(runID: finishRunID))
+          Button("돌아가기") { confirmFinish = false }
+        }
+      }
     }
   }
-  private var runMessage: String {
-    switch model.metrics["status"] as? String {
-    case "running": return "아이폰에서 측정 중"
-    case "paused": return "일시정지"
-    case "interrupted": return "측정 중단"
-    case "saving": return "아이폰에서 저장 중"
-    default: return "러닝 완료"
-    }
+  private func header(_ status: String, fresh: Bool) -> String {
+    if model.stopping { return "종료 요청 전달 중" }
+    if !fresh { return "연결 확인 중" }
+    if model.error != nil { return "제어 요청 확인 필요" }
+    if workout.needsPermission { return "워치 연결 필요" }
+    if workout.state == "blocked" { return "워치 측정 중단" }
+    switch status { case "running": return "러닝 중"; case "paused": return "일시정지"; case "interrupted": return "측정 중단"; case "saving": return "저장 중"; default: return "Runary" }
   }
   private func metric(_ label: String, _ value: String) -> some View {
-    VStack(alignment: .leading, spacing: 3) { Text(label).font(.caption2).foregroundStyle(.secondary); Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit().minimumScaleFactor(0.65).lineLimit(1) }
+    VStack(alignment: .leading, spacing: 2) { Text(label).font(.system(size: 9)).foregroundStyle(.secondary); Text(value).font(.system(size: 16, weight: .semibold)).monospacedDigit().minimumScaleFactor(0.6).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading)
   }
   private func duration(_ date: Date) -> String {
     let seconds = Int(model.display.duration(at: date.timeIntervalSince1970))

@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-10-06
-updated: 2026-10-07
+updated: 2026-11-03
 related_meeting: ../meetings/2026-10-06/synthesis.md
 tags: [running, sprint, app-store, tracking, usability-test]
 ---
@@ -27,6 +27,10 @@ tags: [running, sprint, app-store, tracking, usability-test]
 | 2차 | 11/3 ~ 11/10(화) | 측정 기능을 넣어 다시 제출 |
 
 정식 등재에 낼 빌드는 최신 빌드가 아니어도 된다. 어느 빌드를 냈는지 [배포 기록](../ops/build-and-dev-commands.md)에 따로 남긴다.
+
+### 2026-11-03 제출 대상 확정
+
+기존 1.0.0(39)의 승인 이후 사용자가 측정 기능을 포함한 1.0.1(47)로 다음 정식 심사를 진행하기로 결정했다. 초기 내부 검증에서 정식 제출 준비로 범위를 확장한다. 아이폰 측정, 선택적 워치 운동 연동과 건강 저장, 실시간 현황, 자체 기록 편집과 보관함·러닝 탭이 대상이다. 수집·저장 정책은 승인된 FRD를 유지하며, 이전의 워치 운동 미사용 정책은 [워치 연동 FRD](../specs/frd/watch-workout-integration.md)의 후속 사용자 승인 범위로 대체됐다. [공개 문서 개정 기록](../ops/public-docs-log.md)에 기존 버전 보존과 47번 적용 범위를 남긴다.
 
 ## 3. 목표
 
