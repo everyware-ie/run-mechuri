@@ -1,25 +1,55 @@
 # 심사 메모
 
-최종 제출용 새 아이콘 빌드의 검증을 마친 뒤 아래 내용을 App Store Connect의 심사 메모에 넣는다. 정식 버전 표기는 앱과 같은 `1.0.0`을 사용하고, 38번 대신 아이콘을 교체한 39번을 선택한다.
+현재 제출용 초안은 **1.0.1(47)** 기준입니다. 기존 1.0.0(39)용 메모는 [변경 전 사본](public-docs-2026-11-03/app-store-review-notes-before.md)에 보관합니다. 아래 초안은 실제 빌드 동작과 공개 방침을 대조했으며 App Store Connect에 자동 입력한 기록은 아닙니다.
 
 ## 붙여 넣을 내용
 
-Runary turns outdoor running routes into short animated videos. No account or login is required.
+제출 버전: 1.0.1(47)
 
-To review without personal workout data:
+Runary는 러닝을 직접 기록하거나 Apple 건강 앱의 기록을 불러와 경로를 짧은 영상으로 만드는 앱입니다. 회원가입이나 로그인은 필요하지 않습니다. Apple Watch는 선택 사항이며 아이폰만으로 영상 제작과 GPS 측정을 확인할 수 있습니다.
 
-1. On the first launch screen, tap “샘플 기록으로 만들어 보기” (Try a sample record). You can also tap “새로 만들기” (Create new) on the home screen and select the sample card.
-2. Select a built-in background, then customize the route and running data in the editor.
-3. Tap “완료” (Done) to generate a video.
-4. Use the save button to save it to Photos. Allow photo-add permission when prompted. Instagram sharing is optional and requires the Instagram app; saving the video does not require it.
+1. 러닝 기록 없이 영상 제작 확인
 
-The heart sample is synthetic. It does not read or write HealthKit records and is not a route recommendation. It is available to all users. If a HealthKit permission prompt appears when opening the real-record list, declining it does not prevent sample use.
+첫 실행 화면에서 “샘플 기록으로 만들어 보기”를 선택합니다. 이후에는 “보관함” 탭의 “영상 만들기”에서 하트 샘플을 선택할 수 있습니다.
+기본 배경을 선택하고 경로와 러닝 데이터를 편집한 뒤 “완료”를 눌러 영상을 생성합니다. 저장 버튼으로 사진 앱에 저장할 수 있으며 이때 사진 추가 권한을 요청합니다. Instagram 공유는 선택 기능이고 해당 앱이 설치되어 있어야 합니다. 영상 생성과 사진 앱 저장에는 Instagram이 필요하지 않습니다.
+하트 샘플은 모든 이용자가 사용할 수 있는 가상 기록입니다. 건강 기록을 읽거나 쓰지 않으며 실제 달린 기록이나 추천 코스가 아닙니다. 건강 읽기를 거부해도 샘플은 사용할 수 있습니다.
 
-Real-record import reads outdoor running workouts with stored route coordinates from Apple Health, including heart rate when available. This submitted version does not record new runs and does not include an Apple Watch app. HealthKit is read-only.
+2. 아이폰 러닝 측정 확인
 
-Privacy policy: https://runary.notion.site/privacy
-Support: https://runary.notion.site/runary
+하단 “러닝” 탭에서 준비 화면을 열고 “러닝 시작”을 누릅니다. 위치 권한이 요청되면 “앱을 사용하는 동안”을 허용해 주세요.
+시작 버튼을 누르면 시간이 바로 흐르고 유효한 GPS를 받은 뒤 거리와 경로를 기록합니다. 화면을 잠그거나 다른 앱을 사용해도 진행 중인 러닝의 위치 수신을 이어갑니다. 종료 후 백그라운드에서 상시 추적하는 기능은 아닙니다.
+일시정지·재개 아이콘으로 같은 러닝을 제어하고 네모 아이콘을 누른 뒤 “종료”를 확인하면 기기에 저장합니다. iOS가 지원하고 허용한 경우 잠금화면 실시간 현황에서도 일시정지·재개를 사용할 수 있습니다. 실시간 현황의 종료는 앱에서 같은 러닝을 열어 종료를 확인하는 방식입니다.
+실내나 제자리에서는 거리가 0이고 페이스가 없을 수 있습니다. GPS가 없던 구간을 만들어 채우지 않습니다. 경로 좌표가 충분하지 않은 기록은 영상 제작에 사용할 수 없으므로, 영상 제작은 1번 샘플 경로로 확인해 주세요.
 
-## 최종 확인
+3. Apple Watch 연동 확인
 
-빌드 번호가 바뀌면 위 첫 문단의 제출 지침을 실제 번호에 맞춘다. 이 문서는 심사 메모 초안이며 App Store Connect에 입력하거나 정식 심사 요청을 실행한 기록이 아니다. 연락처는 실제 응대 가능한 담당자 정보를 입력한다. 영상 저장·복구와 iPad에서의 실제 사용 확인이 끝나지 않았다면 완료했다고 설명하지 않는다.
+페어링된 실제 워치를 착용하고 측정 준비 화면의 “Apple Watch”에서 “워치 운동 연동”을 켭니다. 워치 Runary를 열어 필요한 운동·심박 권한을 허용한 뒤 아이폰에서 러닝을 시작합니다.
+워치는 같은 아이폰 러닝의 현황과 심박을 표시하고 일시정지·재개·종료를 연결합니다. 새 심박은 실제 수신 상태에 따라 늦게 나타날 수 있습니다.
+워치 기능 확인에는 실제 워치가 필요합니다. 워치 단독 GPS 측정은 제공하지 않으며 아이폰을 함께 소지해야 합니다. Runary 워치 운동을 켜면 다른 워치 운동이 종료될 수 있습니다.
+
+4. 건강 앱 저장 확인
+
+측정 준비 화면에서 “건강 앱 자동 저장”을 켜고 요청하는 쓰기 권한을 허용한 다음 새 러닝을 시작하고 종료합니다.
+설정을 켠 뒤 새로 시작한 실제 Runary 러닝부터 운동 종류, 시작·종료 시각, 운동 시간과 거리를 저장합니다. 경로와 기존 심박은 권한과 HealthKit 지원 범위에 맞춰 운동에 연결합니다.
+기존 심박을 운동에 연결하기 위해 심박수 쓰기 권한도 요청하지만 같은 심박의 새 사본을 만들지는 않습니다. 아이폰이 완료 운동을 저장하고 워치는 별도의 완료 운동을 저장하지 않습니다.
+샘플이나 다른 앱에서 가져온 운동은 다시 저장하지 않습니다. 건강 저장을 거부하거나 저장에 실패해도 Runary 원본은 기기에 남으며 상세에서 저장 결과를 확인할 수 있습니다.
+
+권한 사용 목적
+
+위치: 사용자가 시작한 러닝의 거리와 경로를 기록하고 시작 전 지도에 현재 위치를 표시합니다. 백그라운드 위치 모드는 화면 잠금과 다른 앱 사용 중 러닝 기록을 이어가는 데 사용합니다.
+동작 및 피트니스: 걸음 수와 케이던스를 기록합니다. 거부해도 GPS 측정을 이용할 수 있습니다.
+건강 읽기: 기존 실외 달리기와 경로, 사용 가능한 심박을 불러와 편집하고 러닝 중·종료 후 심박을 확인합니다.
+건강 쓰기: 이용자가 선택한 Runary 운동·경로 저장과 기존 심박 연결에 사용합니다.
+사진 추가: 완성 영상과 이용자가 선택한 촬영 사진을 사진 앱에 저장합니다.
+카메라: 이용자가 직접 사진을 촬영해 배경으로 선택할 때 사용합니다. 기본 배경을 사용하면 필요하지 않습니다.
+
+건강·러닝 정보를 광고나 마케팅에 이용하지 않으며 측정 원본과 경로를 개발자 운영 서버에 자동 전송하지 않습니다. 지도와 장소 조회에는 Apple 서비스, 업데이트에는 Expo, 안내 문서에는 Notion을 사용합니다. Instagram으로의 영상 전달은 이용자가 공유를 선택했을 때만 수행합니다. 자세한 처리는 아래 개인정보 처리방침에서 안내합니다.
+
+개인정보 처리방침: https://runary.notion.site/privacy
+지원: https://runary.notion.site/runary
+
+## 빌드와 제출 시 확인
+
+현재 앱 버전은 `frontend/app.json`의 `1.0.1`입니다. 47번은 EAS 결과의 배포 유형이 `STORE`이며 `internal-tracking` 프로필은 `production`을 상속하고 `RUNARY_INTERNAL_TRACKING=1`을 추가합니다. IPA에서 아이폰·워치·실시간 현황의 `1.0.1(47)`, 측정 플래그와 권한 설명을 확인했습니다. 프로필 이름을 근거로 내부 설치용 바이너리로 판단하지 않습니다. 기본 `production`에는 측정 플래그가 없어 그 프로필만으로 새로 빌드하면 측정이 빠집니다.
+
+새 1.0.1 버전에서 검증된 47번을 선택합니다. 실제 App Privacy 답변과 제3자 처리, 측정·워치 스크린샷은 [대조표](measurement-release-2026-11-02/app-privacy-review.md)와 함께 최종 확인합니다. 기존 39번의 심사 메모와 선택 빌드는 이 문서 갱신으로 변경하지 않았습니다.

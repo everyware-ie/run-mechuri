@@ -8,7 +8,8 @@
 - [현재 FAQ](https://runary.notion.site/faq), [저장소 사본](faq-current.md)
 - [공지 사본](notice-current.md), [허브 사본](hub-current.md)
 - [변경 이력](https://runary.notion.site/3f740e8014f9813b980ecca4650b3456), [저장소 사본](history-current.md)
-- [1.0.1(47) 영문 심사 메모](../measurement-release-2026-11-02/app-review-notes.md)
+- [1.0.1(47) 한국어 제출용 심사 메모](../app-store-review-notes.md), [기존 영문 참고안](../measurement-release-2026-11-02/app-review-notes.md)
+- [1.0.1(47) 스토어 설명문 초안과 스크린샷 확인 범위](../../marketing/app-store/listing.md)
 - [App Privacy 제출 전 대조표](../measurement-release-2026-11-02/app-privacy-review.md)
 - [빌드와 제출 근거](../build-and-dev-commands.md)
 
@@ -21,5 +22,7 @@
 ## 검증과 남은 확인
 
 코드·승인 FRD와 정보 항목, 권한, 건강 저장 조건, 삭제와 백업 제외를 대조했다. Notion 갱신 응답은 모두 성공했고 문체를 두 차례 검토했다. 공개 처리방침의 데스크톱 전체 표시와 버전별 적용 범위를 확인했다. 새로고침 전 일부 블록이 이전 내용으로 보여 실제 공개 화면 확인을 계속한다. 다른 공개 링크와 모바일 화면의 최종 검증 결과는 후속으로 기록한다.
+
+변경 이력의 공개 화면에서 새 개정 요약과 네 보관본이 최신순인 것을 확인했다. 390px 브라우저 폭에서는 Notion의 고정 여백 때문에 본문이 좁게 표시됐다. 이 결과를 실제 아이폰 Safari 검증으로 간주하지 않으며 해당 확인은 남겨 둔다.
 
 앱 소스를 바꾸지 않았으며 TestFlight 47번의 앱 소스는 `1b55232`다. 이번 문서 변경으로 App Store Connect의 기존 빌드 선택이나 심사 메모, App Privacy 설정을 변경하지 않았다. 실제 정식 제출 시에는 새 1.0.1 버전에서 47번 선택, 현재 App Privacy 답변과 제3자 처리 항목, 측정·워치 스크린샷을 최종 대조해야 한다.
