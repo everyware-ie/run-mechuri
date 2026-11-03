@@ -2,13 +2,26 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
-## 2026-11-03: 보관함과 러닝 탭 배포 준비
+## 2026-11-03: 보관함과 러닝 탭 TestFlight 1.0.1(47)
 
 사용자가 하단 탭과 경로 아이콘을 선택하고 [FRD](../specs/frd/home-running-tabs.md) 2~4절의 구현을 승인했다. 같은 측정 UI 브랜치에서 두 화면을 탭으로 연결하고 편집의 경로 아이콘을 공유했다. 첫 실행 안내의 낡은 측정 제외 문구와 안내 반복 경로도 리뷰에서 수정했다.
 
 전체 Jest 53개 묶음 391개, 타입·린트·구성·문서 검사와 iOS Hermes 번들 생성이 통과했다. 린트는 오류 0개와 기존 경고 30개다. 실기기 탭 전환과 측정 중 복귀를 확인했으며 자세한 범위는 [구현 노트](../product/features/home-running-tabs.md)에 남긴다.
 
-기존 서명 자산을 고정하는 `--freeze-credentials`로 1.0.0(46)을 요청해 계약과 서명 준비를 통과했다. 이어 성공한 Apple 조회에서는 기존 39번이 `READY_FOR_DISTRIBUTION`으로 바뀌었다. 새 정식 제출에 사용할 수 있도록 46번 빌드를 취소하고 앱 버전을 1.0.1로 올렸다. 새 빌드의 ID·번호·Apple 처리 결과를 확인한 뒤 등록 완료로 기록한다. 기존 버전의 빌드 선택과 공개 문서에는 손대지 않는다.
+기존 서명 자산을 고정하는 `--freeze-credentials`로 1.0.0(46)을 요청해 계약과 서명 준비를 통과했다. 이어 성공한 Apple 조회에서는 기존 39번이 `READY_FOR_DISTRIBUTION`으로 바뀌었다. 새 정식 제출에 사용할 수 있도록 46번 빌드를 취소하고 앱 버전을 1.0.1로 올렸다. 기존 버전의 빌드 선택은 유지했고 공개 문서의 본문과 수정 시각도 전후 동일하다.
+
+- 새 버전: `1.0.1(47)`. 프로필과 채널은 `internal-tracking`이며 측정 플래그를 포함한다.
+- 소스: `1b55232d2a7bf53a8db3f7cffc0f0c6d41a63053`.
+- EAS 빌드: `a9a9548b-0cce-4abe-bc80-8df2b2af0dc3`, `FINISHED`. 생성부터 완료까지 약 8분 9초다.
+- IPA: `/private/tmp/runary-tabs-1.0.1-47.ipa`. SHA-256은 `c63fbfb4ffbc2c908d37fe9475371366caefde6d878e214d543d17f21ac41aa2`다.
+
+최종 IPA에서 아이폰·워치·잠금화면 확장 세 타깃의 버전과 번호가 모두 일치했다. 측정 플래그, 배경 위치, 워치 운동 처리, 실시간 현황, 위치·동작·건강 권한 설명과 개인정보 매니페스트 13개를 확인했다. 시스템 신뢰 저장소를 이용한 깊은 서명 검증도 통과했다.
+
+테스트 안내문 자동 등록은 EAS 요금제 제한으로 접수 전에 실패해 해당 옵션만 제외했다. 같은 빌드 ID로 다시 요청한 제출 ID는 `fe9913d3-7975-414c-aaf5-40c37829b5e6`이며 최종 상태는 `FINISHED`다. 새 테스터 그룹을 만들지 않았다.
+
+제출 대기열 뒤 Apple 업로드를 완료했다. 전체 상태 조회에서 Apple 500 오류가 반복돼 Connect 화면과 빌드만 읽는 API로 확인했다. Apple 빌드 ID `2db16544-ab7b-457a-a44c-c01e4aff5b4b`는 **`1.0.1(47) / VALID / IN_BETA_TESTING / expired:false`**다. 기존 내부 그룹 `Team (Expo)`의 테스터 3명에게 연결된 것도 화면에서 확인했다. 외부 상태는 `READY_FOR_BETA_SUBMISSION`이며 외부 그룹이나 정식 제출 빌드는 바꾸지 않았다.
+
+최종 조회는 `/private/tmp/runary-tabs-build-apple-status.json`, 구성 검사는 `/private/tmp/runary-tabs-47-ipa-check.json`, 제출 로그는 `/private/tmp/runary-tabs-submit47-retry.log`에 있다. 실제 TestFlight 재설치 검증은 이번 배포에서 수행하지 않았으며 개발 앱의 실기기 QA와 구분한다.
 
 ## 2026-11-02~03: 측정 UI 최종 검토와 TestFlight 중단
 
