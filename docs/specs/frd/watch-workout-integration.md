@@ -3,7 +3,7 @@ title: 워치 운동 세션 연동 FRD
 product: running
 type: frd
 status: approved
-updated: 2026-11-02
+updated: 2026-11-03
 derives_from: ../prd/watch-workout-integration.md
 prd_sections: "§2 제안 범위, §3 성공 기준, §4 기존 정책과 승인 범위"
 related:
@@ -14,6 +14,8 @@ related:
 # 워치 운동 세션 연동
 
 2026-10-26 사용자가 워치 운동 세션 연동과 건강 저장까지 구현을 승인했다. 현재 TestFlight 43번의 동작이나 구현 완료를 설명하지 않는다.
+
+2026-11-03 사용자가 이 범위를 포함한 1.0.1(47)을 정식 심사 제출 대상으로 지정했다. 초기 내부 검증을 넘어 해당 버전에 적용하며 기존 1.0.0의 기능과 구분한다. 완료·미완료 검증은 [배포 준비](../../ops/measurement-release-2026-11-02.md)에 따로 기록하며, 이 결정만으로 새 심사 제출 완료를 뜻하지 않는다.
 
 ## 1. 사용자가 확인할 핵심
 
