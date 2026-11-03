@@ -12,9 +12,11 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Card, ThemedButton } from '@/components/ui';
 import { trackingStyles as styles } from '@/components/internal-run-styles';
 import { heartImportNotice, runNumber, runPace, runStatus, runTime } from '@/lib/tracking-display';
-import { Tracking, trackingEnabled, type RunSummary, type TrackingState } from '../../modules/run-tracking/src/RunTracking';
+import { useHomeTabs } from '@/state/home-tabs';
+import { Tracking, trackingEnabled, type RunSummary, type TrackingState } from '../../../modules/run-tracking/src/RunTracking';
 
 export default function InternalRunScreen() {
+  const { reportRunStatus } = useHomeTabs();
   const { height } = useWindowDimensions();
   const [connectionsOpen, setConnectionsOpen] = useState(false);
   const [finishRunID, setFinishRunID] = useState<string | null>(null);
@@ -33,8 +35,8 @@ export default function InternalRunScreen() {
   const refresh = useCallback(async () => {
     if (!trackingEnabled) return;
     const [snapshot, history] = await Promise.all([Tracking!.state(), Tracking!.records()]);
-    setState(snapshot); setClock(Date.now() / 1000); setRecords(history.records); setDamaged(history.damaged);
-  }, []);
+    setState(snapshot); reportRunStatus(snapshot.summary?.status ?? null); setClock(Date.now() / 1000); setRecords(history.records); setDamaged(history.damaged);
+  }, [reportRunStatus]);
   useFocusEffect(useCallback(() => {
     if (!trackingEnabled) return;
     setMapVisible(true);
@@ -49,7 +51,7 @@ export default function InternalRunScreen() {
         const snapshot = await Tracking!.state();
         if (!valid()) return;
         setPollError('');
-        setState(snapshot); setClock(Date.now() / 1000);
+        setState(snapshot); reportRunStatus(snapshot.summary?.status ?? null); setClock(Date.now() / 1000);
         if (first && !snapshot.summary && !snapshot.watchStartPending && !snapshot.phoneStartPending && [3, 4].includes(snapshot.locationPermission) && snapshot.preciseLocation) {
           first = false; await Tracking!.prepare();
         }
@@ -78,7 +80,7 @@ export default function InternalRunScreen() {
     void update(); const timer = setInterval(update, 1000);
     const subscription = AppState.addEventListener('change', status => { epoch++; if (status === 'active') { first = true; void update(); } });
     return () => { alive = false; setMapVisible(false); clearInterval(timer); subscription.remove(); void Tracking!.cancelPreparation().catch(() => {}); };
-  }, []));
+  }, [reportRunStatus]));
   if (!trackingEnabled) return <Redirect href="/" />;
   const act = async (work: () => Promise<unknown>) => {
     if (actionPending.current) return; actionPending.current = true; setBusy(true); setError('');
@@ -103,8 +105,8 @@ export default function InternalRunScreen() {
     else await Tracking!.finish();
     setFinishRunID(null); router.push(`/internal-run/${id}`);
   };
-  return <SafeAreaView style={styles.safe}>
-    <ScreenHeader title="러닝" right={<Pressable accessibilityRole="button" accessibilityLabel="앱 권한 확인" hitSlop={12} onPress={() => router.push('/app-permissions')}><SymbolView name="gearshape" size={19} tintColor={Colors.textMuted} /></Pressable>} />
+  return <SafeAreaView style={styles.safe} edges={current ? undefined : ['top', 'left', 'right']}>
+    <ScreenHeader title="러닝" onBack={() => router.navigate('/')} right={<Pressable accessibilityRole="button" accessibilityLabel="앱 권한 확인" hitSlop={12} onPress={() => router.push('/app-permissions')}><SymbolView name="gearshape" size={19} tintColor={Colors.textMuted} /></Pressable>} />
     <ScrollView contentContainerStyle={[runUI.body, runUI.mapBody]}>
       {error || pollError || state?.notice ? <View style={runUI.error}><Text style={styles.notice}>{error || pollError || state?.notice}</Text></View> : null}
       {current ? <>

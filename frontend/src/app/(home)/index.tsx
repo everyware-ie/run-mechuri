@@ -1,11 +1,11 @@
 import { router, useFocusEffect } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RouteThumbnail } from '@/components/route-thumbnail';
-import { InternalRunEntry } from '@/components/internal-run-entry';
+import { AppPermissionsLink } from '@/components/internal-run-entry';
 import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
@@ -14,14 +14,14 @@ import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
 import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
+import { trackingEnabled } from '../../../modules/run-tracking/src/RunTracking';
 
 // 홈과 보관함 FRD §1: 홈은 결과물 목록이다.
 // §1-1 화면 구성(위→아래): 이어서 만들기(§3, 있을 때만) → 새로 만들기(항상) →
 // 결과물 목록(있으면) → 쇼케이스(§4, 여유 시라 v0는 생략)
 //
 // 디자인: "3안" 시안 S1 — "메추리 / ARCHIVE · N" 헤더 + 최근 결과물 큰 카드(하단
-// 메타정보 + ▶) + "내가 만든 것" 2열 그리드. 시안의 하단 탭(보관함/가져오기)은
-// 2026-08-25 결정("하단 탭을 쓰지 않는다")으로 빠지고, "새로 만들기"가 그 자리를 맡는다.
+// 메타정보 + ▶) + 결과물 2열 그리드. 측정 버전의 진입은 하단 탭 FRD를 따른다.
 
 export default function HomeScreen() {
   const { width } = useWindowDimensions();
@@ -33,9 +33,10 @@ export default function HomeScreen() {
   const { loadDraft } = useCreationFlow();
 
   // connect.tsx(시안 S0): 앱을 한 번도 연결 안 해본 첫 실행에서만 보여준다.
-  // useFocusEffect가 아니라 마운트 시 한 번만 — 연결 뒤엔 홈으로 돌아올 때마다
-  // 다시 검사할 필요가 없다.
-  useEffect(() => {
+  // 탭이 배경에서 마운트돼도 안내 화면으로 이동시키지 않는다.
+  // 최초 확인 뒤에는 탭을 왕복해도 다시 검사하지 않는다.
+  useFocusEffect(useCallback(() => {
+    if (checkedConnection) return;
     let cancelled = false;
     (async () => {
       const connected = await hasConnectedOnce();
@@ -58,12 +59,14 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [checkedConnection]));
 
   useFocusEffect(
     useCallback(() => {
-      listResults().then(setResults);
-      getDraft().then(setDraft);
+      let alive = true;
+      listResults().then(value => { if (alive) setResults(value); });
+      getDraft().then(value => { if (alive) setDraft(value); });
+      return () => { alive = false; };
     }, [])
   );
 
@@ -130,7 +133,7 @@ export default function HomeScreen() {
         columnWrapperStyle={rest.length > 0 ? styles.row : undefined}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
-        ListFooterComponent={<View><InternalRunEntry /><PrivacyPolicyLink /></View>}
+        ListFooterComponent={<View><AppPermissionsLink /><PrivacyPolicyLink /></View>}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
             <View style={styles.titleRow}>
@@ -184,7 +187,7 @@ export default function HomeScreen() {
               </View>
             )}
 
-            <ThemedButton title="새로 만들기" onPress={() => router.push('/record-selection')} />
+            <ThemedButton title={trackingEnabled ? '영상 만들기' : '새로 만들기'} onPress={() => router.push('/record-selection')} />
 
             {rest.length > 0 && (
               <View style={styles.sectionRow}>

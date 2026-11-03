@@ -1,4 +1,5 @@
 import { HandStrokeBrushes, HandStrokeControls } from '@/components/hand-stroke-controls';
+import { ROUTE_SYMBOL } from '@/constants/icons';
 import { HandDrawingEditor, type HandDrawingPreview } from '@/components/hand-drawing-editor';
 import { MyStyleSheet } from '@/components/my-style-sheet';
 import { constrainHandStroke, hitHandStroke, EMPTY_HAND_DRAWING, type HandStroke } from '@/lib/hand-drawing';
@@ -88,7 +89,7 @@ import { useCreationFlow } from '@/state/creation-flow';
 const STAMP_ITEMS: StampItem[] = ['distance', 'time', 'pace', 'date', 'place', 'heartRate'];
 
 const PRESETS: { id: RoutePreset; label: string; shortLabel: string; symbol: SymbolViewProps['name'] }[] = [
-  { id: 'default-drawing', label: '기본 경로 그림', shortLabel: '기본', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'default-drawing', label: '기본 경로 그림', shortLabel: '기본', symbol: ROUTE_SYMBOL },
   { id: 'light-runner', label: '불빛 러너', shortLabel: '불빛', symbol: 'sparkles' },
   { id: 'segment-lighting', label: '구간 점등', shortLabel: '구간', symbol: 'point.3.connected.trianglepath.dotted' },
 ];
@@ -97,7 +98,7 @@ type Tool = 'background' | 'route' | 'stamp' | 'style' | 'ink';
 // 문구와 그리기는 전용 화면, 나머지 도구는 시트에서 편집한다.
 const TOOLS: { id: Tool | 'caption' | 'draw'; label: string; symbol: SymbolViewProps['name'] }[] = [
   { id: 'background', label: '배경', symbol: 'photo' },
-  { id: 'route', label: '경로', symbol: 'point.bottomleft.forward.to.point.topright.scurvepath' },
+  { id: 'route', label: '경로', symbol: ROUTE_SYMBOL },
   { id: 'stamp', label: '러닝 데이터', symbol: 'number' },
   { id: 'caption', label: '문구', symbol: 'textformat' },
   { id: 'draw', label: '그리기', symbol: 'pencil.tip' },

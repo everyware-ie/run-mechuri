@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, Text } from 'react-native';
-import InternalRunScreen from '../app/internal-run';
+import InternalRunScreen from '../app/(home)/internal-run';
 import { RunAction } from '@/components/run-tracking-ui';
 import { Tracking, type TrackingState } from '../../modules/run-tracking/src/RunTracking';
 

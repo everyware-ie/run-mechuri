@@ -1,7 +1,7 @@
 import { act, createElement } from 'react';
 import { create, type ReactTestRenderer } from 'react-test-renderer';
 import { AppState, Text, type AppStateStatus } from 'react-native';
-import RunScreen from '../app/internal-run';
+import RunScreen from '../app/(home)/internal-run';
 import { RunSheet } from '@/components/run-measurement';
 import { ThemedButton } from '@/components/ui';
 import { RunAction } from '@/components/run-tracking-ui';

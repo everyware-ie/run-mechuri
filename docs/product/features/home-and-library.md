@@ -6,6 +6,8 @@
 
 ## 구현 노트
 
+2026-11-03 측정 버전의 보관함과 러닝 진입은 [하단 탭 구현 노트](home-running-tabs.md)를 함께 따른다. 홈 화면은 `frontend/src/app/(home)/index.tsx`로 옮겼으며 기존 결과물과 초안 저장소를 유지한다.
+
 `frontend/src/app/index.tsx`를 홈 화면으로 구현. §1-1 화면 구성 순서(이어서 만들기 → 새로 만들기 → 결과물 목록 → 쇼케이스) 그대로.
 
 - **새로 만들기**(항상): `record-selection`으로 이동

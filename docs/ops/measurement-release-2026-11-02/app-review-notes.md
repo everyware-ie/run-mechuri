@@ -16,7 +16,7 @@ Runary records outdoor runs and turns running routes into short animated videos.
 
 Review video creation without a personal workout:
 
-1. On first launch, tap “샘플 기록으로 만들어 보기” (Try a sample record). Alternatively, tap “새로 만들기” (Create new) on Home and select the heart sample.
+1. On first launch, tap “샘플 기록으로 만들어 보기” (Try a sample record). Alternatively, tap “영상 만들기” (Create video) in the “보관함” (Library) tab and select the heart sample.
 2. Choose a built-in background and edit the route and running data.
 3. Tap “완료” (Done) to generate the video.
 4. Save it to Photos using the save button. Photo-add permission is required only when saving. Instagram sharing is optional and requires Instagram to be installed.
@@ -25,7 +25,7 @@ The heart sample is synthetic, clearly labeled and available to all users. It do
 
 Review recording while stationary:
 
-1. On Home, tap “러닝 시작” (Start running) to open the recording screen, then tap the start button.
+1. Tap the “러닝” (Run) tab to open the recording preparation screen, then tap the start button. The tab opens the current run if one is already in progress.
 2. Allow location access when prompted. Elapsed time starts immediately; distance and route points are added only when valid GPS samples arrive. While indoors or stationary, distance may remain zero and pace may be unavailable.
 3. Use the pause and play icons to pause and resume the same run.
 4. Tap the square stop icon, then confirm “종료” (Finish). The run is saved locally. A run without sufficient route coordinates cannot be used to create a route video; use the heart sample to review that flow.

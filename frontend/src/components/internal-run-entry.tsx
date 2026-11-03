@@ -1,13 +1,24 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Alert, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { SymbolView } from 'expo-symbols';
 import { Tracking, trackingEnabled, trackingDiagnosticsEnabled } from '../../modules/run-tracking/src/RunTracking';
 import { runStatus } from '@/lib/tracking-display';
+import { markConnectedOnce } from '@/lib/connection-store';
 
-export function InternalRunEntry() {
+export function InternalRunEntry({ fromWelcome = false }: { fromWelcome?: boolean }) {
   const [state, setState] = useState('');
+  const opening = useRef(false);
+  const open = async () => {
+    if (opening.current) return;
+    opening.current = true;
+    try {
+      if (fromWelcome) { await markConnectedOnce(); router.replace('/internal-run'); }
+      else router.navigate('/internal-run');
+    } catch { Alert.alert('러닝 화면을 열지 못했어요', '잠시 후 다시 시도해 주세요.'); }
+    finally { opening.current = false; }
+  };
   useFocusEffect(useCallback(() => {
     if (!trackingEnabled) return;
     let alive = true, request = 0;
@@ -27,7 +38,7 @@ export function InternalRunEntry() {
     return () => { alive = false; clearInterval(timer); subscription.remove(); };
   }, []));
   if (!trackingEnabled) return null;
-  return <View><Pressable accessibilityRole="button" onPress={() => router.push('/internal-run')} style={styles.entry}>
+  return <View><Pressable accessibilityRole="button" onPress={() => void open()} style={styles.entry}>
     <View style={styles.icon}><SymbolView name="figure.run" size={24} tintColor={Colors.accent} /></View>
     <View style={styles.content}><View style={styles.titleRow}><Text style={styles.title}>{state ? '러닝으로 돌아가기' : '러닝 시작'}</Text>{trackingDiagnosticsEnabled ? <Text style={styles.badge}>팀 테스트</Text> : null}</View><Text style={styles.text}>{state || '한 걸음씩, 나만의 경로를 기록해요.'}</Text></View>
     <SymbolView name="chevron.right" size={15} tintColor={Colors.textMuted} />
