@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-10-27
-updated: 2026-10-28
+updated: 2026-11-09
 related_meeting: ../meetings/2026-10-27/synthesis.md
 tags: [running, app-store, tracking, watch, health]
 ---
@@ -42,3 +42,10 @@ tags: [running, app-store, tracking, watch, health]
 - 정확한 제출일
 - 처리방침과 스토어 자료 담당
 - 짧은 이동 거리 누락을 이번에 고칠지 (회의 결과는 "일단 보류")
+
+## 결과 (2026-11-03 회의)
+
+- 11/3에 1.0.1(47)로 정식 심사 제출. 측정, 잠금화면 현황, 워치 연동, 건강 앱 저장 모두 포함
+- 11/5 00:01 출시 (App Store 조회 기준)
+- 처리방침과 스토어 자료는 제출 전에 1.0.1 기준으로 고침 ([PR #131](https://github.com/everyware-ie/run-mechuri/pull/131), [#132](https://github.com/everyware-ie/run-mechuri/pull/132))
+- 회의에서 나온 QA 3건은 47번으로 다시 봤을 때 문제없어 보임 ([11/3 회의](../meetings/2026-11-03/synthesis.md) §4)
