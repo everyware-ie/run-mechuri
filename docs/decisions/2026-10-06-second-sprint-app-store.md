@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-10-06
-updated: 2026-11-03
+updated: 2026-11-10
 related_meeting: ../meetings/2026-10-06/synthesis.md
 tags: [running, sprint, app-store, tracking, usability-test]
 ---
@@ -94,3 +94,17 @@ tags: [running, sprint, app-store, tracking, usability-test]
 ## 2026-10-27 개정: 측정 기능의 공개 범위
 
 위 "정하지 않은 것"의 측정 기능 공개 범위를 정했다. 다음 주 정식 심사에 이번 주까지 만든 측정 기능을 모두 넣는다([결정](2026-10-27-submit-with-tracking.md)).
+
+## 2026-11-10 개정: 3차 스프린트 시작, 목표는 2주 더
+
+11/10 회의에서 3차 스프린트를 그날부터 4주(~12/8)로 정했다([결정](2026-11-10-third-sprint-crew-diary.md)). 2차 스프린트는 11/17까지였다.
+
+**§3 목표는 앞으로 2주(~11/24) 더 달성해 보기로 했다.** 11/10 기준은 아래와 같다.
+
+| 목표 | 11/10 기준 |
+|---|---|
+| 정식 출시 (측정 포함) | 했다. 1.0.0 11/3, 1.0.1 11/5 |
+| App Store 다운로드 30회 | 9 (11/8까지, [App Store 분석](../marketing/app-store/analytics/stats.md)) |
+| 스레드 팔로워 50명 | 9 ([스레드 통계](../marketing/threads/stats.md)) |
+
+2차 스프린트를 따로 회고할지는 다루지 않았다.

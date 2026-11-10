@@ -1,0 +1,29 @@
+{
+  "collected_at": "2026-11-10 KST",
+  "source": "App Store Connect 분석 탭 (Claude in Chrome으로 읽음)",
+  "period": {"start": "2026-11-03", "end": "2026-11-08", "timezone": "UTC"},
+  "totals": {
+    "impressions": 261,
+    "product_page_views": 56,
+    "first_time_downloads": 9,
+    "redownloads": 1,
+    "updates": 1,
+    "conversion_rate_daily_avg_pct": 5.46
+  },
+  "daily": [
+    {"date": "2026-11-03", "impressions": 56, "product_page_views": 37, "first_time_downloads": 3},
+    {"date": "2026-11-04", "impressions": 17, "product_page_views": 6, "first_time_downloads": 0},
+    {"date": "2026-11-05", "impressions": 33, "product_page_views": 7, "first_time_downloads": 2},
+    {"date": "2026-11-06", "impressions": 35, "product_page_views": 1, "first_time_downloads": 1},
+    {"date": "2026-11-07", "impressions": 81, "product_page_views": 5, "first_time_downloads": 3},
+    {"date": "2026-11-08", "impressions": 39, "product_page_views": 0, "first_time_downloads": 0}
+  ],
+  "by_source": [
+    {"source": "App Store 검색", "impressions": 225, "product_page_views": 22, "first_time_downloads": 7},
+    {"source": "앱 추천 방문", "impressions": 29, "product_page_views": 29, "first_time_downloads": 2},
+    {"source": "App Store 탐색", "impressions": 7, "product_page_views": 5, "first_time_downloads": 0},
+    {"source": "웹 추천 방문", "impressions": 0, "product_page_views": 0, "first_time_downloads": 0}
+  ],
+  "not_available": ["세션", "활성 기기", "유지율", "충돌", "앱 추천 방문의 앱별 구분"],
+  "notes": "11/8은 화면에 '-'로 표시돼 0으로 적음. 하루 이틀 늦게 잡혀서 다음 수집 때 바뀔 수 있음"
+}
