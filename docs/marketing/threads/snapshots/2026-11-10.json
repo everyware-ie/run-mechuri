@@ -1,0 +1,359 @@
+{
+  "fetched_at": "2026-11-10T19:19+09:00",
+  "username": "team.mechuri",
+  "followers": 9,
+  "account": {
+    "last_7_days": {
+      "views": 559,
+      "likes": 1,
+      "replies": 0,
+      "reposts": 0,
+      "quotes": 0,
+      "clicks": 45
+    },
+    "last_30_days": {
+      "views": 66428,
+      "likes": 162,
+      "replies": 177,
+      "reposts": 3,
+      "quotes": 0,
+      "clicks": 45
+    },
+    "daily_views": [
+      {
+        "date": "2026-10-10",
+        "views": 0
+      },
+      {
+        "date": "2026-10-11",
+        "views": 0
+      },
+      {
+        "date": "2026-10-12",
+        "views": 0
+      },
+      {
+        "date": "2026-10-13",
+        "views": 5824
+      },
+      {
+        "date": "2026-10-14",
+        "views": 620
+      },
+      {
+        "date": "2026-10-15",
+        "views": 42
+      },
+      {
+        "date": "2026-10-16",
+        "views": 30510
+      },
+      {
+        "date": "2026-10-17",
+        "views": 21476
+      },
+      {
+        "date": "2026-10-18",
+        "views": 243
+      },
+      {
+        "date": "2026-10-19",
+        "views": 29
+      },
+      {
+        "date": "2026-10-20",
+        "views": 40
+      },
+      {
+        "date": "2026-10-21",
+        "views": 47
+      },
+      {
+        "date": "2026-10-22",
+        "views": 17
+      },
+      {
+        "date": "2026-10-23",
+        "views": 9
+      },
+      {
+        "date": "2026-10-24",
+        "views": 4
+      },
+      {
+        "date": "2026-10-25",
+        "views": 18
+      },
+      {
+        "date": "2026-10-26",
+        "views": 1813
+      },
+      {
+        "date": "2026-10-27",
+        "views": 136
+      },
+      {
+        "date": "2026-10-28",
+        "views": 4516
+      },
+      {
+        "date": "2026-10-29",
+        "views": 507
+      },
+      {
+        "date": "2026-10-30",
+        "views": 5
+      },
+      {
+        "date": "2026-10-31",
+        "views": 10
+      },
+      {
+        "date": "2026-11-01",
+        "views": 3
+      },
+      {
+        "date": "2026-11-02",
+        "views": 520
+      },
+      {
+        "date": "2026-11-03",
+        "views": 28
+      },
+      {
+        "date": "2026-11-04",
+        "views": 3
+      },
+      {
+        "date": "2026-11-05",
+        "views": 7
+      },
+      {
+        "date": "2026-11-06",
+        "views": 1
+      },
+      {
+        "date": "2026-11-07",
+        "views": 0
+      },
+      {
+        "date": "2026-11-08",
+        "views": 0
+      },
+      {
+        "date": "2026-11-09",
+        "views": 0
+      }
+    ]
+  },
+  "posts": [
+    {
+      "id": "17877641319582718",
+      "timestamp": "2026-11-03T12:14:19+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DfR22oHHYiL",
+      "text": "드디어 3달 동안 열심히 만든 러닝 앱을 출시했어!\n뿌듯하다 야호\n\nhttps://apps.apple.com/app/apple-store/id6807295594?pt=129347866&ct=threads&mt=8",
+      "views": 476,
+      "likes": 3,
+      "replies": 0,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18104576924528831",
+      "timestamp": "2026-10-29T11:53:25+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DfE8fKjmcNC",
+      "text": "러닝 생각 많을 때 뛰면 어떤 거 같아??\n잘 뛰어진다 vs 더 느려진다",
+      "views": 2194,
+      "likes": 13,
+      "replies": 7,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "17916015381496905",
+      "timestamp": "2026-10-29T11:14:00+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DfE3-dcGUjQ",
+      "text": "다들 런태기 어떻게 극복해??",
+      "views": 2567,
+      "likes": 21,
+      "replies": 27,
+      "reposts": 1,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "17926877976428083",
+      "timestamp": "2026-10-27T14:05:00+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DfAB9HqGSXr",
+      "text": "러닝하는 데 얼굴 너무 건조하다\n다들 피부관리는 어떻게 해??",
+      "views": 1920,
+      "likes": 4,
+      "replies": 8,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18023631320865958",
+      "timestamp": "2026-10-18T05:08:30+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/Den5Zzmmf3G",
+      "text": "러닝 뛰고 싶은데 무릎이 은근하게 아파\n이럴 때 다들 어떻게 해?\n\n기다렸다가 아예 괜찮아지면 뛴다 vs 그냥 뛴다",
+      "views": 8139,
+      "likes": 25,
+      "replies": 49,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 2
+    },
+    {
+      "id": "18157404361525484",
+      "timestamp": "2026-10-17T12:37:29+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DemH_aGmTOD",
+      "text": "러닝 시작한지 3달째\n슬슬 날이 추워지는데 다들 겨울엔 러닝 어떻게 해?\n겨울은 아직 안 겪어봐서 걱정이랄까",
+      "views": 25372,
+      "likes": 37,
+      "replies": 23,
+      "reposts": 1,
+      "quotes": 0,
+      "shares": 2
+    },
+    {
+      "id": "17908075440327203",
+      "timestamp": "2026-10-15T11:44:52+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/Deg4YTMGW_u",
+      "text": "요즘같은 날씨 의상을 어떻게 입어야 좋을까?\n\n감기 걸릴까봐 무서워",
+      "views": 497,
+      "likes": 0,
+      "replies": 2,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "17940384579367874",
+      "timestamp": "2026-10-14T14:03:36+0000",
+      "media_type": "CAROUSEL_ALBUM",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeejdewnXXX",
+      "text": "세계 최초 핫도그런🌭\n\n러닝 동기부여 강화 프로젝트\n재밌게 그림 그리며 뛰기🏃\n\n색다른 그림(경로) 아이디어 추천 좀!",
+      "views": 396,
+      "likes": 0,
+      "replies": 0,
+      "reposts": 0,
+      "quotes": 2,
+      "shares": 0
+    },
+    {
+      "id": "18072380408489349",
+      "timestamp": "2026-10-14T13:07:58+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeedGEAHUEX",
+      "text": "러닝 앱 홍보하려면 내가 먼저 뛰어야 하는데 \n뛰기 싫다 어떡하냐ㅠ",
+      "views": 528,
+      "likes": 5,
+      "replies": 2,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "17957549970249064",
+      "timestamp": "2026-10-14T08:16:44+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/Ded7w_nneF9",
+      "text": "러닝하기 귀찮아질 때 어떻게 함?\n동기부여되는 방법 추천좀",
+      "views": 3180,
+      "likes": 15,
+      "replies": 46,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18059566496637175",
+      "timestamp": "2026-10-04T12:57:29+0000",
+      "media_type": "VIDEO",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeEr5ZXDLv1",
+      "text": "나의 러닝 경로 ㅋㅋ 스마일 코스야",
+      "views": 55,
+      "likes": 2,
+      "replies": 1,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18016536554947426",
+      "timestamp": "2026-10-04T12:45:08+0000",
+      "media_type": "VIDEO",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeEqfIsnIcB",
+      "text": "지방 사람이 서울 못 떠나는 이유: 러닝 뛰려고\n\n야경이 미친 한강런 이래서 서울이 좋다👟",
+      "views": 23,
+      "likes": 4,
+      "replies": 0,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18151037200537297",
+      "timestamp": "2026-10-04T12:43:07+0000",
+      "media_type": "VIDEO",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeEqQBWieSd",
+      "text": "내 러닝코스 어때 ㅋㅋ\n올라프로 어제의 경로 그려봤어 ㅋㅋ",
+      "views": 475,
+      "likes": 10,
+      "replies": 2,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 1
+    },
+    {
+      "id": "17910829491521532",
+      "timestamp": "2026-10-04T12:28:32+0000",
+      "media_type": "VIDEO",
+      "permalink": "https://www.threads.com/@team.mechuri/post/DeEolBTja7X",
+      "text": "모닝 런닝 완료!\n오늘의 코스는 🦅독수리🦅\n\n어때, 좀 독수리 같아보여?ㅋㅋ",
+      "views": 66,
+      "likes": 5,
+      "replies": 0,
+      "reposts": 1,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "17954904702243566",
+      "timestamp": "2026-09-02T09:48:32+0000",
+      "media_type": "CAROUSEL_ALBUM",
+      "permalink": "https://www.threads.com/@team.mechuri/post/Dcx84lGHT0V",
+      "text": "팀 메추리의 러닝 기록 공유 \n\n- 기획자: 5km \n- 개발자1: 5km\n- 개발자2: 4.3km\n\n러닝 경험을 더 재미있게.",
+      "views": 216,
+      "likes": 4,
+      "replies": 2,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    },
+    {
+      "id": "18104828591593746",
+      "timestamp": "2026-08-28T13:01:11+0000",
+      "media_type": "TEXT_POST",
+      "permalink": "https://www.threads.com/@team.mechuri/post/Dcla9QjHaTz",
+      "text": "혹시 내가 뛴 러닝 기록(경로)이 예쁘게 그려진다면 어떨 것 같나요?",
+      "views": 837,
+      "likes": 1,
+      "replies": 2,
+      "reposts": 0,
+      "quotes": 0,
+      "shares": 0
+    }
+  ]
+}

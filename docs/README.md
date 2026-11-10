@@ -28,6 +28,7 @@ docs/
 | **아이디어 원문 쌓기** | `ideation/<본인 닉네임>/` (`idea/<닉네임>` 브랜치에서) |
 | **반응, 콘텐츠, 외부 활동** | `marketing/reactions.md`, `marketing/content.md`, `ops/external-activities.md` |
 | **스레드 조회수·팔로워** | [`marketing/threads/stats.md`](marketing/threads/stats.md). 갱신하는 법은 [`marketing/threads/README.md`](marketing/threads/README.md) |
+| **App Store 노출·다운로드** | [`marketing/app-store/analytics/stats.md`](marketing/app-store/analytics/stats.md). 모으는 법은 [`marketing/app-store/analytics/README.md`](marketing/app-store/analytics/README.md) |
 
 ## 다음 회의에서 확인할 안건 후보
 
