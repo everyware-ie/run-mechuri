@@ -17,6 +17,7 @@ tags: [running, sprint, crew, diary, login, roles, tab]
 
 - 기간: **11/10부터 12/8(화)까지 4주**
 - 각자 가져온 아이디어를 묶어 투표하고, 2표를 받은 세 가지를 만듦
+- 2차 스프린트 목표(다운로드 30, 팔로워 50)는 앞으로 2주(~11/24) 더 달성해 보기로 함 ([10/6 결정](2026-10-06-second-sprint-app-store.md) 개정)
 
 | 만들 것 | 묶음 |
 |---|---|
@@ -35,7 +36,7 @@ tags: [running, sprint, crew, diary, login, roles, tab]
 | 현수 | 크루 화면 디자인(모집, 경로 조회). 기본 배경, 불빛 런 같은 디자인 보강 |
 | 지응 | 다이어리 구현(디자인 포함) |
 
-- 카카오 로그인은 사업자가 필요해서 Google로 대신함
+- 카카오 대신 Google로 감. 카카오에 사업자가 꼭 필요한지는 확실하지 않음(지응은 사업자 없이 진행해 본 경험이 있다고 함). 지민이 진행하면서 판단
 - [9/8 역할 결정](2026-09-08-scope-and-roles.md)은 고치지 않음. 10/6 때처럼 이번 스프린트 일을 사람별로 나눈 것
 
 ## 3. "러닝" 탭은 이름을 두고 아이콘을 바꿔 본다
@@ -49,8 +50,8 @@ tags: [running, sprint, crew, diary, login, roles, tab]
 | 문서 | 바뀐 것 |
 |---|---|
 | [MVP PRD](../specs/prd/running-drawing-mvp.md) §10 로드맵 | 그룹 드로잉 아래에 3차 스프린트 범위 메모 추가 |
-| [MVP PRD](../specs/prd/running-drawing-mvp.md) §13 성공 판정 | 2차 스프린트가 1주 일찍 넘어간 것과 3차 스프린트 일정 추가 |
-| [10/6 결정](2026-10-06-second-sprint-app-store.md) | 2차 스프린트 결과와 조기 전환을 개정으로 덧붙임 |
+| [MVP PRD](../specs/prd/running-drawing-mvp.md) §13 성공 판정 | 2차 목표를 2주 더 보는 것과 3차 스프린트 일정 추가 |
+| [10/6 결정](2026-10-06-second-sprint-app-store.md) | 3차 스프린트 시작과 목표 2주 연장을 개정으로 덧붙임 |
 | [하단 탭 FRD](../specs/frd/home-running-tabs.md) | 아직 안 고침. 아이콘이 나오면 고침 |
 
 ## 구현 전에 할 것
