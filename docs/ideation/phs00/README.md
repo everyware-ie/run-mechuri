@@ -21,10 +21,12 @@
 | 2026-08-18 | 1주차 종료 회의 안건 | 완료 | [원문](2026-08-18-meeting-agenda.md) |
 | 2026-08-19 | 2주차 업무 분배 제안 | **제안, 팀 확인 대기** | [원문](2026-08-19-w2-work-split-proposal.md) |
 | 2026-08-26 | 회의 안건 (스택 투표·범위·디자인 컨셉·일정 재조정) | **회의 대기** | [원문](2026-08-26-meeting-agenda.md) |
+| 2026-11-10 | 보증금 챌린지와 포인트 BM 구상 (다음 스프린트 아이디어, 법률 검토 전) | **회의 대기** | [원문](2026-11-10-deposit-challenge-bm.md) · [도식](2026-11-10-deposit-challenge-bm.html) |
 
 ## 주제별 지도
 
 - 리서치: [경쟁사·보상 경험](2026-07-21-running-research-and-reward-experience.md)
 - 아이디어 발산: [보상·협동/경쟁](2026-07-21-running-research-and-reward-experience.md), [위치 기반 게임](2026-07-21-location-based-game-concepts.md), [러닝 트렌드 반영](2026-07-21-running-trend-to-concept.md), [비러닝 트렌드 결합](2026-07-21-cross-domain-trend-concepts.md), [폐허 도시 공성전](2026-07-21-ruined-city-siege-concepts.md), [외계 침공 도시 탈환](2026-07-21-alien-invasion-coop-war-concepts.md), [생활권 시즌 영토전](2026-07-21-local-territory-war-season-concepts.md), [영토전 설계 보완](2026-07-21-local-territory-war-design-update.md), [저목표·고빈도 작전](2026-07-21-low-threshold-operation-loop.md), [초소형 단계 분할](2026-07-21-micro-operation-progression.md), [회의용 영토전 브리프](2026-07-22-territory-war-meeting-brief.md)
 - 회의·진행: [경로 보정 비교 화면](2026-08-17-route-stylization-levels.html), [08-18 회의 안건](2026-08-18-meeting-agenda.md), [2주차 업무 분배 제안](2026-08-19-w2-work-split-proposal.md), [08-26 회의 안건](2026-08-26-meeting-agenda.md)
+- 수익 모델: [보증금 챌린지와 포인트 BM 구상](2026-11-10-deposit-challenge-bm.md) ([회의용 도식](2026-11-10-deposit-challenge-bm.html))
 - 회의에서 확인할 질문: 각 원문의 `다음 회의` / `검증 질문` 절

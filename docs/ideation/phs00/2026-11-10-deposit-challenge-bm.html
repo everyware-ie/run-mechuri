@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>보증금 챌린지 구상</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 920px 한 기둥. 요약 → 돈의 흐름 → 보상 → 사용처 경계 → 랜덤 → 바뀐 것 → 법·정책 → 정할 것 */
+/* 색: Runary 앱의 "1a 야간 네온" 토큰(frontend/src/constants/theme.ts)을 그대로 쓰는 다크 우선 */
+:root {
+  --bg: #0B0D10;
+  --card: #14181D;
+  --card2: #1B2027;
+  --fg: #EDF1F5;
+  --muted: #8A96A3;
+  --line: rgba(237, 241, 245, 0.12);
+  --line-strong: rgba(237, 241, 245, 0.28);
+  --accent: #FF5A2B;
+  --accent-soft: rgba(255, 90, 43, 0.14);
+  --ok: #3FC8A8;
+  --ok-soft: rgba(63, 200, 168, 0.14);
+  --warn: #E8B44C;
+  --warn-soft: rgba(232, 180, 76, 0.14);
+  --bad: #F2557A;
+  --bad-soft: rgba(242, 85, 122, 0.14);
+  --sans: "Noto Sans KR", "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #F4F5F7; --card: #FFFFFF; --card2: #EDF0F3; --fg: #12161B; --muted: #56616C;
+    --line: rgba(18, 22, 27, 0.12); --line-strong: rgba(18, 22, 27, 0.30);
+    --accent: #C43C12; --accent-soft: rgba(196, 60, 18, 0.10);
+    --ok: #0F7F69; --ok-soft: rgba(15, 127, 105, 0.10);
+    --warn: #8A5E05; --warn-soft: rgba(138, 94, 5, 0.10);
+    --bad: #B71F47; --bad-soft: rgba(183, 31, 71, 0.09);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #F4F5F7; --card: #FFFFFF; --card2: #EDF0F3; --fg: #12161B; --muted: #56616C;
+  --line: rgba(18, 22, 27, 0.12); --line-strong: rgba(18, 22, 27, 0.30);
+  --accent: #C43C12; --accent-soft: rgba(196, 60, 18, 0.10);
+  --ok: #0F7F69; --ok-soft: rgba(15, 127, 105, 0.10);
+  --warn: #8A5E05; --warn-soft: rgba(138, 94, 5, 0.10);
+  --bad: #B71F47; --bad-soft: rgba(183, 31, 71, 0.09);
+  color-scheme: light;
+}
+
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+.wrap {
+  max-width: 920px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 44px 72px;
+  display: flex; flex-direction: column; gap: 64px;
+}
+section, header { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+h1 { margin: 0; font-size: clamp(32px, 6vw, 46px); font-weight: 800; line-height: 1.2; letter-spacing: -0.02em; text-wrap: balance; }
+h2 { margin: 0; font-size: 24px; font-weight: 800; line-height: 1.35; letter-spacing: -0.01em; text-wrap: balance; }
+h3 { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.4; }
+p { margin: 0; max-width: 66ch; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; color: var(--muted); }
+.lead { font-size: 18.5px; line-height: 1.65; }
+.muted { color: var(--muted); }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+ul, ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 6px; max-width: 68ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font-size: 13px; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); }
+blockquote { margin: 0; padding: 14px 18px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; max-width: 68ch; }
+blockquote p { font-size: 15.5px; }
+blockquote cite { display: block; margin-top: 6px; font-style: normal; font-size: 13px; color: var(--muted); }
+.history { display: grid; gap: 4px; font-size: 14.5px; color: var(--muted); max-width: 68ch; }
+.history strong { color: var(--fg); font-weight: 700; }
+
+figure { margin: 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.diagram { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.diagram svg { display: block; width: 100%; min-width: 660px; height: auto; color: var(--fg); font-family: var(--sans); }
+figcaption { font-size: 14.5px; color: var(--muted); max-width: 70ch; }
+
+svg .node { fill: var(--card2); stroke: var(--line-strong); stroke-width: 1.2; }
+svg .node-main { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+svg .node-ok { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.4; }
+svg .node-warn { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.4; }
+svg .node-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.4; }
+svg .zone { fill: var(--bg); stroke: var(--line); stroke-width: 1.2; }
+svg .t { fill: currentColor; font-size: 14px; font-weight: 700; }
+svg .s { fill: var(--muted); font-size: 12px; }
+svg .lbl { fill: currentColor; font-size: 12.5px; font-weight: 500; }
+svg .lbl-acc { fill: var(--accent); font-size: 12.5px; font-weight: 700; }
+svg .lbl-ok { fill: var(--ok); font-size: 12.5px; font-weight: 700; }
+svg .lbl-bad { fill: var(--bad); font-size: 12.5px; font-weight: 700; }
+svg .v-ok { fill: var(--ok); font-size: 12.5px; font-weight: 700; }
+svg .v-warn { fill: var(--warn); font-size: 12.5px; font-weight: 700; }
+svg .v-bad { fill: var(--bad); font-size: 12.5px; font-weight: 700; }
+svg .edge { stroke: currentColor; stroke-width: 1.6; fill: none; }
+svg .edge-muted { stroke: var(--muted); stroke-width: 1.6; fill: none; stroke-dasharray: 6 5; }
+svg .edge-acc { stroke: var(--accent); stroke-width: 2.2; fill: none; }
+svg .edge-ok { stroke: var(--ok); stroke-width: 1.8; fill: none; }
+svg .edge-bad { stroke: var(--bad); stroke-width: 1.8; fill: none; stroke-dasharray: 6 5; }
+svg .x-bad { stroke: var(--bad); stroke-width: 2.6; stroke-linecap: round; }
+svg .ah { fill: currentColor; }
+svg .ah-muted { fill: var(--muted); }
+svg .ah-acc { fill: var(--accent); }
+svg .ah-ok { fill: var(--ok); }
+svg .ah-bad { fill: var(--bad); }
+
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.rule { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14.5px; line-height: 1.6; min-width: 0; }
+.rule b { display: block; font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 2px; }
+
+.outcomes { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; gap: 12px; }
+.outcome { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; }
+.outcome .lv { font-size: 14px; font-weight: 700; }
+.bar { display: flex; height: 34px; gap: 4px; min-width: 0; }
+.seg { border-radius: 8px; display: flex; align-items: center; padding: 0 10px; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.seg-stake { flex: 0 0 62%; background: var(--card2); border: 1px solid var(--line-strong); }
+.seg-r1 { flex: 0 0 9%; justify-content: center; padding: 0; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 12px; }
+.seg-r2 { flex: 0 0 16%; justify-content: center; padding: 0; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); font-family: var(--mono); font-size: 12px; }
+.seg-none { flex: 1 1 auto; border: 1px dashed var(--line-strong); color: var(--muted); }
+.ref { font-size: 14px; color: var(--muted); }
+
+.uses { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.use { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.use h3 { font-size: 15px; }
+.use p { font-size: 14px; color: var(--muted); }
+.use .when { font-family: var(--mono); font-size: 11.5px; color: var(--muted); letter-spacing: 0.04em; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 14.5px; line-height: 1.6; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12.5px; font-weight: 500; color: var(--muted); background: var(--card2); }
+td.k { font-weight: 700; white-space: nowrap; }
+.src { display: block; margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+.pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 999px; white-space: nowrap; margin-top: 4px; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+.tensions { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.tension { border: 1px solid var(--warn); background: var(--warn-soft); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tension p { font-size: 15px; }
+.tension .pair { font-family: var(--mono); font-size: 12px; color: var(--warn); letter-spacing: 0.03em; }
+
+.check { font-family: var(--mono); font-size: 12px; color: var(--warn); white-space: nowrap; }
+.decide li { padding-left: 2px; }
+footer { display: flex; flex-direction: column; gap: 12px; font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 24px; }
+footer ul { font-size: 13.5px; gap: 4px; }
+@media (max-width: 520px) {
+  .outcome { grid-template-columns: 52px 1fr; gap: 8px; }
+  .seg { font-size: 12px; padding: 0 8px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">2026-11-10 회의 · 다음 스프린트 아이디어 · 현수</div>
+  <h1>보증금 챌린지 구상</h1>
+  <p class="lead">러닝 목표에 포인트를 걸고, 달성하면 돌려받는 구조입니다. 어려운 목표를 달성하면 회사가 조금 더 얹어 줍니다. 실패하면 건 포인트는 회수됩니다.</p>
+  <p>포인트는 앱 안에서 쓰는 것이 기본입니다. 원화 환급은 앱을 떠나는 사람을 위한 출구로만 둡니다.</p>
+  <div class="chips">
+    <span class="chip">아이디어 단계, 결정 아님</span>
+    <span class="chip">법률 검토 전</span>
+    <span class="chip">조사 기준일 2026-11-10</span>
+  </div>
+  <blockquote>
+    <p>"이걸로 떼 돈을 벌자 이런 마인드는 아니고 소소하게 파이를 키워가며 일단은 조금이라도 수익 실현을 해보는 게 목표죠."</p>
+    <cite>현수, 2026-11-10 아이디어 정리 중</cite>
+  </blockquote>
+  <div class="history">
+    <span><strong>보증금 아이디어는 전에도 나왔습니다.</strong></span>
+    <span>8/4 통합 회의에서 지민이 낸 "페이백 마라톤"이 <a href="https://github.com/everyware-ie/run-mechuri/blob/main/docs/topics/concept-candidates.md">컨셉 후보</a>에 미검증으로 남아 있습니다.</span>
+    <span>지민의 <a href="https://github.com/everyware-ie/run-mechuri/blob/main/docs/ideation/jminkkk/2026-07-28-journey-running-concept.md">7/28 노트</a>에서는 보증금이 "사행성 톤"이라 폐기됐습니다. 이번 구상은 그 우려에 답하는 쪽으로 다듬었습니다.</span>
+  </div>
+</header>
+
+<section>
+  <h2>포인트가 도는 길</h2>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 900 400" role="img" aria-label="카드로 충전한 포인트를 챌린지에 걸고, 달성하면 원금이 지갑으로 돌아오며 어려운 목표는 회사가 리워드를 더한다. 실패하면 회사가 회수한다. 포인트는 주로 앱 안에서 쓰고, 원화 환급은 출구다.">
+        <defs>
+          <marker id="f1-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+          <marker id="f1-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-muted"/></marker>
+          <marker id="f1-ah-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-acc"/></marker>
+        </defs>
+
+        <!-- 리워드: 회사 → 지갑 (바깥 곡선, 주황) -->
+        <path d="M825,150 C825,40 310,40 310,146" class="edge-acc" marker-end="url(#f1-ah-acc)"/>
+        <text x="567" y="58" text-anchor="middle" class="lbl-acc">+ 리워드 (어려운 목표 달성 시, 회사 부담)</text>
+
+        <!-- 달성: 챌린지 → 지갑 (안쪽 곡선) -->
+        <path d="M590,150 C590,100 370,100 370,146" class="edge" marker-end="url(#f1-ah)"/>
+        <text x="480" y="104" text-anchor="middle" class="lbl">달성: 원금 돌려받기</text>
+
+        <!-- 가운데 줄 -->
+        <rect x="20" y="150" width="140" height="76" rx="14" class="node"/>
+        <text x="90" y="183" text-anchor="middle" class="t">카드 결제</text>
+        <text x="90" y="204" text-anchor="middle" class="s">원화로 충전</text>
+
+        <rect x="250" y="150" width="180" height="76" rx="14" class="node-main"/>
+        <text x="340" y="183" text-anchor="middle" class="t">포인트 지갑</text>
+        <text x="340" y="204" text-anchor="middle" class="s">현금처럼 쓰는 포인트</text>
+
+        <rect x="520" y="150" width="170" height="76" rx="14" class="node"/>
+        <text x="605" y="183" text-anchor="middle" class="t">보증금 챌린지</text>
+        <text x="605" y="204" text-anchor="middle" class="s">목표·기간·난이도</text>
+
+        <rect x="770" y="150" width="110" height="76" rx="14" class="node"/>
+        <text x="825" y="183" text-anchor="middle" class="t">회사</text>
+        <text x="825" y="204" text-anchor="middle" class="s">Runary</text>
+
+        <line x1="160" y1="188" x2="246" y2="188" class="edge" marker-end="url(#f1-ah)"/>
+        <text x="203" y="178" text-anchor="middle" class="lbl">충전</text>
+
+        <line x1="430" y1="188" x2="516" y2="188" class="edge" marker-end="url(#f1-ah)"/>
+        <text x="473" y="178" text-anchor="middle" class="lbl">걸기</text>
+        <text x="473" y="208" text-anchor="middle" class="s">상한 있음</text>
+
+        <line x1="690" y1="188" x2="766" y2="188" class="edge" marker-end="url(#f1-ah)"/>
+        <text x="728" y="178" text-anchor="middle" class="lbl">실패</text>
+        <text x="728" y="208" text-anchor="middle" class="s">전부 회수</text>
+
+        <!-- 아래 줄 -->
+        <rect x="20" y="300" width="140" height="84" rx="14" class="node"/>
+        <text x="90" y="337" text-anchor="middle" class="t">은행 계좌</text>
+        <text x="90" y="358" text-anchor="middle" class="s">원화</text>
+
+        <rect x="250" y="300" width="440" height="84" rx="14" class="node"/>
+        <text x="470" y="330" text-anchor="middle" class="t">앱 안 사용처 (메인)</text>
+        <text x="470" y="352" text-anchor="middle" class="s">경험치 부스트, 연속 기록 보호, 캐릭터 꾸미기</text>
+        <text x="470" y="371" text-anchor="middle" class="s">러닝 용품과 소셜 기능은 나중에</text>
+
+        <line x1="340" y1="226" x2="340" y2="296" class="edge" marker-end="url(#f1-ah)"/>
+        <text x="352" y="266" class="lbl">쓰기</text>
+
+        <path d="M280,226 V262 H90 V296" class="edge-muted" marker-end="url(#f1-ah-muted)"/>
+        <text x="185" y="254" text-anchor="middle" class="lbl">원화 환급 (출구)</text>
+        <text x="185" y="282" text-anchor="middle" class="s">수수료 공제</text>
+      </svg>
+    </div>
+    <figcaption>
+      카드로 충전한 포인트가 지갑에 모이고, 지갑에서 챌린지로 겁니다. 달성하면 원금이 지갑으로 돌아오고, 어려운 목표였다면 회사가 리워드를 더 얹습니다(주황색).
+      실패한 포인트는 회사로 가며, 다른 참가자에게 나누지 않습니다. 원화 환급(점선)은 출구이고, 주로 쓰는 길은 앱 안 사용처입니다.
+    </figcaption>
+  </figure>
+
+  <div class="rules">
+    <div class="rule"><b>보증금</b>한 번에 걸 수 있는 금액에 상한을 둡니다</div>
+    <div class="rule"><b>리워드 재원</b>회사가 냅니다. 남이 실패한 포인트로 주지 않습니다</div>
+    <div class="rule"><b>리워드 크기</b>난이도별 비율로 정하고 비율에도 상한이 있습니다. 쉬운 목표는 원금만 돌려줍니다</div>
+    <div class="rule"><b>실패</b>리워드 없이 그대로 끝납니다. 건 포인트는 전부 회수합니다</div>
+    <div class="rule"><b>원화 환급</b>보상으로 받은 포인트도 포함합니다. 수수료는 미정입니다</div>
+    <div class="rule"><b>판정</b>Runary 측정 기록으로 합니다. 건강 앱 기록은 손으로 넣을 수 있어서입니다 <span class="check">[확인 필요]</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>난이도별로 돌아오는 것</h2>
+  <figure>
+    <div class="outcomes" role="img" aria-label="쉬운 목표는 보증금만, 보통은 보증금에 a퍼센트, 어려운 목표는 보증금에 b퍼센트를 더해 돌려받고, 실패하면 아무것도 돌아오지 않는다.">
+      <div class="outcome"><span class="lv">쉬움</span><div class="bar"><span class="seg seg-stake">보증금</span></div></div>
+      <div class="outcome"><span class="lv">보통</span><div class="bar"><span class="seg seg-stake">보증금</span><span class="seg seg-r1">+a%</span></div></div>
+      <div class="outcome"><span class="lv">어려움</span><div class="bar"><span class="seg seg-stake">보증금</span><span class="seg seg-r2">+b%</span></div></div>
+      <div class="outcome"><span class="lv">실패</span><div class="bar"><span class="seg seg-none">돌아오는 것 없음</span></div></div>
+    </div>
+    <figcaption>a, b, 그리고 한 번에 걸 수 있는 보증금 상한은 회의에서 정할 값입니다. 막대 길이는 크기를 비교하려는 그림일 뿐 실제 비율이 아닙니다.</figcaption>
+  </figure>
+  <p class="ref">참고로 다른 서비스가 한 번에 걸 수 있게 한 최대치는 이렇습니다. 챌린저스는 예치금 20만원입니다(약관 페이지를 직접 열지 못해 검색 요약으로 확인, <span class="check">[확인 필요]</span>). 머니워크는 50,000포인트입니다(<a href="https://docs.channel.io/moneywalk/ko/articles/%EB%8F%88-%EA%B1%B0%EB%8A%94-%EC%B1%8C%EB%A6%B0%EC%A7%80-14114d41">머니워크 고객센터</a>).</p>
+</section>
+
+<section>
+  <h2>포인트를 쓰는 곳</h2>
+  <p>초반에는 러닝 용품을 팔기 어려우니 게임 요소로 사용처를 만듭니다. 게임에 캐시를 충전해서 쓰는 것처럼 쓰게 하면 "목표를 달성해서 돌려받는" 구조가 덜 사행성으로 느껴질 거라는 게 현수의 생각입니다.</p>
+  <div class="uses">
+    <div class="use"><div class="when">초반</div><h3>경험치 부스트</h3><p>달린 거리만큼 경험치가 쌓이고, 부스트로 더 빨리 올립니다</p></div>
+    <div class="use"><div class="when">초반</div><h3>연속 기록 보호</h3><p>연속으로 달린 기록이 끊길 뻔할 때 한 번 막아 줍니다</p></div>
+    <div class="use"><div class="when">초반</div><h3>캐릭터 꾸미기</h3><p>캐릭터를 만들고 꾸밉니다. 랜덤 요소도 기준을 지키면 넣을 수 있습니다</p></div>
+    <div class="use"><div class="when">나중</div><h3>러닝 용품</h3><p>포인트로 사고, 모자라면 차액만 카드로 냅니다</p></div>
+    <div class="use"><div class="when">나중</div><h3>소셜 기능</h3><p>소셜 기능을 도입하면 추가 이용에 포인트를 씁니다</p></div>
+  </div>
+
+  <h3>지켜야 할 경계는 하나입니다</h3>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 900 330" role="img" aria-label="포인트는 성장 경제로 흘러가 부스트, 보호, 꾸미기를 살 수 있다. 하지만 부스트가 리워드 비율을 올리거나, 연속 기록 보호가 챌린지 실패를 덮으면 안 된다.">
+        <defs>
+          <marker id="f3-ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ok"/></marker>
+          <marker id="f3-ah-bad" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-bad"/></marker>
+          <marker id="f3-ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-muted"/></marker>
+        </defs>
+
+        <rect x="20" y="20" width="400" height="290" rx="16" class="zone"/>
+        <text x="44" y="52" class="t">성장 경제</text>
+        <text x="44" y="73" class="s">포인트를 쓰는 곳. 원화로 돌아가지 않는다</text>
+
+        <rect x="480" y="20" width="400" height="290" rx="16" class="zone"/>
+        <text x="504" y="52" class="t">돈 경제</text>
+        <text x="504" y="73" class="s">원화로 이어지는 곳</text>
+
+        <rect x="44" y="110" width="170" height="56" rx="12" class="node"/>
+        <text x="129" y="134" text-anchor="middle" class="t">경험치·레벨</text>
+        <text x="129" y="153" text-anchor="middle" class="s">달린 거리만큼 쌓임</text>
+
+        <rect x="230" y="110" width="170" height="56" rx="12" class="node"/>
+        <text x="315" y="134" text-anchor="middle" class="t">경험치 부스트</text>
+        <text x="315" y="153" text-anchor="middle" class="s">경험치만 올림</text>
+
+        <rect x="44" y="226" width="170" height="56" rx="12" class="node"/>
+        <text x="129" y="250" text-anchor="middle" class="t">캐릭터 꾸미기</text>
+        <text x="129" y="269" text-anchor="middle" class="s">랜덤은 아래 기준대로</text>
+
+        <rect x="230" y="226" width="170" height="56" rx="12" class="node"/>
+        <text x="315" y="250" text-anchor="middle" class="t">연속 기록 보호</text>
+        <text x="315" y="269" text-anchor="middle" class="s">연속 기록에만 씀</text>
+
+        <rect x="504" y="110" width="170" height="56" rx="12" class="node-main"/>
+        <text x="589" y="134" text-anchor="middle" class="t">포인트 지갑</text>
+        <text x="589" y="153" text-anchor="middle" class="s">충전·보상 포인트</text>
+
+        <rect x="700" y="110" width="160" height="56" rx="12" class="node"/>
+        <text x="780" y="134" text-anchor="middle" class="t">원화 환급</text>
+        <text x="780" y="153" text-anchor="middle" class="s">출구</text>
+
+        <rect x="504" y="226" width="170" height="56" rx="12" class="node"/>
+        <text x="589" y="250" text-anchor="middle" class="t">보증금 챌린지</text>
+        <text x="589" y="269" text-anchor="middle" class="s">본인 기록으로만 판정</text>
+
+        <rect x="700" y="226" width="160" height="56" rx="12" class="node"/>
+        <text x="780" y="250" text-anchor="middle" class="t">리워드 비율</text>
+        <text x="780" y="269" text-anchor="middle" class="s">난이도로만 정함</text>
+
+        <!-- 허용: 지갑 → 성장 경제 -->
+        <line x1="504" y1="124" x2="424" y2="124" class="edge-ok" marker-end="url(#f3-ah-ok)"/>
+        <text x="452" y="114" text-anchor="middle" class="lbl-ok">포인트로 산다</text>
+
+        <line x1="674" y1="138" x2="696" y2="138" class="edge-muted" marker-end="url(#f3-ah-muted)"/>
+
+        <!-- 금지 1: 부스트 → 리워드 비율 -->
+        <path d="M400,152 H440 V194 H780 V222" class="edge-bad" marker-end="url(#f3-ah-bad)"/>
+        <line x1="453" y1="187" x2="467" y2="201" class="x-bad"/>
+        <line x1="467" y1="187" x2="453" y2="201" class="x-bad"/>
+        <text x="620" y="187" text-anchor="middle" class="lbl-bad">리워드 비율을 올리면 안 됨</text>
+
+        <!-- 금지 2: 연속 기록 보호 → 챌린지 -->
+        <line x1="400" y1="254" x2="500" y2="254" class="edge-bad" marker-end="url(#f3-ah-bad)"/>
+        <line x1="445" y1="247" x2="459" y2="261" class="x-bad"/>
+        <line x1="459" y1="247" x2="445" y2="261" class="x-bad"/>
+        <text x="452" y="284" text-anchor="middle" class="lbl-bad">실패 덮기 금지</text>
+      </svg>
+    </div>
+    <figcaption>
+      포인트로 부스트, 연속 기록 보호, 꾸미기를 사는 것은 괜찮습니다. 이것들이 돈 경제의 결과를 바꾸면 안 됩니다.
+      부스트나 레벨이 리워드 비율을 올리면 포인트를 써서 더 큰 현금 리워드를 사는 구조가 됩니다. 연속 기록 보호로 챌린지 실패를 덮을 수 있으면 결과가 노력이 아니라 돈으로 정해집니다.
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>랜덤은 무엇이 나오느냐로 가릅니다</h2>
+  <figure>
+    <div class="diagram">
+      <svg viewBox="0 0 830 300" role="img" aria-label="포인트로 사지 않는 무료 랜덤은 위험이 낮다. 포인트로 사더라도 결과가 꾸미기 아이템이면 확률만 공개하면 된다. 포인트로 사서 결과가 포인트나 환급 가능한 가치가 되면 피한다.">
+        <defs>
+          <marker id="f4-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+        </defs>
+
+        <rect x="20" y="110" width="190" height="64" rx="12" class="node"/>
+        <text x="115" y="138" text-anchor="middle" class="t">포인트로 사는</text>
+        <text x="115" y="158" text-anchor="middle" class="t">랜덤인가?</text>
+
+        <rect x="310" y="24" width="210" height="60" rx="12" class="node-ok"/>
+        <text x="415" y="50" text-anchor="middle" class="t">무료로 주는 랜덤</text>
+        <text x="415" y="70" text-anchor="middle" class="v-ok">위험 낮음</text>
+
+        <rect x="310" y="170" width="210" height="64" rx="12" class="node"/>
+        <text x="415" y="198" text-anchor="middle" class="t">결과가 포인트나</text>
+        <text x="415" y="218" text-anchor="middle" class="t">현금 가치가 되나?</text>
+
+        <rect x="620" y="120" width="190" height="60" rx="12" class="node-warn"/>
+        <text x="715" y="146" text-anchor="middle" class="t">꾸미기 아이템 등</text>
+        <text x="715" y="166" text-anchor="middle" class="v-warn">확률을 공개하면 됨</text>
+
+        <rect x="620" y="220" width="190" height="60" rx="12" class="node-bad"/>
+        <text x="715" y="246" text-anchor="middle" class="t">포인트·환급 가치</text>
+        <text x="715" y="266" text-anchor="middle" class="v-bad">피한다</text>
+
+        <path d="M210,130 H250 V54 H306" class="edge" marker-end="url(#f4-ah)"/>
+        <text x="258" y="98" class="lbl">아니오</text>
+        <path d="M210,154 H250 V202 H306" class="edge" marker-end="url(#f4-ah)"/>
+        <text x="258" y="186" class="lbl">예</text>
+
+        <path d="M520,190 H566 V150 H616" class="edge" marker-end="url(#f4-ah)"/>
+        <text x="574" y="176" class="lbl">아니오</text>
+        <path d="M520,214 H566 V250 H616" class="edge" marker-end="url(#f4-ah)"/>
+        <text x="574" y="238" class="lbl">예</text>
+      </svg>
+    </div>
+    <figcaption>
+      랜덤 자체가 문제는 아닙니다. 포인트를 내고 뽑은 결과가 다시 포인트나 현금이 되면 대가, 우연, 상품이 다 갖춰집니다.
+      포인트로 사는 랜덤은 Apple 규칙에 따라 구매 전에 확률을 공개해야 합니다(<a href="https://www.pcgamer.com/apple-now-requires-app-store-games-to-disclose-loot-box-odds/">2017년 도입</a>). Runary가 게임물로 분류되면 게임산업법의 확률 공개 의무도 적용됩니다(<a href="https://www.ajunews.com/view/20240102104711033">2024년 3월 22일 시행</a>).
+    </figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>처음 구상에서 바뀐 것</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>항목</th><th>처음</th><th>지금</th><th>바꾼 이유</th></tr></thead>
+      <tbody>
+        <tr><td class="k">토큰</td><td>포인트로 토큰을 한 번 더 산다</td><td>없앤다</td><td>법은 화폐 이름보다 돈이 실제로 어떻게 흐르는지를 봅니다. 쿠폰을 끼워도 유사수신으로 본 판례가 있습니다<span class="src"><a href="https://www.lawtalk.co.kr/posts/168544">대법원 2018도5519 해설</a></span></td></tr>
+        <tr><td class="k">리워드 재원</td><td>정하지 않음</td><td>회사가 낸다</td><td>실패한 사람의 돈을 성공한 사람에게 나누면 참가자끼리 겨루는 모양이 됩니다</td></tr>
+        <tr><td class="k">리워드 크기</td><td>건 토큰에 비례</td><td>난이도별 비율과 상한. 쉬운 목표는 0</td><td>많이 걸수록 무조건 많이 받으면 배당처럼 보입니다</td></tr>
+        <tr><td class="k">실패</td><td>그대로 사라진다</td><td>전부 회수, 리워드 없음</td><td>같은 방향을 분명히 했습니다</td></tr>
+        <tr><td class="k">원화 환급</td><td>수수료 떼고 가능</td><td>출구로 둔다. 보상 포인트도 포함</td><td>떠나는 사람을 위한 창구라는 위치를 정했습니다</td></tr>
+        <tr><td class="k">주 사용처</td><td>아이템 일부</td><td>게임 요소(부스트, 보호, 꾸미기). 러닝 용품은 나중</td><td>초반에는 상품을 팔기 어렵습니다</td></tr>
+        <tr><td class="k">사용자끼리 걸기</td><td>정리 중에 나옴</td><td>나중에 볼 확장 요소로 보류</td><td>전체 구상에서 가장 위험한 형태입니다. 아래 도박 항목 참고</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>지금 구조에 남은 긴장 두 가지</h2>
+  <div class="tensions">
+    <div class="tension">
+      <span class="pair">리워드 × 원화 환급</span>
+      <h3>리워드가 사실상 현금 상금이 됩니다</h3>
+      <p>보상으로 받은 포인트까지 원화로 돌려주면 리워드는 현금과 같습니다. 그러면 건 돈(대가), 달성 여부(우연이 일부 낌), 리워드(상품)가 다 갖춰집니다. 도박과 유사수신 판단이 여기서 갈립니다.</p>
+    </div>
+    <div class="tension">
+      <span class="pair">게임 요소 × 원화 환급</span>
+      <h3>게임처럼 만들수록 환전 금지에 가까워집니다</h3>
+      <p>게임처럼 보이면 사행성 느낌은 줄어듭니다. 하지만 Runary가 게임물로 분류되면 게임에서 얻은 결과물을 환전하는 일이 게임산업법으로 금지됩니다. 포인트 환급이 여기에 걸릴 수 있습니다.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>걸리는 법과 정책</h2>
+  <p class="muted">"남은 위험"은 조사한 자료를 바탕으로 한 판단이고, 법률 자문이 아닙니다.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>법·정책</th><th>무엇이 걸리나</th><th>지금 설계로 줄인 것</th><th>남은 것</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">도박·사행성<br><span class="pill bad">남은 위험 높음</span></td>
+          <td>여러 사람에게서 재물을 모아 우연으로 득실을 정하면 사행행위입니다. 실력이 결과에 영향을 줘도 우연이 조금이라도 끼면 도박이 될 수 있다는 판례가 있습니다. 운영자는 도박공간개설죄(5년 이하 징역 또는 3천만원 이하 벌금)가 될 수 있습니다.
+            <span class="src"><a href="https://ko.wikisource.org/wiki/%EC%82%AC%ED%96%89%ED%96%89%EC%9C%84_%EB%93%B1_%EA%B7%9C%EC%A0%9C_%EB%B0%8F_%EC%B2%98%EB%B2%8C_%ED%8A%B9%EB%A1%80%EB%B2%95">사행행위규제법 조문</a>, <a href="https://www.nepla.ai/case/%EB%8C%80%EB%B2%95%EC%9B%90/2006%EB%8F%84736">대법원 2006도736 내기골프</a>, <a href="https://www.lawtalk.co.kr/posts/66945">형법 247조 해설</a></span></td>
+          <td>보증금과 리워드 상한, 회사 재원, 난이도 기준, 사용자끼리 걸기 보류, "베팅" 같은 말 쓰지 않기</td>
+          <td>리워드까지 원화로 환급되는 점</td>
+        </tr>
+        <tr>
+          <td class="k">유사수신<br><span class="pill warn">남은 위험 중간</span></td>
+          <td>원금 이상을 돌려주기로 하고 예탁금 같은 명목으로 돈을 받는 행위를 금지합니다(5년 이하 징역 또는 5천만원 이하 벌금).
+            <span class="src"><a href="https://www.lawtalk.co.kr/posts/168544">유사수신법 제2조 해설</a></span></td>
+          <td>상한을 두고, "N% 더 돌려드려요" 같은 확정 수익률 문구를 쓰지 않기</td>
+          <td>달성하면 원금에 현금 가치를 더해 돌려준다는 점. 조건부라 차이는 있음</td>
+        </tr>
+        <tr>
+          <td class="k">게임산업법<br><span class="pill warn">남은 위험 중간</span></td>
+          <td>게임물이면 게임에서 얻은 점수, 경품, 게임머니를 환전하는 것을 업으로 하지 못합니다(제32조 제1항 제7호). 유상 확률형 아이템은 확률을 공개해야 합니다. 게임물 정의에 "운동효과"가 들어 있다고 알고 있으나 조문 원문을 찾지 못했습니다 <span class="check">[확인 필요]</span>
+            <span class="src"><a href="https://jipyong.com/origin/kr/newsletter/39_20070205/data/statute005.html">지평 뉴스레터</a>, <a href="https://www.mcst.go.kr/site/s_notice/press/pressView.jsp?pSeq=10410">문체부 보도자료</a>, <a href="https://www.ajunews.com/view/20240102104711033">아주경제</a></span></td>
+          <td>랜덤 결과물이 포인트나 현금이 되지 않게 하기</td>
+          <td>게임 요소를 늘렸을 때 게임물로 분류되는지</td>
+        </tr>
+        <tr>
+          <td class="k">선불전자지급수단<br><span class="pill ok">Runary 안에서만 쓰면 낮음</span></td>
+          <td>Runary가 아닌 곳에서 물건을 사는 데 쓰이면 등록 대상입니다. 2024년 9월 개정으로 범위가 넓어졌습니다. 등록하면 충전금을 따로 관리해야 하고, 적립금 지급은 재무건전성을 갖춘 업자만 할 수 있습니다.
+            <span class="src"><a href="https://platum.kr/archives/217353">플래텀</a>, <a href="https://www.tosspayments.com/blog/articles/amendment">토스페이먼츠</a>, <a href="https://www.newsis.com/view/NISX20240523_0002745395">뉴시스</a></span></td>
+          <td>포인트는 Runary 안에서만 쓰고, 사용자끼리 주고받지 못하게 하기</td>
+          <td>러닝 용품을 제휴로 팔면 바로 해당. 직접 팔 때만 피할 수 있음 <span class="check">[확인 필요]</span></td>
+        </tr>
+        <tr>
+          <td class="k">App Store<br><span class="pill warn">남은 위험 중간</span></td>
+          <td>디지털 아이템은 인앱 결제(3.1.1), 실물은 인앱 결제가 아닌 결제(3.1.3(e))를 써야 합니다. 인앱 결제로 산 화폐를 현금이 걸린 게임에 쓰면 안 되고(5.3.3), 현금이 걸린 게임은 면허가 필요합니다(5.3.4).
+            <span class="src"><a href="https://developer.apple.com/app-store/review/guidelines/">App Store Review Guidelines</a> (2026-10-16 갱신본을 직접 확인)</span></td>
+          <td>한국 전용 외부 결제(토스, 이니시스 등. 수수료 26%) 검토. 2022년 자료라 지금 조건은 <span class="check">[확인 필요]</span>
+            <span class="src"><a href="https://techcrunch.com/2022/06/30/apple-says-developers-will-have-to-submit-a-new-version-to-use-third-party-payment-systems-in-south-korea">TechCrunch</a></span></td>
+          <td>Apple이 보증금 챌린지를 현금이 걸린 게임으로 보는지. 가이드라인에 직접 나와 있지 않음</td>
+        </tr>
+        <tr>
+          <td class="k">환불 약관 (공정위)<br><span class="pill ok">남은 위험 낮음</span></td>
+          <td>7일 이내 전액 환불을 막는 조항, 수수료 기준을 흐리게 적는 조항, "탈퇴 시 환불 불가" 조항은 시정 대상입니다. 상품권 표준약관은 미사용 잔액을 5만원 이하 90%, 초과 95% 돌려주게 했습니다.
+            <span class="src"><a href="https://www.segye.com/newsView/20250916516716">세계일보</a>, <a href="https://www.mt.co.kr/economy/2025/09/16/2025091609033662860">머니투데이</a></span></td>
+          <td>환급을 막지 않고 출구로 둔다</td>
+          <td>수수료를 얼마로, 숫자로 적기. 상품권 기준이 포인트에도 맞는지 <span class="check">[확인 필요]</span></td>
+        </tr>
+        <tr>
+          <td class="k">위치·건강 정보<br><span class="pill warn">남은 위험 중간</span></td>
+          <td>지금 Runary는 측정 기록을 기기에만 둡니다. 돈이 걸리면 서버에서 판정해야 할 가능성이 큽니다. 개인위치정보를 다루면 위치기반서비스사업 신고 대상이고, 직접 수집하면 허가 대상일 수 있다는 해설도 있습니다.
+            <span class="src"><a href="https://www.kukinews.com/article/view/kuk202105120240">쿠키뉴스</a>, <a href="https://tilnote.io/pages/68fcf44ef08d3091a56f3b3b">틸노트 (블로그)</a></span></td>
+          <td>아직 없음</td>
+          <td>서버로 무엇을 보낼지. 좌표 대신 거리·시간 요약만 보내면 되는지 <span class="check">[확인 필요]</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="ref">해외 실패 사례도 있습니다. 미국 Pact(옛 GymPact)는 목표를 이루면 돈을 준다고 해 놓고 주지 않고, 동의 없이 결제하고, 해지 방법을 4,400단어 약관에 숨겼다는 이유로 2017년 FTC와 합의해 약 94만 8천 달러를 돌려줬습니다(<a href="https://www.engadget.com/2017/09/22/fitness-app-company-settles-ftc-nearly-1-million/">Engadget</a>). 지급 기한, 판정 기준, 환급 방법은 약관 앞부분에 쉽게 적어야 합니다.</p>
+</section>
+
+<section>
+  <h2>지금 Runary에 없는 것</h2>
+  <ul>
+    <li><b>서버.</b> 측정 기록은 기기에만 있고 서버로 보내지 않습니다. 포인트 잔액과 달성 판정에는 서버가 필요합니다.</li>
+    <li><b>결제.</b> 앱에 결제 기능이 아직 없습니다.</li>
+    <li><b>사업자와 결제대행 계약.</b> 실제 돈을 받으려면 먼저 준비해야 할 것으로 보입니다 <span class="check">[확인 필요]</span></li>
+  </ul>
+</section>
+
+<section>
+  <h2>변호사에게 물을 것</h2>
+  <ol>
+    <li>원화로 환급되는 포인트를 상한 안에서 걸고, 달성하면 회사 재원으로 난이도별 리워드를 주고, 실패하면 전부 회수하는 구조가 도박이나 사행행위에 해당하는지</li>
+    <li>리워드까지 원화로 환급되면 유사수신에 해당하는지</li>
+    <li>경험치, 레벨, 랜덤 아이템을 넣으면 게임물로 분류되는지. 그러면 포인트 환급이 환전 금지에 걸리는지</li>
+    <li>자체 판매하는 러닝 용품을 포인트로 살 때 선불전자지급수단 등록이 필요한지</li>
+  </ol>
+</section>
+
+<section>
+  <h2>회의에서 정할 것</h2>
+  <ul class="decide">
+    <li>다음 스프린트에 이 아이디어를 다룰지</li>
+    <li>보증금 상한과 난이도별 리워드 비율(a, b)의 대략적인 값</li>
+    <li>원화 환급 수수료</li>
+    <li>첫 버전을 돈 없이 시작할지. 달리기로 모은 포인트만 걸게 해서, 사람들이 정말 다시 달리는지 먼저 보는 방법입니다(조사 중에 나온 제안이고 아직 정하지 않음)</li>
+    <li>법률 검토를 누구에게, 어느 정도 비용으로 받을지</li>
+    <li>지민이 7/28에 보증금을 "사행성 톤"으로 폐기했는데, 이번 설계가 그 우려에 답이 되는지</li>
+  </ul>
+</section>
+
+<footer>
+  <p>이 페이지는 현수가 2026-11-10에 Claude와 아이디어를 정리하며 만든 회의 자료입니다. 법률 자문이 아닙니다.</p>
+  <p>법제처, 금융위원회, 법률신문 같은 원문 사이트는 작업 환경에서 열리지 않아서 검색 결과에 나온 조문 인용과 해설로 확인했습니다. 위키문헌의 조문이 현행 버전인지도 확인하지 못했습니다. App Store 가이드라인은 원문을 직접 읽었습니다.</p>
+  <p>원문 노트: <a href="https://github.com/everyware-ie/run-mechuri/blob/claude/funny-thompson-kxqba1/docs/ideation/phs00/2026-11-10-deposit-challenge-bm.md">docs/ideation/phs00/2026-11-10-deposit-challenge-bm.md</a></p>
+</footer>
+
+</div>
+
+</body>
+</html>
