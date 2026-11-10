@@ -61,6 +61,7 @@ App Store Connect 분석 탭에서 읽음. 11/3 ~ 11/8 (UTC 기준, 하루 이�
 - 레포에 있는 1.0.0용 이미지는 정상. 1.0.1 때 새로 만든 이미지에서 빠진 것으로 보임
 - 출시된 1.0.1은 Connect에서 스크린샷이 잠겨 있어서 지금 바로는 못 바꿈. 다음 버전(1.0.2)을 낼 때 같이 교체
 - 고친 이미지는 준비됨 (같은 1290×2796, 설명 줄만 수정). [수정본](../../marketing/app-store/screenshots-1.0.2/02-photo-background.png)
+- "께"는 같은 글꼴(Pretendard SemiBold)로 다시 그림. ㄲ이 기울고 좁아 보이는 건 글꼴 모양
 - 정할 것: "러닝" 탭 이름(§3)을 바꾸면 그 빌드와 같이 1.0.2로 낼지
 
 수치: [App Store 분석](../../marketing/app-store/analytics/stats.md). 앞으로 매주 회의 전에 쌓음
