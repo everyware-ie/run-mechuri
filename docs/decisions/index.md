@@ -2,7 +2,7 @@
 title: running Decisions Index
 product: running
 type: decision
-updated: 2026-10-12
+updated: 2026-11-10
 ---
 
 # 의사결정 목록
@@ -22,9 +22,9 @@ updated: 2026-10-12
 | 2026-09-29 | [결과물을 장면 둘씩 동시에 그려 생성 시간을 줄인다 (10/3 영상 압축 픽셀 차이 수용 보완)](2026-09-29-export-parallel-rendering.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
 | 2026-09-29 | [매주 셋의 기록을 합쳐 스레드에 올린다, 반응은 레포에 모은다](2026-09-29-weekly-content-and-reactions.md) | decided | [2026-09-29](../meetings/2026-09-29/synthesis.md) |
 | 2026-10-04 | [편집 화면을 인스타 스토리 편집처럼 바꾼다 (단계별 QA·1단계 선행 내부 배포 개정)](2026-10-04-story-style-editor.md) | decided | 회의 없음. [지민 시안](../ideation/jminkkk/2026-10-03-change-editing-page.html)을 보고 정했다 |
-| 2026-10-06 | [2차 스프린트는 정식 등재부터, 측정은 안정성 먼저](2026-10-06-second-sprint-app-store.md) | decided | [2026-10-06](../meetings/2026-10-06/synthesis.md) |
-
+| 2026-10-06 | [2차 스프린트는 정식 등재부터, 측정은 안정성 먼저 (11/10 3차 스프린트로 조기 전환)](2026-10-06-second-sprint-app-store.md) | decided | [2026-10-06](../meetings/2026-10-06/synthesis.md) |
 | 2026-10-12 | [하트 샘플로 편집·영상 생성 체험 제공](2026-10-12-heart-sample-experience.md) | decided | 사용자 FRD 확인·경로 선택·로컬 미러링 요청 |
 | 2026-10-27 | [다음 주 정식 심사에 측정 기능을 모두 넣는다](2026-10-27-submit-with-tracking.md) | decided | [2026-10-27](../meetings/2026-10-27/synthesis.md) |
+| 2026-11-10 | [3차 스프린트는 크루 가입, 크루원 경로 보기, 다이어리. 로그인부터 만든다](2026-11-10-third-sprint-crew-diary.md) | decided | [2026-11-10](../meetings/2026-11-10/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
