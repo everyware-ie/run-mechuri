@@ -157,8 +157,7 @@ export default function DiaryScreen() {
       <Pressable style={styles.backdrop} onPress={() => setPicked(null)} accessibilityLabel="닫기" />
       <View style={styles.sheet}>
         <View style={styles.handle} />
-        <Text style={styles.sheetTitle}>{picked?.title} 러닝</Text>
-        <Text style={styles.sheetHint}>보고 싶은 기록을 골라 주세요</Text>
+        <Text style={styles.sheetTitle}>{picked?.title} 러닝 {picked?.runs.length}번</Text>
         <View style={styles.runList}>
           {picked?.runs.map(item => <Pressable key={item.id} onPress={() => openRun(item.id)} accessibilityRole="button"
             accessibilityLabel={`${formatClock(item.started)} 시작, ${formatKm(item.distance)}, ${formatDuration(item.duration)}`} style={styles.runRow}>
