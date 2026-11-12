@@ -13,6 +13,7 @@ export const Colors = {
   danger: '#FF5A2B',
   // 다이어리 달력의 일요일·토요일. 평일 보조 색보다 한 단계 어둡다 (FRD: diary §2)
   weekend: '#566069',
+  weekendFill: 'rgba(86,96,105,0.22)', // 같은 회색을 옅게 깔아 숫자가 묻히지 않게 한다
   // 경로 렌더링과 공유하는 색(route-preview.tsx, RouteRendererModule.swift와 동일)
   lineWarm: '#FFF3EC',
 } as const;
