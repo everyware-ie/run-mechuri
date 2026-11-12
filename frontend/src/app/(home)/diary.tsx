@@ -12,7 +12,7 @@ import { Tracking, trackingEnabled } from '../../../modules/run-tracking/src/Run
 // FRD: docs/specs/frd/diary.md. 일요일에 한 주가 시작한다.
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 // 0번 칸이 일요일, 6번 칸이 토요일이다.
-const weekendColor = (column: number) => column === 0 ? Colors.sunday : column === 6 ? Colors.saturday : undefined;
+const weekendColor = (column: number) => column === 0 || column === 6 ? Colors.weekend : undefined;
 const MARKER_NAMES: Record<DiaryMarker, string> = { quail: '메추리', person: '사람' };
 
 export default function DiaryScreen() {
@@ -84,7 +84,7 @@ export default function DiaryScreen() {
             const label = entry ? `${month + 1}월 ${cell.day}일, 러닝 ${formatKm(entry.distance)}` : today ? `${month + 1}월 ${cell.day}일, 오늘` : `${month + 1}월 ${cell.day}일, 쉬는 날`;
             return <View key={column} style={styles.cell} accessible accessibilityLabel={label}>
               <View style={today ? styles.todayCircle : styles.dayBox}>
-                <Text style={[styles.dayText, entry ? styles.dayRun : styles.dayRest, !today && weekendColor(column) && { color: weekendColor(column), opacity: entry ? 1 : 0.7 }, today && styles.dayToday]}>{cell.day}</Text>
+                <Text style={[styles.dayText, entry ? styles.dayRun : styles.dayRest, !today && weekendColor(column) && { color: weekendColor(column) }, today && styles.dayToday]}>{cell.day}</Text>
               </View>
               {entry ? <View style={styles.glow}><DiaryMarkerIcon marker={marker} size={24} /></View> : null}
             </View>;
