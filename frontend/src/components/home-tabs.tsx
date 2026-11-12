@@ -60,6 +60,7 @@ export function HomeTabs() {
     }}>
       <Tabs.Screen name="index" options={{ title: '보관함', tabBarAccessibilityLabel: '보관함', tabBarIcon: ({ color }) => <SymbolView name="square.grid.2x2" size={22} tintColor={color} /> }} />
       <Tabs.Screen name="internal-run" options={{ title: '러닝', href: trackingEnabled ? '/internal-run' : null, tabBarLabel: label, tabBarAccessibilityLabel: active ? `러닝, ${label}` : '러닝', tabBarIcon: ({ color }) => <RunTabIcon color={color} active={active} /> }} />
+      <Tabs.Screen name="diary" options={{ title: '다이어리', href: trackingEnabled ? '/diary' : null, tabBarAccessibilityLabel: '다이어리', tabBarIcon: ({ color }) => <SymbolView name="calendar" size={22} tintColor={color} /> }} />
     </Tabs>
   </HomeTabsContext.Provider>;
 }
