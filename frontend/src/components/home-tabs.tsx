@@ -3,14 +3,14 @@ import { SymbolView } from 'expo-symbols';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ROUTE_SYMBOL } from '@/constants/icons';
+import { RunningQuailIcon } from '@/components/running-quail-icon';
 import { Colors, Fonts } from '@/constants/theme';
 import { runStatus } from '@/lib/tracking-display';
 import { HomeTabsContext, type HomeRunStatus } from '@/state/home-tabs';
 import { Tracking, trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
 
 function RunTabIcon({ color, active }: { color: ColorValue; active: boolean }) {
-  return <View><SymbolView name={ROUTE_SYMBOL} size={23} tintColor={color} />{active ? <View style={styles.dot} /> : null}</View>;
+  return <View><RunningQuailIcon size={28} color={String(color)} />{active ? <View style={styles.dot} /> : null}</View>;
 }
 
 export function HomeTabs() {
@@ -60,6 +60,7 @@ export function HomeTabs() {
     }}>
       <Tabs.Screen name="index" options={{ title: '보관함', tabBarAccessibilityLabel: '보관함', tabBarIcon: ({ color }) => <SymbolView name="square.grid.2x2" size={22} tintColor={color} /> }} />
       <Tabs.Screen name="internal-run" options={{ title: '러닝', href: trackingEnabled ? '/internal-run' : null, tabBarLabel: label, tabBarAccessibilityLabel: active ? `러닝, ${label}` : '러닝', tabBarIcon: ({ color }) => <RunTabIcon color={color} active={active} /> }} />
+      <Tabs.Screen name="diary" options={{ title: '다이어리', href: trackingEnabled ? '/diary' : null, tabBarAccessibilityLabel: '다이어리', tabBarIcon: ({ color }) => <SymbolView name="calendar" size={22} tintColor={color} /> }} />
     </Tabs>
   </HomeTabsContext.Provider>;
 }
