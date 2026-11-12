@@ -3,14 +3,14 @@ import { SymbolView } from 'expo-symbols';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, StyleSheet, View, type ColorValue } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ROUTE_SYMBOL } from '@/constants/icons';
+import { DiaryMarkerIcon } from '@/components/diary-marker';
 import { Colors, Fonts } from '@/constants/theme';
 import { runStatus } from '@/lib/tracking-display';
 import { HomeTabsContext, type HomeRunStatus } from '@/state/home-tabs';
 import { Tracking, trackingEnabled } from '../../modules/run-tracking/src/RunTracking';
 
 function RunTabIcon({ color, active }: { color: ColorValue; active: boolean }) {
-  return <View><SymbolView name={ROUTE_SYMBOL} size={23} tintColor={color} />{active ? <View style={styles.dot} /> : null}</View>;
+  return <View><DiaryMarkerIcon marker="quail" size={26} color={String(color)} />{active ? <View style={styles.dot} /> : null}</View>;
 }
 
 export function HomeTabs() {
