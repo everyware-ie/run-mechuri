@@ -78,16 +78,16 @@ export default function DiaryScreen() {
         {rows.map((row, index) => <View key={index} style={styles.weekRow}>
           {Array.from({ length: 7 }, (_, column) => {
             const cell = row[column] ?? null;
-            if (!cell) return <View key={column} style={styles.cell} />;
+            if (!cell) return <View key={column} style={styles.cellSlot} />;
             const entry = runs.get(cell.key);
             const today = cell.key === todayKey;
             const label = entry ? `${month + 1}월 ${cell.day}일, 러닝 ${formatKm(entry.distance)}` : today ? `${month + 1}월 ${cell.day}일, 오늘` : `${month + 1}월 ${cell.day}일, 쉬는 날`;
-            return <View key={column} style={styles.cell} accessible accessibilityLabel={label}>
+            return <View key={column} style={styles.cellSlot}><View style={styles.cell} accessible accessibilityLabel={label}>
               <View style={today ? styles.todayCircle : styles.dayBox}>
                 <Text style={[styles.dayText, entry ? styles.dayRun : styles.dayRest, !today && weekendColor(column) && { color: weekendColor(column) }, today && styles.dayToday]}>{cell.day}</Text>
               </View>
               {entry ? <View style={styles.glow}><DiaryMarkerIcon marker={marker} size={24} /></View> : null}
-            </View>;
+            </View></View>;
           })}
         </View>)}
       </View>
@@ -166,7 +166,8 @@ const styles = StyleSheet.create({
   month: { color: Colors.text, fontFamily: Fonts.sansBold, fontSize: 17 },
   weekRow: { flexDirection: 'row' },
   weekday: { flex: 1, textAlign: 'center', height: 22, lineHeight: 22, color: Colors.textMuted, fontFamily: Fonts.sans, fontSize: 11 },
-  cell: { flex: 1, height: 52, alignItems: 'center', paddingTop: 4, gap: 2 },
+  cellSlot: { flex: 1, height: 58, padding: 1 },
+  cell: { flex: 1, alignItems: 'center', paddingTop: 4, gap: 2, borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border, backgroundColor: Colors.bg },
   dayBox: { height: 20, alignItems: 'center', justifyContent: 'center' },
   todayCircle: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
   dayText: { fontFamily: Fonts.mono, fontSize: 12 },
