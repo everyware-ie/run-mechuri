@@ -82,7 +82,7 @@ export default function DiaryScreen() {
             const entry = runs.get(cell.key);
             const today = cell.key === todayKey;
             const label = entry ? `${month + 1}월 ${cell.day}일, 러닝 ${formatKm(entry.distance)}` : today ? `${month + 1}월 ${cell.day}일, 오늘` : `${month + 1}월 ${cell.day}일, 쉬는 날`;
-            return <View key={column} style={styles.cellSlot}><View style={styles.cell} accessible accessibilityLabel={label}>
+            return <View key={column} style={styles.cellSlot}><View style={[styles.cell, weekendColor(column) && { borderColor: weekendColor(column) }]} accessible accessibilityLabel={label}>
               <View style={today ? styles.todayCircle : styles.dayBox}>
                 <Text style={[styles.dayText, entry ? styles.dayRun : styles.dayRest, !today && weekendColor(column) && { color: weekendColor(column) }, today && styles.dayToday]}>{cell.day}</Text>
               </View>
