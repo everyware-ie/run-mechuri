@@ -2,7 +2,8 @@ import type { RunSummary } from '../../modules/run-tracking/src/RunTracking';
 
 // FRD: diary §2 월 달력, §3 최근 4주, §5 기록 출처. 일요일에 한 주가 시작한다.
 
-export type DayRuns = { count: number; distance: number; longest: number };
+export type DayRun = { id: string; started: number; distance: number; duration: number };
+export type DayRuns = { count: number; distance: number; longest: number; runs: DayRun[] };
 export type RunsByDay = Map<string, DayRuns>;
 export type CalendarCell = { day: number; key: string } | null;
 export type MonthStats = { days: number; distance: number; longest: number };
@@ -15,14 +16,16 @@ export function dayKey(date: Date): string {
 }
 
 /** 측정을 시작한 시각을 기기의 현재 시간대의 날짜로 바꿔 모은다. 완료된 기록만 센다. */
-export function groupRunsByDay(records: Pick<RunSummary, 'started' | 'distance' | 'status'>[]): RunsByDay {
+export function groupRunsByDay(records: Pick<RunSummary, 'id' | 'started' | 'distance' | 'duration' | 'status'>[]): RunsByDay {
   const days: RunsByDay = new Map();
   for (const record of records) {
     if (record.status !== 'completed' || !Number.isFinite(record.started) || !Number.isFinite(record.distance)) continue;
     const key = dayKey(new Date(record.started * 1000));
     const meters = Math.max(0, record.distance);
-    const current = days.get(key) ?? { count: 0, distance: 0, longest: 0 };
-    days.set(key, { count: current.count + 1, distance: current.distance + meters, longest: Math.max(current.longest, meters) });
+    const current = days.get(key) ?? { count: 0, distance: 0, longest: 0, runs: [] };
+    const runs = [...current.runs, { id: record.id, started: record.started, distance: meters, duration: Number.isFinite(record.duration) ? Math.max(0, record.duration) : 0 }]
+      .sort((a, b) => a.started - b.started);
+    days.set(key, { count: current.count + 1, distance: current.distance + meters, longest: Math.max(current.longest, meters), runs });
   }
   return days;
 }
@@ -74,4 +77,16 @@ export function recentWeeks(runs: RunsByDay, now: Date): RecentWeek[] {
 
 export function formatKm(meters: number): string {
   return `${(Math.round(meters / 10) / 100).toFixed(1)}km`;
+}
+
+/** 시트에 보여 줄 시작 시각. 기기의 현재 시간대 기준이다. */
+export function formatClock(startedSeconds: number): string {
+  const date = new Date(startedSeconds * 1000);
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60);
+  return hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
 }

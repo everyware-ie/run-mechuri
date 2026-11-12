@@ -1,12 +1,16 @@
-import { dayKey, formatKm, groupRunsByDay, sundayOf, monthCells, monthStats, recentWeeks } from './diary';
+import { dayKey, formatClock, formatDuration, formatKm, groupRunsByDay, sundayOf, monthCells, monthStats, recentWeeks } from './diary';
 
 const at = (y: number, m: number, d: number, h = 7) => new Date(y, m - 1, d, h).getTime() / 1000;
-const run = (started: number, distance: number, status: 'completed' | 'saving' = 'completed') => ({ started, distance, status });
+let seq = 0;
+const run = (started: number, distance: number, status: 'completed' | 'saving' = 'completed') => ({ id: `run-${++seq}`, started, distance, duration: distance / 3, status });
 
 test('only completed runs count and two runs on one day become one day', () => {
   const days = groupRunsByDay([run(at(2026, 11, 10), 5000), run(at(2026, 11, 10, 20), 3000), run(at(2026, 11, 9), 4000, 'saving')]);
   expect(days.size).toBe(1);
-  expect(days.get('2026-11-10')).toEqual({ count: 2, distance: 8000, longest: 5000 });
+  const day = days.get('2026-11-10')!;
+  expect(day).toMatchObject({ count: 2, distance: 8000, longest: 5000 });
+  expect(day.runs.map(r => r.distance)).toEqual([5000, 3000]);
+  expect(day.runs[0].started).toBeLessThan(day.runs[1].started);
 });
 
 test('a run past midnight counts on the day it started', () => {
@@ -50,4 +54,12 @@ test('distance is shown in km with one decimal', () => {
   expect(formatKm(35000)).toBe('35.0km');
   expect(formatKm(0)).toBe('0.0km');
   expect(formatKm(5840)).toBe('5.8km');
+});
+
+test('clock and duration are formatted for the day sheet', () => {
+  expect(formatClock(at(2026, 11, 10, 7))).toBe('07:00');
+  expect(formatClock(at(2026, 11, 10, 20))).toBe('20:00');
+  expect(formatDuration(0)).toBe('0분');
+  expect(formatDuration(1920)).toBe('32분');
+  expect(formatDuration(3900)).toBe('1시간 5분');
 });

@@ -1,11 +1,11 @@
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DiaryMarkerIcon } from '@/components/diary-marker';
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
-import { formatKm, groupRunsByDay, monthCells, monthStats, recentWeeks, type RunsByDay } from '@/lib/diary';
+import { formatClock, formatDuration, formatKm, groupRunsByDay, monthCells, monthStats, recentWeeks, type DayRun, type RunsByDay } from '@/lib/diary';
 import { DEFAULT_DIARY_MARKER, loadDiaryMarker, saveDiaryMarker, type DiaryMarker } from '@/lib/diary-marker-store';
 import { Tracking, trackingEnabled } from '../../../modules/run-tracking/src/RunTracking';
 
@@ -21,10 +21,12 @@ export default function DiaryScreen() {
   const [draft, setDraft] = useState<DiaryMarker | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [offset, setOffset] = useState(0);
+  const [picked, setPicked] = useState<{ title: string; runs: DayRun[] } | null>(null);
 
   useFocusEffect(useCallback(() => {
     let alive = true;
-    setNow(new Date()); setOffset(0);
+    // 보던 달은 유지한다. 상세에서 돌아와도 이번 달로 튀지 않는다.
+    setNow(new Date());
     void loadDiaryMarker().then(value => { if (alive) setMarker(value); });
     if (trackingEnabled) {
       Tracking!.records().then(result => { if (alive) setRuns(groupRunsByDay(result.records)); }).catch(() => { /* 마지막으로 읽은 기록을 유지한다. */ });
@@ -40,6 +42,15 @@ export default function DiaryScreen() {
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const rows: (typeof cells)[] = [];
   for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+
+  // 뛴 날을 누르면 기록이 하나일 때 바로 상세로, 둘 이상이면 목록 시트를 연다.
+  const openDay = (key: string, date: Date) => {
+    const entry = runs.get(key);
+    if (!entry) return;
+    if (entry.runs.length === 1) { router.push(`/internal-run/${entry.runs[0].id}`); return; }
+    setPicked({ title: `${date.getMonth() + 1}월 ${date.getDate()}일`, runs: entry.runs });
+  };
+  const openRun = (id: string) => { setPicked(null); router.push(`/internal-run/${id}`); };
 
   // `완료`를 눌러야만 저장한다. 그냥 닫으면 이전 선택을 유지한다.
   const confirm = () => {
@@ -82,12 +93,12 @@ export default function DiaryScreen() {
             const entry = runs.get(cell.key);
             const today = cell.key === todayKey;
             const label = entry ? `${month + 1}월 ${cell.day}일, 러닝 ${formatKm(entry.distance)}` : today ? `${month + 1}월 ${cell.day}일, 오늘` : `${month + 1}월 ${cell.day}일, 쉬는 날`;
-            return <View key={column} style={styles.cellSlot}><View style={[styles.cell, weekendColor(column) && styles.cellWeekend]} accessible accessibilityLabel={label}>
+            return <View key={column} style={styles.cellSlot}><Pressable disabled={!entry} onPress={() => openDay(cell.key, new Date(year, month, cell.day))} accessibilityRole={entry ? 'button' : undefined} accessibilityLabel={label} style={[styles.cell, weekendColor(column) && styles.cellWeekend]}>
               <View style={today ? styles.todayCircle : styles.dayBox}>
                 <Text style={[styles.dayText, entry ? styles.dayRun : styles.dayRest, today && styles.dayToday]}>{cell.day}</Text>
               </View>
               {entry ? <View style={styles.glow}><DiaryMarkerIcon marker={marker} size={24} /></View> : null}
-            </View></View>;
+            </Pressable></View>;
           })}
         </View>)}
       </View>
@@ -102,12 +113,12 @@ export default function DiaryScreen() {
         {weeks.map(week => <View key={week.label} style={styles.weekLine}>
           <Text style={styles.weekLabel}>{week.label}</Text>
           <View style={styles.weekDays}>
-            {week.days.map(day => <View key={day.key} style={styles.weekDay} accessible
-              accessibilityLabel={`${day.date.getMonth() + 1}월 ${day.date.getDate()}일, ${day.state === 'run' ? '러닝' : day.state === 'today' ? '오늘' : day.state === 'future' ? '아직 오지 않음' : '쉬는 날'}`}>
+            {week.days.map(day => <Pressable key={day.key} style={styles.weekDay} disabled={day.state !== 'run'} onPress={() => openDay(day.key, day.date)}
+              accessibilityRole={day.state === 'run' ? 'button' : undefined} accessibilityLabel={`${day.date.getMonth() + 1}월 ${day.date.getDate()}일, ${day.state === 'run' ? '러닝' : day.state === 'today' ? '오늘' : day.state === 'future' ? '아직 오지 않음' : '쉬는 날'}`}>
               {day.state === 'run' ? <DiaryMarkerIcon marker={marker} size={22} />
                 : day.state === 'today' ? <View style={styles.todayRing} />
                   : day.state === 'future' ? <View style={styles.futureDot} /> : <View style={styles.restRing} />}
-            </View>)}
+            </Pressable>)}
           </View>
           <Text style={styles.weekKm}>{formatKm(week.distance)}</Text>
         </View>)}
@@ -139,6 +150,24 @@ export default function DiaryScreen() {
           </View>
         </View>
         <Pressable onPress={confirm} style={styles.done} accessibilityRole="button"><Text style={styles.doneText}>완료</Text></Pressable>
+      </View>
+    </Modal>
+
+    <Modal visible={picked !== null} transparent animationType="slide" onRequestClose={() => setPicked(null)}>
+      <Pressable style={styles.backdrop} onPress={() => setPicked(null)} accessibilityLabel="닫기" />
+      <View style={styles.sheet}>
+        <View style={styles.handle} />
+        <Text style={styles.sheetTitle}>{picked?.title} 러닝</Text>
+        <Text style={styles.sheetHint}>보고 싶은 기록을 골라 주세요</Text>
+        <View style={styles.runList}>
+          {picked?.runs.map(item => <Pressable key={item.id} onPress={() => openRun(item.id)} accessibilityRole="button"
+            accessibilityLabel={`${formatClock(item.started)} 시작, ${formatKm(item.distance)}, ${formatDuration(item.duration)}`} style={styles.runRow}>
+            <Text style={styles.runClock}>{formatClock(item.started)}</Text>
+            <Text style={styles.runDistance}>{formatKm(item.distance)}</Text>
+            <Text style={styles.runDuration}>{formatDuration(item.duration)}</Text>
+            <SymbolView name="chevron.right" size={14} tintColor={Colors.textMuted} />
+          </Pressable>)}
+        </View>
       </View>
     </Modal>
   </SafeAreaView>;
@@ -199,6 +228,11 @@ const styles = StyleSheet.create({
   preview: { marginTop: 14, padding: 14, borderRadius: 16, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border },
   previewLabel: { color: Colors.textMuted, fontFamily: Fonts.sans, fontSize: 11 },
   previewRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', height: 40, marginTop: 6 },
+  runList: { marginTop: 16, gap: 8 },
+  runRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingHorizontal: 16, borderRadius: 16, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border },
+  runClock: { width: 52, color: Colors.text, fontFamily: Fonts.mono, fontSize: 14 },
+  runDistance: { flex: 1, color: Colors.text, fontFamily: Fonts.mono, fontSize: 16 },
+  runDuration: { color: Colors.textMuted, fontFamily: Fonts.sans, fontSize: 13 },
   done: { height: 52, marginTop: 16, borderRadius: 16, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
   doneText: { color: Colors.accentText, fontFamily: Fonts.sansBold, fontSize: 16 },
 });
