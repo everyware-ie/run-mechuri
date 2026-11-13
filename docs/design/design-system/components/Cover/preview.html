@@ -1,0 +1,38 @@
+<!-- @dsCard height=288 -->
+<style>
+  .cv { position: relative; width: 960px; height: 288px; background: var(--bg); overflow: hidden; font-family: var(--font-sans); }
+  .cv svg { position: absolute; left: 0; top: 0; }
+  .cv .accent { fill: var(--accent); }
+  .cv .ink { fill: var(--text); }
+  .cv .fill { fill: var(--fill-button); }
+  .cv .ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .cv .dotc { fill: var(--accent); }
+  .cv .ink-bar { fill: var(--bg); }
+  .cv .txt { position: absolute; left: 48px; bottom: 40px; max-width: 864px; }
+  .cv .name { font-size: 64px; line-height: 0.95; font-weight: 700; letter-spacing: -2px; color: var(--text); margin: 0; white-space: nowrap; }
+  .cv .tag { font-size: 14px; font-weight: 500; color: var(--muted); margin: 14px 0 0; }
+</style>
+<div class="cv">
+  <!--
+    blocks: accent 520×64 pill (size-btn-start) · text disc 84 (size-circle-main) · line ring 64 (size-circle-sub) · fill-button pills 44 high (size-touch)
+    arrangement: top-band skeleton (name is too wide for the 440 zone); the iPhone control row laid flat: start slab bleeding off the left, then pause disc, stop ring, two watch buttons bleeding off the right
+    pattern: pills and discs from the pill radius: every button in this system is a full pill or a circle, so the band is built from them; one row of 6px status dots (wdot) at space-28 pitch under it
+    steps: space-6 between watch pills, space-28 dot pitch, space-24 band top; radii half the short side (32, 42, 22)
+  -->
+  <svg width="960" height="150" viewBox="0 0 960 150">
+    <rect class="accent" x="-40" y="24" width="520" height="64" rx="32"/>
+    <circle class="ink" cx="550" cy="56" r="42"/>
+    <rect class="ink-bar" x="539" y="43" width="7" height="26" rx="2"/>
+    <rect class="ink-bar" x="553" y="43" width="7" height="26" rx="2"/>
+    <circle class="ring" cx="652" cy="56" r="32"/>
+    <rect class="fill" x="712" y="34" width="122" height="44" rx="22"/>
+    <rect class="fill" x="840" y="34" width="160" height="44" rx="22"/>
+    <g class="dotc">
+      <circle cx="51" cy="122" r="3"/><circle cx="79" cy="122" r="3"/><circle cx="107" cy="122" r="3"/><circle cx="135" cy="122" r="3"/><circle cx="163" cy="122" r="3"/><circle cx="191" cy="122" r="3"/>
+    </g>
+  </svg>
+  <div class="txt">
+    <p class="name">Runary</p>
+    <p class="tag">거리 하나를 크게, 상태 안내는 한 곳에. 아이폰과 애플워치</p>
+  </div>
+</div>

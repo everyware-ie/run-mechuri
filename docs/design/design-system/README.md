@@ -18,6 +18,28 @@
 | [IPhoneScreen](components/IPhoneScreen/README.md) | 러닝 중과 일시정지 |
 | [WatchScreen](components/WatchScreen/README.md) | 45mm 세 칸 구조, 상태 6종 |
 
+## 가져와서 쓰는 법
+
+Claude에서 이 폴더로 디자인 시스템을 만들어 쓸 수 있습니다. 시안을 그릴 때 이 디자인 시스템을 고르면 같은 색·글자·컴포넌트로 그려집니다.
+
+1. Claude에 이렇게 요청합니다: "GitHub `everyware-ie/run-mechuri`의 `docs/design/design-system` 폴더로 디자인 시스템을 만들어줘. 이름은 Runary."
+2. Claude가 `tokens.json`은 그대로 복사하고, README·컴포넌트 미리보기(`components/*/preview.html`, `components/bundle.css`)·글꼴(`fonts/`)을 가져갑니다.
+3. 레포가 바뀌면 같은 디자인 시스템에서 "GitHub에서 다시 가져와줘"라고 하면 바뀐 값만 반영됩니다.
+
+**디자인 시스템을 바꿀 때는 레포에서 고칩니다.** 각자 가져간 디자인 시스템에서 값을 고치면 팀원끼리 어긋납니다.\
+값은 `tokens.json`, 규칙은 해당 README, 모양은 `preview.html`을 같은 PR에서 고치고, 머지된 뒤 각자 다시 가져옵니다.\
+`preview.html`은 `bundle.css`의 클래스와 `tokens.json`의 토큰 이름(`var(--accent)` 등)만 씁니다. 새 값이 필요하면 `tokens.json`에 먼저 추가합니다.
+
+| 폴더 | 무엇 |
+|---|---|
+| `tokens.json` | 색·글자·간격·반경·크기·투명도 |
+| `components/<이름>/README.md` | 언제 쓰고 무엇을 넣는지 |
+| `components/<이름>/preview.html` | 디자인 시스템 페이지에서 보이는 살아있는 미리보기 |
+| `components/<이름>/preview.png` | GitHub에서 보는 이미지. `preview.html`을 고치면 다시 찍습니다 |
+| `components/Cover/preview.html` | 디자인 시스템 첫 화면의 표지 |
+| `components/bundle.css` | 미리보기가 함께 쓰는 스타일 |
+| `fonts/` | Pretendard 500·600·700. npm [`pretendard@1.3.9`](https://www.npmjs.com/package/pretendard/v/1.3.9)에서 가져왔고 라이선스는 패키지에 적힌 대로 `OFL-1.1`입니다 |
+
 Runary(작업명 Pretty Running Path)의 러닝 측정 화면을 위한 디자인 시스템입니다. 아이폰과 애플워치에서 러닝 경로와 건강 지표를 측정하는 화면이 대상입니다.\
 화면 동작의 정본은 FRD([내부 측정](https://github.com/everyware-ie/run-mechuri/blob/main/docs/specs/frd/internal-run-tracking.md), [워치 운동 연동](https://github.com/everyware-ie/run-mechuri/blob/main/docs/specs/frd/watch-workout-integration.md))이고, 이 문서는 시각 기준입니다. 둘이 부딪치면 FRD를 따릅니다.
 
