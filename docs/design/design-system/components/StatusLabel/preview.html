@@ -1,0 +1,32 @@
+<!-- @dsCard group="Status" height=360 subtitle="화면 상단 한 줄: 상태가 바뀌면 이것과 하단 영역만 바뀐다" -->
+<div class="stage">
+  <div class="col" style="width:342px">
+    <span class="cap">IPHONE · 상단 상태 줄 (왼쪽 상태 · 오른쪽 워치)</span>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="status status--run"><span class="dot"></span>러닝 중</span>
+      <span class="status-aside"><svg width="11" height="14" viewBox="0 0 18 22" fill="none" stroke="var(--muted)" stroke-width="2"><rect x="2" y="4.5" width="14" height="13" rx="4"/><path d="M5.5 4.5V1.5h7v3M5.5 17.5v3h7v-3"/></svg>워치 측정 중</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="status"><span class="i-bars"><span></span><span></span></span>일시정지</span>
+      <span class="status-aside"><svg width="11" height="14" viewBox="0 0 18 22" fill="none" stroke="var(--muted)" stroke-width="2"><rect x="2" y="4.5" width="14" height="13" rx="4"/><path d="M5.5 4.5V1.5h7v3M5.5 17.5v3h7v-3"/></svg>워치도 일시정지</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="status status--run"><span class="dot"></span>러닝 중</span>
+      <span class="chip"><svg width="11" height="14" viewBox="0 0 18 22" fill="none" stroke="var(--text)" stroke-width="2"><rect x="2" y="4.5" width="14" height="13" rx="4"/><path d="M5.5 4.5V1.5h7v3M5.5 17.5v3h7v-3"/></svg>워치 측정 중단</span>
+    </div>
+    <span class="cap" style="margin-top:var(--space-10)">IPHONE · 상태 목록 점</span>
+    <div style="display:flex;gap:var(--space-20);align-items:center" class="row__value"><span style="display:flex;gap:var(--space-8);align-items:center"><span class="dot"></span>켜짐 · 준비됨</span><span style="display:flex;gap:var(--space-8);align-items:center"><span class="dot dot--off"></span>꺼짐</span></div>
+  </div>
+  <div class="col">
+    <span class="cap">WATCH · 상단 상태 줄 (w-status)</span>
+    <div class="stage--black col" style="width:154px;padding:var(--space-16) var(--space-22);border-radius:var(--radius-20);gap:var(--space-14)">
+      <div class="wstatus"><span class="accent">Runary</span><span>9:41</span></div>
+      <div class="wstatus"><span class="accent">시작 확인 중</span><span>9:41</span></div>
+      <div class="wstatus"><span class="wstatus__left accent"><span class="wdot"></span>러닝 중</span><span>9:41</span></div>
+      <div class="wstatus"><span class="wstatus__left"><span class="i-bars i-bars--w"><span></span><span></span></span>일시정지</span><span>9:41</span></div>
+      <div class="wstatus"><span class="accent">연결 확인 중</span><span>9:41</span></div>
+      <div class="wstatus"><span class="accent">워치 측정 중단</span><span>9:41</span></div>
+      <div class="wstatus"><span class="muted num">32:18</span><span>9:41</span></div>
+    </div>
+  </div>
+</div>
