@@ -1,7 +1,7 @@
 # Runary 디자인 시스템
 
-2026-11-11 jminkkk이 러닝 측정 시안 2종을 바탕으로 정리했습니다. 화면 미리보기와 토큰 편집은 [Claude 아티팩트](https://claude.ai/artifact/4YEXJJoB5Twq5wRt7fS8Ci)에서 볼 수 있습니다(공유 설정 전에는 작성자만 열 수 있습니다).\
-값의 기준은 이 폴더의 [tokens.json](tokens.json)입니다. 아티팩트와 어긋나면 이 파일을 따릅니다.
+2026-11-11 jminkkk이 러닝 측정 시안 2종을 바탕으로 정리했습니다.\
+값의 기준은 이 폴더의 [tokens.json](tokens.json)입니다. 값을 바꿀 때는 이 파일과 해당 컴포넌트 README를 같은 PR에서 고칩니다.
 
 | 근거 시안 | 무엇을 가져왔나 |
 |---|---|
