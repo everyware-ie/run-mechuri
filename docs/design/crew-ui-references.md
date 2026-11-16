@@ -172,6 +172,27 @@ CWEP 가이드의 두 화면은 같은 Strava 크루다. 이름과 소개는 위
 
 **Runary에 적용**할 때는 지도 공유를 켠 사람이 필요한 경우 `숨길 장소 추가`를 열어 집이나 회사 주변을 미리 가리는 안을 그린다. 지도 공유 없이 경로 모양만 쓰는 사람은 미리보기에서 바로 결정을 마칠 수 있다. ‘크루원에게 이렇게 보여요’ 화면에서는 숨긴 영역 자체와 장소 이름도 보여주지 않는다.
 
+## 크루장에게 가입 신청 알리기
+
+2026-11-16 현수가 크루 홈의 [>]에 가입 신청 건수를 붙이자고 해서 찾아봤다. 화면 캡처는 받지 못했고 도움말과 검색 요약을 근거로 했다.
+
+| 서비스 | 신청을 보는 곳 | 알림 | 근거 |
+|---|---|---|---|
+| Strava 클럽 | 비공개 클럽의 관리자가 클럽의 Pending Requests에서 승인하거나 거절한다 | 앱 설정에서 가입 요청 푸시를 켤 수 있다 | [Strava 모바일 클럽 도움말](https://support.strava.com/hc/en-us/articles/221622188-Clubs-on-the-Mobile-App). 이 환경에서 페이지를 열지 못해 검색 요약으로 봤다 `[확인 필요]` |
+| Instagram 비공개 계정 | 활동 화면 맨 위의 팔로우 요청 줄 | 요청이 오면 계정 주인에게 알림이 간다 | 공식 도움말이 아닌 [안내 글](https://www.bustle.com/life/instagram-follow-request-folder) `[확인 필요]` |
+| Facebook 그룹 | 관리자 도구의 개요에서 대기 중인 가입 요청 수를 본다 | 그룹 관리에서 요청 알림을 켤 수 있다 | 공식 [Graph API](https://developers.secure.facebook.com/docs/reference/api/group)에 대기 중인 가입 요청 수 필드(`member_request_count`)가 있다. 화면 설명은 [제3자 안내 글](https://groupboss.io/blog/facebook-group-admin-tools/amp/)이다 `[확인 필요]` |
+| BAND | 리더가 밴드 설정에서 가입 신청을 켜면 리더가 승인해야 가입된다 | 찾지 못했다 | [안내 글](https://specialmanual.com/%EB%84%A4%EC%9D%B4%EB%B2%84-%EB%B0%B4%EB%93%9C-%EB%A7%8C%EB%93%A4%EA%B8%B0-%EB%B0%8F-%EC%82%AC%EC%9A%A9%EB%B2%95-3%EA%B0%80%EC%A7%80-%EB%AA%A8%EC%9E%84-%EA%B0%9C%EC%84%A4-%EC%9A%B4%EC%98%81/) `[확인 필요]` |
+
+Apple 가이드라인에서 배지에 관해 정한 것은 아래와 같다.
+
+- 배지는 숫자를 담은 작은 타원이다. 확인하지 않은 알림 수를 보여 줄 때 쓰고, 처리하면 사라졌다가 새 알림이 오면 다시 나타난다. 배지만으로 중요한 정보를 알리지 않는다. [HIG 알림](https://developer.apple.com/design/human-interface-guidelines/notifications)
+- 탭 막대의 배지는 주의가 필요한 새 정보가 있을 때만 붙인다. 자주 붙이면 뜻이 흐려진다. [HIG 탭 막대](https://developer.apple.com/design/human-interface-guidelines/tab-bars)
+- 배지는 목록 줄, 탭 막대, 도구 막대, 메뉴에 붙는다. [SwiftUI badge](https://developer.apple.com/documentation/swiftui/view/badge%28_%3A%29-8adyq)
+
+**Runary에 적용**할 때는 아이콘 버튼인 [>] 오른쪽 위에 숫자 원을 붙인다. 앱 아이콘과 탭 막대의 배지와 같은 자리라 익숙하다. 숫자는 처리하지 않은 신청 수이고 모두 처리하면 배지가 사라진다. 색은 Apple 기본인 빨강 대신 디자인 시스템의 강조색(주황)을 썼다.
+
+살펴본 서비스는 배지 하나보다 관리 화면과 푸시 알림으로 신청을 알린다. 크루장이 크루 탭을 열지 않으면 배지를 보지 못한다. 하단 크루 탭 배지와 새 신청 푸시 알림을 둘지는 따로 정한다. 크루 기획서는 알림을 참여 흐름이 자리 잡은 뒤로 미뤄 두었다.
+
 ## 시안을 보면서 정할 것
 
 1. 기존 크루원이 링크를 보내는 경우와 처음 온 사람이 앱에서 크루를 검색하는 경우를 각각 본다. 두 경로가 같은 크루 상세로 모이는지, `가입 신청`과 `승인 대기 중`이 쉽게 구분되는지 확인한다. 회원 검색과 친구 목록 초대는 사람을 고르는 부분을 비교한다.
