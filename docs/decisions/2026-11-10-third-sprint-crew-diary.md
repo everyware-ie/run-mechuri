@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-11-10
-updated: 2026-11-10
+updated: 2026-11-17
 related_meeting: ../meetings/2026-11-10/synthesis.md
 tags: [running, sprint, crew, diary, login, roles, tab]
 ---
@@ -66,3 +66,10 @@ tags: [running, sprint, crew, diary, login, roles, tab]
 - 3차 스프린트의 목표 수치
 - 1표 이하를 받은 아이디어를 언제 볼지: 크루 목표 정하기, 경로를 하나로 합치기, 목표·등급·성장, 개인 주간 기록 꾸며 공유, 보증금 챌린지
 - 탭 아이콘을 언제까지 준비해서 어느 버전에 넣을지
+
+## 2026-11-17 개정: 로그인은 Apple과 카카오
+
+- 회의에서 "카카오 대신 Google"로 정한 이유는 카카오 로그인에 사업자가 필요할 수 있다는 것이었고, 확인은 지민에게 맡김
+- 지민이 확인한 결과 사업자 없이 쓸 수 있음. 카카오 로그인 자체는 비즈 앱이 아니어도 되고, 이메일은 사업자 없이 "개인 개발자 비즈 앱"으로 전환하면 받을 수 있음([카카오 앱 설정 문서](https://developers.kakao.com/docs/latest/ko/app-setting/app))
+- 그래서 **로그인은 Apple과 카카오로 만들고 Google은 넣지 않음**
+- 근거와 범위: [로그인 PRD](../specs/prd/account-login.md)
