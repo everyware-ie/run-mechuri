@@ -1,5 +1,5 @@
 ---
-title: Apple·Google 로그인과 회원가입
+title: Apple·카카오 로그인과 회원가입
 product: running
 type: prd
 status: draft
@@ -7,7 +7,7 @@ updated: 2026-11-17
 related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/2026-11-10/synthesis.md]
 ---
 
-# Apple·Google 로그인과 회원가입
+# Apple·카카오 로그인과 회원가입
 
 ## 1. 왜 필요한가
 
@@ -24,14 +24,14 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 포함
 
-- Apple 로그인, Google 로그인
+- Apple 로그인, 카카오 로그인
 - 첫 로그인 시 회원가입과 닉네임 입력
 - 로그아웃, 앱 내 탈퇴
 - 서버 백업, 재로그인 시 복원
 
 제외
 
-- 카카오 로그인: 사업자 등록 필요 여부 확인 후 결정(§9 다음 결정)
+- Google 로그인: 회의에서 카카오가 안 될 때의 대안으로 정했던 것. 카카오가 사업자 없이 가능해서 넣지 않음([결정문 2026-11-17 개정](../../decisions/2026-11-10-third-sprint-crew-diary.md))
 - 크루 가입, 크루원 경로 보기: 크루 PRD에서 다룸
 - 서버 선정: 구현 단계에서 결정
 - 이메일·비밀번호 가입
@@ -56,8 +56,8 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 | 항목 | 출처 | 용도 |
 |---|---|---|
-| 로그인 식별자 | Apple 또는 Google | 동일인 확인 |
-| 이메일 | Apple 또는 Google. Apple은 가린 주소를 줄 수 있음 | 계정 확인 `[확인 필요: 이메일 필수 여부]` |
+| 로그인 식별자 | Apple 또는 카카오 | 동일인 확인 |
+| 이메일 | Apple 또는 카카오. Apple은 가린 주소를 줄 수 있음 | 계정 확인 `[확인 필요: 이메일 필수 여부]` |
 | 닉네임 | 사용자 직접 입력 | 크루 화면에서 서로를 부르는 이름 |
 
 - 닉네임은 가입 시 필수 입력
@@ -87,6 +87,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
   - App Store가 계정 생성이 가능한 앱에 앱 내 계정 삭제 기능을 요구함
   - 근거: [App Review Guidelines 5.1.1(v)](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage), [계정 삭제 안내](https://developer.apple.com/support/offering-account-deletion-in-your-app/)
 - **탈퇴 시 서버의 계정 정보와 기록 삭제**
+- 카카오로 가입한 사용자는 탈퇴 시 카카오 "연결 끊기"도 호출
 - 기기 기록 동시 삭제 여부는 FRD에서 결정 `[확인 필요]`
 
 ## 6. 정책과 심사
@@ -100,7 +101,16 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 | App Store 개인정보 표시 | 계정과 연결되는 수집 항목 |
 
 - 이번 PRD에서는 개정하지 않음. 로그인 포함 빌드의 심사 제출 전에 개정
-- Google 로그인을 넣으면 Apple 로그인도 함께 제공해야 함([App Review Guidelines 4.8](https://developer.apple.com/app-store/review/guidelines/#login-services)) → Apple 로그인 포함으로 충족
+- 카카오 같은 외부 로그인을 넣으면 Apple 로그인도 함께 제공해야 함([App Review Guidelines 4.8](https://developer.apple.com/app-store/review/guidelines/#login-services)) → Apple 로그인 포함으로 충족
+
+### 카카오 로그인 사전 조건
+
+- **사업자 등록 불필요**: 카카오 로그인 자체는 비즈 앱이 아니어도 사용 가능
+- **이메일은 비즈 앱 필요**: 사업자 없이 "개인 개발자 비즈 앱"으로 전환 가능
+  - 조건: 앱 소유자 카카오계정 본인인증, 카카오비즈니스 통합 서비스 약관 동의, 앱 아이콘 등록
+  - 개인 개발자 비즈 앱으로 안 되는 것: 비즈니스 채널 연결, 카카오싱크. 이 PRD에서는 쓰지 않음
+  - 근거: [카카오 앱 설정 문서](https://developers.kakao.com/docs/latest/ko/app-setting/app), [데브톡 안내](https://devtalk.kakao.com/t/how-can-i-switch-to-a-biz-app-if-i-do-not-have-any-business-registration-number/71983)
+- **검수**: 민감한 개인정보 항목만 검수(3~5영업일). 식별자, 이메일이 해당하는지 `[확인 필요]`([카카오 로그인 사전 설정](https://developers.kakao.com/docs/latest/ko/kakaologin/prerequisite))
 
 ## 7. 기존 정책과의 관계
 
@@ -116,14 +126,13 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 ## 8. 성공 기준
 
 - 비로그인 사용자가 지금과 똑같이 앱 사용 가능
-- Apple, Google 중 하나로 가입하고 닉네임 설정 가능
+- Apple, 카카오 중 하나로 가입하고 닉네임 설정 가능
 - 가입 시 기기의 Runary 측정 기록이 서버에 업로드됨
 - 앱 재설치 후 같은 계정으로 로그인하면 기록 복원
 - 앱 내 탈퇴 가능. 탈퇴 시 서버의 계정과 기록 삭제
 
 ## 9. 다음 결정
 
-- 카카오 로그인 도입 여부: 사업자 등록 필요 여부를 지민이 확인
 - 서버 선정: 3차 스프린트 결정문에서도 미정
 - 백업 대상: §4 기록 백업의 `[확인 필요]` 항목
 - 크루원에게 경로 공개 시 집·회사 위치 처리: 크루 PRD에서 결정. 백업한 기록을 그대로 쓰므로 이 PRD에도 영향
