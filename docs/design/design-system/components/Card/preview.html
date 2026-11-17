@@ -1,0 +1,45 @@
+<!-- @dsCard group="Containers" height=520 subtitle="목록 · 지도 · 안내 · 시트 (아이폰 전용)" -->
+<div class="stage">
+  <div class="col" style="width:350px">
+    <span class="cap">목록 카드 · surface · radius-20</span>
+    <div class="card">
+      <div class="row"><span class="dot"></span><span class="row__name">GPS</span><span class="row__value">현재 위치 확인됨</span></div>
+      <div class="hr"></div>
+      <div class="row"><span class="dot"></span><span class="row__name">Apple Watch</span><span class="row__value">시작하면 심박 측정</span><svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="var(--muted)" stroke-width="1.6"><path d="M1.5 1.5l5 5-5 5"/></svg></div>
+      <div class="hr"></div>
+      <div class="row"><span class="dot dot--off"></span><span class="row__name">건강 앱 저장</span><span class="row__value">꺼짐</span><svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="var(--muted)" stroke-width="1.6"><path d="M1.5 1.5l5 5-5 5"/></svg></div>
+    </div>
+    <span class="cap">지도 카드 · surface-map · radius-24</span>
+    <div class="map" style="height:150px">
+      <svg width="100%" height="100%" viewBox="0 0 350 150" preserveAspectRatio="xMidYMid slice" style="position:absolute;inset:0"><g stroke="var(--fill-tile)" stroke-width="9" fill="none"><path d="M-10 40 L360 30"/><path d="M-10 120 L360 130"/><path d="M110 -10 L90 160"/><path d="M260 -10 L275 160"/></g><path d="M40 125 C70 100 80 80 110 88 S150 60 170 50 S220 30 240 58 S290 75 300 38" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="40" cy="125" r="5" fill="var(--bg)" stroke="var(--text)" stroke-width="2.5"/><circle cx="300" cy="38" r="14" fill="var(--accent-halo-map)"/><circle cx="300" cy="38" r="7" fill="var(--accent)" stroke="var(--bg)" stroke-width="3"/></svg>
+    </div>
+    <span class="cap">인라인 안내 카드 · 예외 상태 · radius-18</span>
+    <div class="alert">
+      <div class="alert__text"><span class="alert__title">다른 워치 운동이 시작됐어요</span><span class="alert__desc">아이폰 러닝은 계속 측정 중이에요.</span></div>
+      <div class="btn btn--inline">다시 시작</div>
+    </div>
+  </div>
+  <div class="col" style="width:390px">
+    <span class="cap">바텀 시트 · surface · radius-32 (scrim 위)</span>
+    <div style="background:var(--scrim);padding-top:var(--space-24);border-radius:var(--radius-24) var(--radius-24) 0 0">
+      <div class="sheet">
+        <span class="grabber"></span>
+        <div style="display:flex;flex-direction:column;gap:6px"><span class="ip-heading" style="line-height:1.2">워치와 건강 앱 연결</span><span class="ip-body muted">한 번 켜두면 러닝을 시작할 때마다 자동으로 연결해요.</span></div>
+        <div class="card card--inset">
+          <div class="row" style="align-items:flex-start;gap:var(--space-14);padding:var(--space-18) var(--space-16)">
+            <div class="tile tile--on"><svg width="18" height="22" viewBox="0 0 18 22" fill="none" stroke="var(--accent)" stroke-width="1.8"><rect x="2" y="4.5" width="14" height="13" rx="4"/><path d="M5.5 4.5V1.5h7v3M5.5 17.5v3h7v-3"/></svg></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px"><span style="font:600 16px var(--font-sans)">워치 운동 연동</span><span class="ip-caption muted">워치에서 심박을 측정하고 러닝 화면을 표시해요.</span></div>
+            <div class="toggle toggle--on"></div>
+          </div>
+          <div class="hr" style="margin-left:70px"></div>
+          <div class="row" style="align-items:flex-start;gap:var(--space-14);padding:var(--space-18) var(--space-16)">
+            <div class="tile"><svg width="20" height="18" viewBox="0 0 20 18" fill="none" stroke="var(--text)" stroke-width="1.8"><path d="M10 16.5S1.5 11.5 1.5 5.8A4.2 4.2 0 0 1 10 3.6a4.2 4.2 0 0 1 8.5 2.2C18.5 11.5 10 16.5 10 16.5z"/></svg></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px"><span style="font:600 16px var(--font-sans)">건강 앱 자동 저장</span><span class="ip-caption muted">완료한 러닝을 건강 앱에 저장해요.</span></div>
+            <div class="toggle"></div>
+          </div>
+        </div>
+        <div class="btn btn--primary btn--lg">완료</div>
+      </div>
+    </div>
+  </div>
+</div>
