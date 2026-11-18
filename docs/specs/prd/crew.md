@@ -166,7 +166,7 @@ updated: 2026-11-16
 - 첫 시안에서는 가입 방식별로 같은 크루 홈에 이르는 흐름을 비교함
 - 가입할 때의 자동 공유 안내, 가입 직후의 빈 크루 홈, 기록 상세의 지도와 경로 모양 전환을 확인함
 - 색, 글자, 버튼은 지민님의 시각 기준을 참고함 ([디자인 시스템 PR](https://github.com/everyware-ie/run-mechuri/pull/137))
-- 시안: [크루 화면 시안](../../design/crew-screens.md) (2026-11-16)
+- 시안: [크루 화면 시안](../../design/crew-screens.md) (2026-11-16, 2026-11-18 갱신). 웹에서 바로 보기: [시안 링크](https://claude.ai/artifact/NsdzMysnDufu5XyfdcnZ9E)
 
 ## 확인할 결과
 

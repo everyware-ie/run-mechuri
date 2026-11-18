@@ -7,7 +7,8 @@
 
 ## 보는 법
 
-[crew-screens.html](crew-screens.html)을 브라우저에서 연다.\
+웹에서 바로 보려면 [시안 링크](https://claude.ai/artifact/NsdzMysnDufu5XyfdcnZ9E)를 연다. 링크가 있는 사람은 누구나 볼 수 있고, 시안을 고칠 때마다 같은 주소에 새 버전이 올라간다.\
+저장소에서는 [crew-screens.html](crew-screens.html)을 브라우저에서 연다.\
 화면 61개와 글꼴(Pretendard)이 파일 하나에 들어 있어서 따로 설치하거나 인터넷에 연결하지 않아도 된다. 팀원에게는 이 파일을 그대로 보내면 된다.
 
 시안은 검토하는 방식이 다른 두 부분으로 나눴다.
