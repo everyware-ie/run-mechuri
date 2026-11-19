@@ -60,7 +60,10 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 | 로그인 식별자 | Apple 또는 카카오 | 동일인 확인 |
 | 닉네임 | 사용자 직접 입력 | 크루 화면에서 서로를 부르는 이름 |
 
-- **이메일은 받지 않음**: 동일인 확인은 식별자로 충분하고, 수집 항목을 줄이기 위함
+- **이메일은 받지 않음** (2026-11-19 확정)
+  - 쓸 곳이 없음. 동일인 확인은 식별자로 충분하고, 쓰지 않는 개인정보는 받지 않음
+  - 나중에 필요해지면 앱 안에서 직접 입력받음. Apple은 가입 뒤에 이메일 범위를 늘릴 수 없어서([Apple 포럼 답변](https://developer.apple.com/forums/thread/678930)) 로그인 수단으로 받는 방법은 기존 사용자에게 쓸 수 없음
+  - 받기로 하면 수집 목적, Apple 중계 이메일 발신 도메인 등록, 카카오 비즈 앱 전환, 처리방침과 App Store 개인정보 표시 개정이 따라옴
 - 닉네임은 가입 시 필수 입력. 2~10자, 중복 불가, 변경 가능([FRD](../frd/account-login.md) §4 닉네임)
 - 닉네임 수치는 크루 화면 디자인(현수)과 맞춰 조정
 
@@ -111,7 +114,10 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
   - 조건: 앱 소유자 카카오계정 본인인증, 카카오비즈니스 통합 서비스 약관 동의, 앱 아이콘 등록
   - 개인 개발자 비즈 앱으로 안 되는 것: 비즈니스 채널 연결, 카카오싱크. 이 PRD에서는 쓰지 않음
   - 근거: [카카오 앱 설정 문서](https://developers.kakao.com/docs/latest/ko/app-setting/app), [데브톡 안내](https://devtalk.kakao.com/t/how-can-i-switch-to-a-biz-app-if-i-do-not-have-any-business-registration-number/71983)
-- **검수**: 민감한 개인정보 항목만 검수(3~5영업일). 이메일을 받지 않으므로 해당 항목 없을 것으로 봄. 카카오 로그인에 최소한 켜야 하는 동의항목이 있는지 `[확인 필요]`([카카오 로그인 사전 설정](https://developers.kakao.com/docs/latest/ko/kakaologin/prerequisite))
+- **동의항목은 하나도 설정하지 않음** → 비즈 앱 전환, 검수 모두 불필요
+  - 카카오 사용자 정보를 쓰지 않는 서비스는 동의항목을 설정하지 않아도 됨. 이때 동의 화면에는 앱 연결 안내만 나옴
+  - 회원번호는 사용자 동의 없이 기본 제공
+  - 근거: [카카오 로그인 활용 문서](https://developers.kakao.com/docs/latest/ko/kakaologin/utilize)
 
 ## 7. 기존 정책과의 관계
 
