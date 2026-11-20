@@ -33,7 +33,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 - Google 로그인: 회의에서 카카오가 안 될 때의 대안으로 정했던 것. 카카오가 사업자 없이 가능해서 넣지 않음([결정문 2026-11-17 개정](../../decisions/2026-11-10-third-sprint-crew-diary.md))
 - 크루 가입, 크루원 경로 보기: 크루 PRD에서 다룸
-- 서버 선정: 구현 단계에서 결정
+- 서버 선정: Spring Boot(Java 21)로 정함. 구현 단계에서 정하기로 했던 것(2026-11-20, [구현 노트](../../product/features/account-login.md))
 - 이메일·비밀번호 가입
 
 ## 3. 언제 로그인을 묻나
@@ -141,6 +141,5 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 ## 9. 다음 결정
 
 - 로그인 필수 여부: 연동 후 결정([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부)
-- 서버 선정: 3차 스프린트 결정문에서도 미정
 - 건강 앱 기록을 크루원에게 보여 줄지: 회의 안건([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md)). 보여 주기로 하면 §4 기록 백업도 고침
 - 크루원에게 경로 공개 시 집·회사 위치 처리: 크루 PRD에서 결정. 백업한 기록을 그대로 쓰므로 이 PRD에도 영향
