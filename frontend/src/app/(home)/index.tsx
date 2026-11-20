@@ -138,7 +138,14 @@ export default function HomeScreen() {
           <View style={styles.headerBlock}>
             <View style={styles.titleRow}>
               <Text style={styles.title}>Runary</Text>
-              <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
+              <View style={styles.titleRight}>
+                <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
+                {/* 로그인 FRD §2-1. 생김새는 디자인 전까지 임시 */}
+                <Pressable onPress={() => router.push('/account/login')} hitSlop={8}
+                  accessibilityRole="button" accessibilityLabel="내 계정" style={styles.accountButton}>
+                  <Text style={styles.accountText}>내 계정</Text>
+                </Pressable>
+              </View>
             </View>
 
             {draft && (
@@ -229,8 +236,11 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   list: { paddingHorizontal: 24, paddingBottom: 40, gap: Spacing.sm },
   headerBlock: { gap: Spacing.md, paddingTop: 8 },
-  titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
+  titleRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  accountButton: { minHeight: 44, justifyContent: 'center' },
+  accountText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
   archiveCount: {
     fontFamily: Fonts.sans,
     fontSize: 10,
