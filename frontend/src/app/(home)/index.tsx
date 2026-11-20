@@ -1,5 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,7 @@ import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
 import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
+import { accountEnabled } from '@/lib/account';
 import { trackingEnabled } from '../../../modules/run-tracking/src/RunTracking';
 
 // 홈과 보관함 FRD §1: 홈은 결과물 목록이다.
@@ -136,16 +138,19 @@ export default function HomeScreen() {
         ListFooterComponent={<View><AppPermissionsLink /><PrivacyPolicyLink /></View>}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
-            <View style={styles.titleRow}>
+            <View style={[styles.titleRow, accountEnabled && styles.titleRowCenter]}>
               <Text style={styles.title}>Runary</Text>
-              <View style={styles.titleRight}>
-                <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
-                {/* 로그인 FRD §2-1. 생김새는 디자인 전까지 임시 */}
-                <Pressable onPress={() => router.push('/account/login')} hitSlop={8}
-                  accessibilityRole="button" accessibilityLabel="내 계정" style={styles.accountButton}>
+              {/* 로그인 FRD §2-1, 시안 01. 서버 주소가 있는 빌드에서만 ARCHIVE 라벨 자리를 대신한다 */}
+              {accountEnabled ? (
+                <Pressable onPress={() => router.push('/account')}
+                  accessibilityRole="button" accessibilityLabel="내 계정"
+                  style={({ pressed }) => [styles.accountButton, pressed && { opacity: 0.6 }]}>
+                  <SymbolView name="person" size={18} tintColor={Colors.text} />
                   <Text style={styles.accountText}>내 계정</Text>
                 </Pressable>
-              </View>
+              ) : (
+                <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
+              )}
             </View>
 
             {draft && (
@@ -236,11 +241,14 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
   list: { paddingHorizontal: 24, paddingBottom: 40, gap: Spacing.sm },
   headerBlock: { gap: Spacing.md, paddingTop: 8 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  titleRowCenter: { alignItems: 'center' },
   title: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
-  titleRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  accountButton: { minHeight: 44, justifyContent: 'center' },
-  accountText: { fontFamily: Fonts.sans, fontSize: 13, color: Colors.text },
+  accountButton: {
+    height: 44, paddingLeft: 10, paddingRight: 14, borderRadius: 22, borderWidth: 1, borderColor: Colors.borderStrong,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+  accountText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.text },
   archiveCount: {
     fontFamily: Fonts.sans,
     fontSize: 10,
