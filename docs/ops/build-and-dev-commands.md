@@ -2,6 +2,35 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-21: Xcode 27 로컬 빌드 실행 실패와 EAS 개발 빌드 48
+
+로그인 실기기 확인([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143)) 중 지민의 Mac(Xcode 27.2, 2026-11-01 설치)에서 `npx expo prebuild` 후 Xcode로 설치한 개발 앱이 로고에서 멈췄다. Xcode 콘솔의 원인은 다음과 같다.
+
+```
+Application failed to launch: UIScene life cycle is required for apps built with this SDK.
+```
+
+iOS 27 SDK로 빌드한 앱은 UIKit scene 생명주기를 써야 실행된다. Expo SDK 57 템플릿은 예전 AppDelegate 방식이라 iOS가 시작 단계에서 막는다. 컴파일은 성공하므로 빌드만으로는 드러나지 않는다.
+
+- Expo는 `57.0.23`부터 `expo-build-properties`의 `ios.enableSceneSupport`로 scene 생명주기를 켤 수 있다. 설치된 `expo-build-properties@57.0.23`의 `iosSceneSupport.js`에서 확인했다. 우리는 `expo 57.0.17`이라 쓰려면 Expo 패치 업그레이드가 먼저 필요하다([Expo PR #50191](https://github.com/expo/expo/pull/50191), [이슈 #46664](https://github.com/expo/expo/issues/46664))
+- App Store는 2027년 4월부터 iOS 27 SDK 빌드를 요구한다고 알려져 있다([정리 글](https://useffect.sh/en/xcode-27-app-store-requirement)). 업그레이드는 별도 작업으로 남긴다. 측정·워치·잠금화면·공유 회귀 확인이 함께 필요하다
+- 그때까지 Xcode 27 Mac에서는 EAS 개발 빌드를 쓴다
+
+**EAS 개발 빌드 절차.** 로그인과 빌드는 질문에 답해야 하므로 macOS 터미널 앱에서 직접 실행한다.
+
+```bash
+cd frontend
+npx eas-cli@latest login
+# 카카오 키는 app.config.js가 빌드 서버에서 읽는다. development 환경에 한 번 등록한다
+npx eas-cli@latest env:create --name EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY --value "$(grep KAKAO .env.local | cut -d= -f2)" --environment development --visibility sensitive --non-interactive
+npx eas-cli@latest build --profile development --platform ios
+```
+
+- 기기 등록은 "Developer Portal"에서 가져온다. 이번에는 지민 iPhone 17만 넣었다. 팀원 기기는 `npx eas-cli@latest device:create`로 추가한 뒤 다시 빌드해야 설치된다
+- 서버 주소(`EXPO_PUBLIC_API_URL`)는 EAS에 넣지 않는다. 개발 앱은 화면 코드를 로컬 Metro에서 받고, Metro가 `.env.local`을 읽는다
+- 결과: `1.0.1(48)`, EAS 빌드 `348efa03-bb05-42e2-bfee-97b0f077a338`, `FINISHED`(약 8분). 설치 링크로 iPhone 17에 설치했고 TestFlight 제출은 하지 않았다
+- 지민 Mac에는 CocoaPods가 없어서 `brew install cocoapods`(1.17.0)로 설치했다
+
 ## 2026-11-21: Sign in with Apple capability 추가와 프로파일 재생성
 
 로그인 구현([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143))을 위해 Apple Developer에서 App ID `com.mechuri.runmechuri`에 Sign in with Apple을 켰다. `app.json`의 `ios.usesAppleSignIn: true`가 이 capability를 요구한다.
