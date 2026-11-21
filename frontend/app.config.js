@@ -4,6 +4,9 @@ module.exports = () => {
   const internal = process.env.RUNARY_INTERNAL_TRACKING === '1';
   config.extra = { ...config.extra, internalTracking: internal };
   config.ios.infoPlist.RunaryInternalTracking = internal;
+  // 카카오 네이티브 앱 키는 .env.local(로컬)·EAS 환경변수로만 넣는다. 없으면 카카오 로그인만 빠진다.
+  const kakaoKey = process.env.EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY;
+  if (kakaoKey) config.plugins.push(['@react-native-kakao/core', { nativeAppKey: kakaoKey, ios: { handleKakaoOpenUrl: true } }]);
   if (internal) {
     config.ios.infoPlist.NSSupportsLiveActivities = true;
     config.ios.infoPlist.CFBundleURLTypes.push({ CFBundleURLSchemes: ['frontend'] });

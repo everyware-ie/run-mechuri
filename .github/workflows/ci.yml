@@ -47,6 +47,26 @@ jobs:
       - name: Preview interaction checks
         run: node scripts/check-preview-work.cjs
 
+  backend:
+    name: Backend (test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 서명 키·DB는 테스트가 속성으로 직접 넣는다(H2 메모리). 시크릿이 필요 없다
+      - name: Test
+        run: ./gradlew test
+
   docs:
     name: Docs consistency (check-docs.py)
     runs-on: ubuntu-latest
