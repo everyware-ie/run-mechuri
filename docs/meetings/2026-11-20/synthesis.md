@@ -102,7 +102,7 @@ tags: [running, sprint, crew, group-drawing, login, presets, qa, testflight]
 
 - #143을 뺀 PR을 머지하기로 함
 - 회의 뒤 #136 다이어리, #140 크루 기획서·시안, #141 지인 피드백 QA가 머지됨(11/20)
-- 11/21에 앱 버전을 1.0.2로 올리고([#144](https://github.com/everyware-ie/run-mechuri/pull/144)) TestFlight 내부·외부에 올림. 결과는 [빌드 기록](../../ops/build-and-dev-commands.md)
+- 11/21에 앱 버전을 1.0.2로 올리고([#144](https://github.com/everyware-ie/run-mechuri/pull/144)) 1.0.2(48)을 TestFlight에 올림. 내부 그룹은 바로 테스트 중, 외부 그룹은 베타 심사 대기. 자세한 건 [빌드 기록](../../ops/build-and-dev-commands.md)
 - 1.0.2 정식 심사를 언제 낼지는 다루지 않음
 
 ## 7. 할 일
