@@ -2,6 +2,19 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-21: Sign in with Apple capability 추가와 프로파일 재생성
+
+로그인 구현([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143))을 위해 Apple Developer에서 App ID `com.mechuri.runmechuri`에 Sign in with Apple을 켰다. `app.json`의 `ios.usesAppleSignIn: true`가 이 capability를 요구한다.
+
+capability를 바꾸면 이 App ID를 포함한 기존 프로비저닝 프로파일이 모두 무효가 된다. Apple이 저장할 때 같은 내용을 경고한다. 이미 배포된 TestFlight·App Store 빌드와 설치된 앱에는 영향이 없다.
+
+- **Xcode로 실기기 설치**: 자동 서명이 개발용 프로파일을 새로 받아 온다. 따로 할 일은 없다
+- **다음 EAS 빌드**: 배포용 프로파일을 새로 만들어야 한다. EAS가 빌드 중에 재생성할지 묻는다
+  - **`--freeze-credentials`를 붙이면 재생성하지 않아 서명 단계에서 실패한다.** capability를 바꾼 뒤 첫 빌드는 이 옵션 없이 돌린다
+- 워치(`.watch`)·잠금화면(`.liveactivity`) 확장은 App ID가 따로라 바뀌지 않는다
+
+로그인이 들어간 개발 앱은 서버 주소(`EXPO_PUBLIC_API_URL`)와 카카오 키(`EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY`)가 `frontend/.env.local`에 있어야 한다. EAS 빌드에서 쓰려면 EAS 환경변수에도 등록해야 한다. 로컬 서버 실행 방법은 [로그인 구현 노트](../product/features/account-login.md)의 "로컬 테스트 방법"에 있다.
+
 ## 2026-11-03: 보관함과 러닝 탭 TestFlight 1.0.1(47)
 
 사용자가 하단 탭과 경로 아이콘을 선택하고 [FRD](../specs/frd/home-running-tabs.md) 2~4절의 구현을 승인했다. 같은 측정 UI 브랜치에서 두 화면을 탭으로 연결하고 편집의 경로 아이콘을 공유했다. 첫 실행 안내의 낡은 측정 제외 문구와 안내 반복 경로도 리뷰에서 수정했다.
