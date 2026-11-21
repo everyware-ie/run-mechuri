@@ -1,7 +1,7 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, Path } from 'react-native-svg';
@@ -9,11 +9,14 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { PrivacyPolicyLink } from '@/components/privacy-policy-link';
 import { Colors, Fonts } from '@/constants/theme';
 import {
-  loginToServer, saveToken, setPendingToken, signInWithApple, signInWithKakao, type ProviderCredential,
+  completeLogin, loginToServer, setPendingToken, signInWithApple, signInWithKakao, skipLoginThisLaunch,
+  type ProviderCredential,
 } from '@/lib/account';
-import { goBackOrHome } from '@/lib/navigation';
+import { startBackup } from '@/lib/backup';
+import { goBackOrHome, goHome } from '@/lib/navigation';
 
-// 로그인 FRD §3-1 로그인 수단 선택, §3-2 흐름. 시안 02a·03(2026-11-20 계정 화면 시안).
+// 로그인 FRD §2 로그인 입구, §3-1 로그인 수단 선택, §3-2 흐름. 시안 02a·03(2026-11-20 계정 화면 시안).
+// 로그인이 필수라 관문으로 열리면(홈이 스택에 없음) 닫기 버튼이 없다. "나중에 하기"로만 이번 실행을 넘긴다.
 // 서비스 이용약관은 공개 URL이 아직 없어 처리방침만 연결한다(구현 노트 어긋남 기록).
 
 const BUTTON_HEIGHT = 52;
@@ -26,6 +29,9 @@ export default function LoginScreen() {
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState<SignIn | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  const closable = router.canGoBack();
 
   const run = async (signIn: SignIn) => {
     if (busy.current) return;
@@ -34,16 +40,19 @@ export default function LoginScreen() {
       const credential = await signIn();
       if (!credential) return; // 취소: 안내 없이 이 화면에 머문다
       const { token, nickname } = await loginToServer(credential);
+      // 기다리는 동안 화면을 닫았다면 로그인을 끝내지 않는다
+      if (!mounted.current) return;
       if (nickname) {
-        await saveToken(token);
-        goBackOrHome();
+        await completeLogin(token);
+        void startBackup();
+        goHome();
       } else {
         setPendingToken(token);
         router.replace('/account/nickname');
       }
     } catch (e) {
       console.warn('[account] sign-in failed', e);
-      setFailed(() => signIn);
+      if (mounted.current) setFailed(() => signIn);
     } finally {
       busy.current = false; setPending(false);
     }
@@ -52,9 +61,11 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.nav}>
-        <Pressable onPress={goBackOrHome} hitSlop={8} accessibilityRole="button" accessibilityLabel="닫기" style={styles.iconButton}>
-          <SymbolView name="xmark" size={18} tintColor={Colors.text} />
-        </Pressable>
+        {closable && (
+          <Pressable onPress={goBackOrHome} hitSlop={8} accessibilityRole="button" accessibilityLabel="닫기" style={styles.iconButton}>
+            <SymbolView name="xmark" size={18} tintColor={Colors.text} />
+          </Pressable>
+        )}
       </View>
       <View style={styles.body}>
         <View style={[styles.hero, failed && styles.heroDimmed]}>
@@ -82,6 +93,11 @@ export default function LoginScreen() {
             <Pressable onPress={() => { void run(failed); }} accessibilityRole="button"
               style={({ pressed }) => [styles.retry, pressed && styles.pressed]}>
               <Text style={styles.retryText}>다시 시도</Text>
+            </Pressable>
+            {/* 네트워크가 없거나 서버가 응답하지 않아도 앱은 쓸 수 있어야 한다. 다음에 앱을 열 때 다시 묻는다(로그인 FRD §2) */}
+            <Pressable onPress={() => { skipLoginThisLaunch(); goHome(); }} accessibilityRole="button"
+              style={({ pressed }) => [styles.later, pressed && styles.pressed]}>
+              <Text style={styles.laterText}>나중에 하기</Text>
             </Pressable>
           </View>
         )}
@@ -128,6 +144,8 @@ const styles = StyleSheet.create({
   noticeText: { flex: 1, fontFamily: Fonts.sansBold, fontSize: 15, lineHeight: 22, color: Colors.text },
   retry: { height: 44, borderRadius: 22, backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center' },
   retryText: { fontFamily: Fonts.sansBold, fontSize: 15, color: Colors.accentText },
+  later: { height: 44, alignItems: 'center', justifyContent: 'center' },
+  laterText: { fontFamily: Fonts.sans, fontSize: 14, color: Colors.textMuted },
   buttons: { gap: 12, marginBottom: 6 },
   pending: { opacity: 0.5 },
   button: { height: BUTTON_HEIGHT, width: '100%', borderRadius: BUTTON_RADIUS },

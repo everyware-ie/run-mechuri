@@ -3,40 +3,52 @@ import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius } from '@/constants/theme';
-import { clearSavedToken, fetchMe, getSavedToken, type Me } from '@/lib/account';
+import { fetchMe, forgetSession, getSavedToken, type Me } from '@/lib/account';
+import { useBackupState } from '@/lib/backup';
 
-// 로그인 FRD §2-1 내 계정 화면. 시안 05a(로그인 전), 05b(로그인 후).
-// 백업 상태, 로그아웃, 탈퇴(FRD §5, §6, §7)는 다음 단계에서 붙인다.
+// 로그인 FRD §2-1 내 계정 화면. 시안 05b(로그인 후).
+// 로그인이 필수라 로그인한 사람만 온다. 서버가 로그인을 거절하면 로그인 수단 선택으로 보낸다.
+// 로그아웃, 탈퇴(FRD §6, §7)는 다음 단계에서 붙인다.
 
-type State = { kind: 'loading' } | { kind: 'loggedOut' } | { kind: 'loggedIn'; me: Me } | { kind: 'error' };
+type State = { kind: 'loading' } | { kind: 'loggedIn'; me: Me } | { kind: 'error' };
 
-const ROUTE_PATH = 'M6 56c30 0 38-38 70-38s40 30 72 30 40-40 72-40 46 18 75 18';
 const PROVIDER_LABEL = { APPLE: 'Apple', KAKAO: '카카오' } as const;
+
+/** FRD §2-1 백업 시각 형식 `11.20 13:02` */
+const formatBackupTime = (ms: number) => {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 export default function AccountScreen() {
   const [state, setState] = useState<State>({ kind: 'loading' });
+  const backup = useBackupState();
 
-  const load = useCallback(async () => {
-    const token = await getSavedToken();
-    if (!token) { setState({ kind: 'loggedOut' }); return; }
+  const load = useCallback(async (isActive: () => boolean) => {
     try {
-      const me = await fetchMe(token);
+      const token = await getSavedToken();
+      const me = token ? await fetchMe(token) : null;
+      if (!isActive()) return;
       if (me?.nickname) { setState({ kind: 'loggedIn', me }); return; }
-      // 서버가 토큰을 거절했다. 다시 로그인하게 한다
-      await clearSavedToken();
-      setState({ kind: 'loggedOut' });
+      await forgetSession();
+      router.replace('/account/login');
     } catch (e) {
       console.warn('[account] load failed', e);
-      setState({ kind: 'error' });
+      if (isActive()) setState({ kind: 'error' });
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  // 화면을 빠르게 오가면 이전 조회 결과가 늦게 도착할 수 있다. 지금 포커스의 결과만 반영한다
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    void load(() => active);
+    return () => { active = false; };
+  }, [load]));
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -44,42 +56,64 @@ export default function AccountScreen() {
       <View style={styles.body}>
         {state.kind === 'loading' && <ActivityIndicator color={Colors.textMuted} style={{ marginTop: 40 }} />}
 
-        {state.kind === 'loggedOut' && (
-          <View style={styles.promo}>
-            <Svg width="100%" height={70} viewBox="0 0 301 70" preserveAspectRatio="xMidYMid meet">
-              <Path d={ROUTE_PATH} fill="none" stroke={Colors.accent} strokeWidth={6} strokeLinecap="round" opacity={0.3} />
-              <Path d={ROUTE_PATH} fill="none" stroke="#FFB49A" strokeWidth={2} strokeLinecap="round" />
-            </Svg>
-            <Text style={styles.promoText}>
-              로그인하면 러닝 기록이 서버에 백업돼요. 앱을 지웠다 다시 깔아도 러닝 기록이 돌아와요.
-            </Text>
-            <ThemedButton title="로그인" onPress={() => router.push('/account/login')} />
-          </View>
-        )}
-
         {state.kind === 'loggedIn' && (
-          <View style={styles.card}>
-            <Pressable
-              onPress={() => router.push({ pathname: '/account/nickname', params: { current: state.me.nickname ?? '' } })}
-              accessibilityRole="button" accessibilityLabel={`닉네임 ${state.me.nickname}, 변경`}
-              style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.pressed]}>
-              <Text style={styles.rowKey}>닉네임</Text>
-              <View style={styles.rowValueWrap}>
-                <Text style={styles.rowValue}>{state.me.nickname}</Text>
-                <SymbolView name="chevron.right" size={13} tintColor={Colors.textMuted} />
+          <>
+            <View style={styles.card}>
+              <Pressable
+                onPress={() => router.push({ pathname: '/account/nickname', params: { current: state.me.nickname ?? '' } })}
+                accessibilityRole="button" accessibilityLabel={`닉네임 ${state.me.nickname}, 변경`}
+                style={({ pressed }) => [styles.row, styles.rowDivider, pressed && styles.pressed]}>
+                <Text style={styles.rowKey}>닉네임</Text>
+                <View style={styles.rowValueWrap}>
+                  <Text style={styles.rowValue}>{state.me.nickname}</Text>
+                  <SymbolView name="chevron.right" size={13} tintColor={Colors.textMuted} />
+                </View>
+              </Pressable>
+              <View style={styles.row}>
+                <Text style={styles.rowKey}>로그인 수단</Text>
+                <Text style={styles.rowValue}>{PROVIDER_LABEL[state.me.provider]}</Text>
               </View>
-            </Pressable>
-            <View style={styles.row}>
-              <Text style={styles.rowKey}>로그인 수단</Text>
-              <Text style={styles.rowValue}>{PROVIDER_LABEL[state.me.provider]}</Text>
             </View>
-          </View>
+
+            {/* FRD §2-1 백업 상태, §5-1 진행 표시, §5-4 올라가지 않은 기록 수 */}
+            {(backup.progress || backup.lastBackupAt || backup.remaining > 0) && (
+              <View style={styles.section}>
+                <Text style={styles.mono}>BACKUP</Text>
+                <View style={styles.card}>
+                  {backup.progress && (
+                    <View style={[styles.row, styles.rowDivider]} accessibilityLiveRegion="polite">
+                      <Text style={styles.rowKey}>기록 백업 중</Text>
+                      <Text style={styles.rowMono}>{backup.progress.done}/{backup.progress.total}</Text>
+                    </View>
+                  )}
+                  {backup.lastBackupAt && (
+                    <View style={[styles.row, styles.rowDivider]}>
+                      <Text style={styles.rowKey}>마지막 백업</Text>
+                      <Text style={styles.rowMono}>{formatBackupTime(backup.lastBackupAt)}</Text>
+                    </View>
+                  )}
+                  {!backup.progress && backup.remaining > 0 && (
+                    <View style={styles.row}>
+                      <Text style={styles.rowKey}>백업되지 않은 러닝 기록</Text>
+                      <View style={styles.rowValueWrap}>
+                        <View style={styles.dot} />
+                        <Text style={styles.rowValue}>{backup.remaining}건</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+                {!backup.progress && backup.remaining > 0 && (
+                  <Text style={styles.hint}>인터넷에 연결되면 자동으로 백업해요.</Text>
+                )}
+              </View>
+            )}
+          </>
         )}
 
         {state.kind === 'error' && (
           <View style={styles.promo}>
             <Text style={styles.promoText}>계정 정보를 불러오지 못했어요. 다시 시도해 주세요.</Text>
-            <ThemedButton title="다시 시도" variant="outline" onPress={() => { setState({ kind: 'loading' }); void load(); }} />
+            <ThemedButton title="다시 시도" variant="outline" onPress={() => { setState({ kind: 'loading' }); void load(() => true); }} />
           </View>
         )}
       </View>
@@ -89,14 +123,19 @@ export default function AccountScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
-  body: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
+  body: { flex: 1, paddingHorizontal: 24, paddingTop: 16, gap: 22 },
   promo: { borderRadius: Radius.card, backgroundColor: Colors.bgCard, paddingVertical: 24, paddingHorizontal: 22, gap: 20 },
   promoText: { fontFamily: Fonts.sansBold, fontSize: 17, lineHeight: 27, color: Colors.text },
+  section: { gap: 10 },
+  mono: { paddingLeft: 4, fontFamily: Fonts.mono, fontSize: 11, letterSpacing: 1.3, color: Colors.textMuted },
   card: { borderRadius: Radius.card, backgroundColor: Colors.bgCard, paddingHorizontal: 18, paddingVertical: 4 },
   row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   rowDivider: { borderBottomWidth: 1, borderBottomColor: 'rgba(237,241,245,0.07)' },
   rowKey: { fontFamily: Fonts.sans, fontSize: 15, color: Colors.textMuted },
   rowValueWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   rowValue: { fontFamily: Fonts.sansBold, fontSize: 16, color: Colors.text },
+  rowMono: { fontFamily: Fonts.mono, fontSize: 14, color: Colors.text },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.accent },
+  hint: { paddingLeft: 4, fontFamily: Fonts.sans, fontSize: 13, lineHeight: 20, color: Colors.textMuted },
   pressed: { opacity: 0.6 },
 });

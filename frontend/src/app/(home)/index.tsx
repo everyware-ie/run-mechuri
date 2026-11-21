@@ -15,7 +15,8 @@ import { getDraft, type Draft } from '@/lib/draft-store';
 import { listResults, type SavedResult } from '@/lib/results-store';
 import { isSampleRun } from '@/lib/sample-run';
 import { useCreationFlow } from '@/state/creation-flow';
-import { accountEnabled } from '@/lib/account';
+import { accountEnabled, checkSession, isLoggedIn } from '@/lib/account';
+import { startBackup } from '@/lib/backup';
 import { trackingEnabled } from '../../../modules/run-tracking/src/RunTracking';
 
 // 홈과 보관함 FRD §1: 홈은 결과물 목록이다.
@@ -41,22 +42,24 @@ export default function HomeScreen() {
     if (checkedConnection) return;
     let cancelled = false;
     (async () => {
-      const connected = await hasConnectedOnce();
+      let connected = await hasConnectedOnce();
       if (cancelled) return;
-      if (connected) {
-        setCheckedConnection(true);
-        return;
-      }
-      // 이 플래그가 생기기 전부터 이미 쓰던 사람(만든 결과물이 있음)에게는
-      // 이제 와서 첫 실행 화면을 보여주지 않는다 — 조용히 "연결됨"으로 채운다.
-      const existing = await listResults();
-      if (cancelled) return;
-      if (existing.length > 0) {
+      if (!connected) {
+        // 이 플래그가 생기기 전부터 이미 쓰던 사람(만든 결과물이 있음)에게는
+        // 이제 와서 첫 실행 화면을 보여주지 않는다 — 조용히 "연결됨"으로 채운다.
+        const existing = await listResults();
+        if (cancelled) return;
+        if (existing.length === 0) { router.replace('/connect'); return; }
         await markConnectedOnce();
-        if (!cancelled) setCheckedConnection(true);
-        return;
+        connected = true;
       }
-      router.replace('/connect');
+      // 로그인 FRD §2 로그인 입구: 로그인은 필수다. 첫 실행 안내를 지난 뒤, 로그인하지 않았으면 로그인 수단 선택으로 보낸다.
+      // 서버 주소가 없는 빌드(서버 배포 전 스토어 빌드)에서는 관문이 없다
+      const ok = await checkSession().catch(() => false);
+      if (cancelled) return;
+      if (!ok) { router.replace('/account/login'); return; }
+      void startBackup();
+      setCheckedConnection(true);
     })();
     return () => {
       cancelled = true;
@@ -140,13 +143,13 @@ export default function HomeScreen() {
           <View style={styles.headerBlock}>
             <View style={[styles.titleRow, accountEnabled && styles.titleRowCenter]}>
               <Text style={styles.title}>Runary</Text>
-              {/* 로그인 FRD §2-1, 시안 01. 서버 주소가 있는 빌드에서만 ARCHIVE 라벨 자리를 대신한다 */}
+              {/* 로그인 FRD §2-1 내 계정 화면. 아이콘만 둔다. 서버 주소가 있는 빌드에서만 ARCHIVE 라벨 자리를 대신한다 */}
               {accountEnabled ? (
-                <Pressable onPress={() => router.push('/account')}
+                // "나중에 하기"로 넘어온 실행이면 로그인부터 한다
+                <Pressable onPress={() => router.push(isLoggedIn() ? '/account' : '/account/login')}
                   accessibilityRole="button" accessibilityLabel="내 계정"
                   style={({ pressed }) => [styles.accountButton, pressed && { opacity: 0.6 }]}>
-                  <SymbolView name="person" size={18} tintColor={Colors.text} />
-                  <Text style={styles.accountText}>내 계정</Text>
+                  <SymbolView name="person" size={22} tintColor={Colors.text} />
                 </Pressable>
               ) : (
                 <Text style={styles.archiveCount}>ARCHIVE · {results.length}</Text>
@@ -244,11 +247,7 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   titleRowCenter: { alignItems: 'center' },
   title: { fontFamily: Fonts.sansBold, fontSize: 26, color: Colors.text, letterSpacing: -0.6 },
-  accountButton: {
-    height: 44, paddingLeft: 10, paddingRight: 14, borderRadius: 22, borderWidth: 1, borderColor: Colors.borderStrong,
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-  },
-  accountText: { fontFamily: Fonts.sansBold, fontSize: 14, color: Colors.text },
+  accountButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   archiveCount: {
     fontFamily: Fonts.sans,
     fontSize: 10,

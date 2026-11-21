@@ -1,14 +1,15 @@
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts } from '@/constants/theme';
-import { getPendingToken, getSavedToken, saveNickname, saveToken, setPendingToken } from '@/lib/account';
-import { goBackOrHome } from '@/lib/navigation';
+import { completeLogin, getPendingToken, getSavedToken, saveNickname, setPendingToken } from '@/lib/account';
+import { startBackup } from '@/lib/backup';
+import { goBackOrHome, goHome } from '@/lib/navigation';
 import {
   lowercaseNickname, nicknameError, nicknameLength, NICKNAME_MAX, NICKNAME_MESSAGES, type NicknameError,
 } from '@/lib/nickname';
@@ -23,6 +24,12 @@ export default function NicknameScreen() {
   const [serverError, setServerError] = useState<NicknameError | null>(null);
   const [saving, setSaving] = useState(false);
   const busy = useRef(false);
+  const mounted = useRef(true);
+  const latest = useRef('');
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  // 가입 중 닫기: 가입 미완료로 남기고 로그인 수단 선택으로 돌아간다(로그인 FRD §4)
+  const closeSignup = () => { setPendingToken(null); router.replace('/account/login'); };
 
   const localError = value.trim() ? nicknameError(value) : null;
   const error = localError ?? serverError;
@@ -34,15 +41,24 @@ export default function NicknameScreen() {
     busy.current = true; setSaving(true);
     try {
       const token = signup ? getPendingToken() : await getSavedToken();
-      if (!token) { goBackOrHome(); return; }
-      const result = await saveNickname(token, value);
-      if ('error' in result) { setServerError(result.error); return; }
+      if (!token) { if (signup) closeSignup(); else goBackOrHome(); return; }
+      const submitted = value;
+      const result = await saveNickname(token, submitted);
+      // 기다리는 동안 화면을 닫았다면 가입을 끝내지 않는다
+      if (!mounted.current) return;
+      if ('error' in result) {
+        // 기다리는 동안 글자를 고쳤다면 이전 값의 오류를 띄우지 않는다
+        if (latest.current === submitted) setServerError(result.error);
+        return;
+      }
+      if (!signup) { goBackOrHome(); return; }
       // 가입은 닉네임까지 저장해야 끝난다. 그 전에 닫기·뒤로 스와이프·앱 종료로 나가면 로그인하지 않은 상태로 남는다(§4, §3-2 흐름)
-      if (signup) { await saveToken(token); setPendingToken(null); }
-      goBackOrHome();
+      await completeLogin(token);
+      void startBackup();
+      goHome();
     } catch (e) {
       console.warn('[account] nickname save failed', e);
-      Alert.alert('닉네임을 저장하지 못했어요. 다시 시도해 주세요.', undefined, [
+      if (mounted.current) Alert.alert('닉네임을 저장하지 못했어요. 다시 시도해 주세요.', undefined, [
         { text: '닫기', style: 'cancel' },
         { text: '다시 시도', onPress: () => { void submit(); } },
       ]);
@@ -55,7 +71,7 @@ export default function NicknameScreen() {
     <SafeAreaView style={styles.safeArea}>
       {signup ? (
         <View style={styles.nav}>
-          <Pressable onPress={goBackOrHome} hitSlop={8} accessibilityRole="button" accessibilityLabel="닫기" style={styles.iconButton}>
+          <Pressable onPress={closeSignup} hitSlop={8} accessibilityRole="button" accessibilityLabel="닫기" style={styles.iconButton}>
             <SymbolView name="xmark" size={18} tintColor={Colors.text} />
           </Pressable>
         </View>
@@ -75,7 +91,7 @@ export default function NicknameScreen() {
           <View style={[styles.field, error ? styles.fieldError : styles.fieldFocus]}>
             <TextInput
               value={value}
-              onChangeText={(text) => { setValue(lowercaseNickname(text)); setServerError(null); }}
+              onChangeText={(text) => { const next = lowercaseNickname(text); latest.current = next; setValue(next); setServerError(null); }}
               autoFocus
               autoCapitalize="none"
               autoCorrect={false}
