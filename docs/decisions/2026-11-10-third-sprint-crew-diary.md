@@ -4,7 +4,7 @@ product: running
 type: decision
 status: decided
 date: 2026-11-10
-updated: 2026-11-17
+updated: 2026-11-21
 related_meeting: ../meetings/2026-11-10/synthesis.md
 tags: [running, sprint, crew, diary, login, roles, tab]
 ---
@@ -73,3 +73,9 @@ tags: [running, sprint, crew, diary, login, roles, tab]
 - 지민이 확인한 결과 사업자 없이 쓸 수 있음. 카카오 로그인 자체는 비즈 앱이 아니어도 되고, 이메일은 사업자 없이 "개인 개발자 비즈 앱"으로 전환하면 받을 수 있음([카카오 앱 설정 문서](https://developers.kakao.com/docs/latest/ko/app-setting/app))
 - 그래서 **로그인은 Apple과 카카오로 만들고 Google은 넣지 않음**
 - 근거와 범위: [로그인 PRD](../specs/prd/account-login.md)
+
+## 2026-11-20 개정: 크루는 보류, 로그인은 필수
+
+- 크루 가입과 크루원끼리 경로 보기를 보류하고, 여러 사람이 한꺼번에 그리는 기능으로 바꿔 진행. 담당은 지응([결정](2026-11-20-crew-hold-login-required.md))
+- 로그인은 필수로 정함. 이메일은 받지 않고 로그인 수단은 Apple과 카카오
+- 현수의 크루 화면 디자인은 디자인 다듬기와 다이어리 QA로 바뀜

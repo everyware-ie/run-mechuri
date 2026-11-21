@@ -2,7 +2,7 @@
 title: running Decisions Index
 product: running
 type: decision
-updated: 2026-11-10
+updated: 2026-11-21
 ---
 
 # 의사결정 목록
@@ -26,5 +26,6 @@ updated: 2026-11-10
 | 2026-10-12 | [하트 샘플로 편집·영상 생성 체험 제공](2026-10-12-heart-sample-experience.md) | decided | 사용자 FRD 확인·경로 선택·로컬 미러링 요청 |
 | 2026-10-27 | [다음 주 정식 심사에 측정 기능을 모두 넣는다](2026-10-27-submit-with-tracking.md) | decided | [2026-10-27](../meetings/2026-10-27/synthesis.md) |
 | 2026-11-10 | [3차 스프린트는 크루 가입, 크루원 경로 보기, 다이어리. 로그인부터 만든다](2026-11-10-third-sprint-crew-diary.md) | decided | [2026-11-10](../meetings/2026-11-10/synthesis.md) |
+| 2026-11-20 | [크루는 보류하고 합동 그리기로, 로그인은 필수](2026-11-20-crew-hold-login-required.md) | decided | [2026-11-20](../meetings/2026-11-20/synthesis.md) |
 
 상태: `proposed` / `decided` / `deferred` / `rejected` (decided 이후 변경은 개정 append)
