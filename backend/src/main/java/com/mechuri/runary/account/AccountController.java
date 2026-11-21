@@ -45,6 +45,8 @@ class AccountController {
     /** nickname이 null이면 가입 미완료. 앱은 닉네임 입력으로 보낸다 */
     record AuthResponse(String token, String nickname) {}
     record Me(String nickname, Account.Provider provider) {}
+    /** token: 새로 발급한 토큰. 앱을 열 때마다 받아 바꿔 두면 30일 안에 한 번만 열어도 로그인이 이어진다(로그인 FRD §2) */
+    record MeWithToken(String nickname, Account.Provider provider, String token) {}
     record NicknameRequest(String nickname) {}
     record ErrorBody(String code) {}
 
@@ -66,9 +68,9 @@ class AccountController {
     }
 
     @GetMapping("/me")
-    Me me(@AuthenticationPrincipal Jwt jwt) {
+    MeWithToken me(@AuthenticationPrincipal Jwt jwt) {
         Account account = current(jwt);
-        return new Me(account.getNickname(), account.getProvider());
+        return new MeWithToken(account.getNickname(), account.getProvider(), issue(account));
     }
 
     @PutMapping("/me/nickname")

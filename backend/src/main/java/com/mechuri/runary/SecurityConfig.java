@@ -30,7 +30,12 @@ class SecurityConfig {
         if (secret.isBlank()) {
             throw new IllegalStateException("app.jwt-secret이 없습니다. backend/config/application.properties에 넣어 주세요");
         }
-        key = new SecretKeySpec(Base64.getDecoder().decode(secret), "HmacSHA256");
+        byte[] bytes = Base64.getDecoder().decode(secret);
+        // HS256 키는 32바이트 이상이어야 한다. 짧으면 첫 로그인 때가 아니라 지금 실패시킨다
+        if (bytes.length < 32) {
+            throw new IllegalStateException("app.jwt-secret은 Base64로 32바이트 이상이어야 합니다. openssl rand -base64 32로 만드세요");
+        }
+        key = new SecretKeySpec(bytes, "HmacSHA256");
     }
 
     @Bean
