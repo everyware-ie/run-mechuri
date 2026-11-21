@@ -3,7 +3,7 @@ title: Apple·카카오 로그인과 회원가입 FRD
 product: running
 type: frd
 status: approved
-updated: 2026-11-20
+updated: 2026-11-21
 derives_from: ../prd/account-login.md
 prd_sections: "§3 언제 로그인을 묻나, §4 계정에 무엇이 남나, §5 로그아웃과 탈퇴, §8 성공 기준"
 related:
@@ -34,6 +34,8 @@ related:
 건강 앱 기록을 크루원에게 보여 줄지는 회의에서 정함([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md))
 
 ## 2. 로그인 입구
+
+> 2026-11-20 회의에서 **로그인을 필수로 정함**([결정](../../decisions/2026-11-20-crew-hold-login-required.md)). 이 절은 아직 선택 기준이고, 첫 실행 입구는 구현하며 고침 `[확인 필요]`. 크루 기능은 보류돼 §2-2 크루 진입은 지금 쓰이지 않음
 
 ### 2-1. 내 계정 화면
 

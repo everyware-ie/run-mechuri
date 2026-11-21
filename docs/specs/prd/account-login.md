@@ -3,7 +3,7 @@ title: Apple·카카오 로그인과 회원가입
 product: running
 type: prd
 status: draft
-updated: 2026-11-17
+updated: 2026-11-21
 related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/2026-11-10/synthesis.md]
 ---
 
@@ -37,6 +37,8 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 - 이메일·비밀번호 가입
 
 ## 3. 언제 로그인을 묻나
+
+> 2026-11-20 회의에서 **로그인을 필수로 정함**([결정](../../decisions/2026-11-20-crew-hold-login-required.md)). 아래는 아직 선택 기준이고, 첫 실행 화면과 기존 사용자 처리는 구현하며 고침 `[확인 필요]`
 
 - **로그인은 선택 (잠정)**
   - 필수로 할지는 Apple·카카오 연동을 끝낸 뒤 결정([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부). 연동 코드는 어느 쪽이든 같고 입구만 달라짐
@@ -141,6 +143,6 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 ## 9. 다음 결정
 
-- 로그인 필수 여부: 연동 후 결정([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부)
-- 건강 앱 기록을 크루원에게 보여 줄지: 회의 안건([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md)). 보여 주기로 하면 §4 기록 백업도 고침
+- 로그인 필수 여부: 2026-11-20 회의에서 필수로 정함([결정](../../decisions/2026-11-20-crew-hold-login-required.md)). 처음 안건은 [안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부
+- 건강 앱 기록을 크루원에게 보여 줄지: 2026-11-20 크루와 함께 보류. 처음 안건은 [안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md). 보여 주기로 하면 §4 기록 백업도 고침
 - 크루원에게 경로 공개 시 집·회사 위치 처리: 크루 PRD에서 결정. 백업한 기록을 그대로 쓰므로 이 PRD에도 영향
