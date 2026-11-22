@@ -41,7 +41,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 - **로그인은 필수** (2026-11-20 [결정](../../decisions/2026-11-20-crew-hold-login-required.md))
   - 로그인하지 않은 상태로 앱을 열면 로그인 화면이 나옴. 한 번 로그인하면 다시 묻지 않음
   - 이미 쓰던 사용자도 업데이트 뒤 첫 실행 때 로그인. 가입하면 기기에 있던 Runary 측정 기록이 백업됨(§4 기록 백업)
-  - 네트워크가 없으면 그 실행만 로그인 없이 쓸 수 있게 함. 밖에서 측정을 못 하게 되면 안 되기 때문([FRD](../frd/account-login.md) §2 로그인 입구, 2026-11-22 확정)
+  - 로그인하지 못하면(네트워크 없음, 서버 오류) 그 실행만 로그인 없이 쓸 수 있게 함. 밖에서 측정을 못 하게 되면 안 되기 때문([FRD](../frd/account-login.md) §2 로그인 입구, 2026-11-22 확정)
 - 크루가 보류돼 크루 진입 시 로그인 권유는 지금 쓰이지 않음
 - 내 계정 화면에 백업 상태, 로그아웃, 탈퇴를 모음([FRD](../frd/account-login.md) §2-1 내 계정 화면)
 - **심사 위험**: 계정이 핵심 기능이 아닌 앱이 로그인을 강제하면 반려될 수 있음([App Review Guidelines 5.1.1](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage)). 서버를 배포하기 전에는 스토어 빌드에 로그인이 나오지 않으므로, 대응은 서버 배포와 함께 정함 `[확인 필요]`

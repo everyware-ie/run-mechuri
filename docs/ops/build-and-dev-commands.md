@@ -19,10 +19,10 @@ iOS 27 SDK로 빌드한 앱은 UIKit scene 생명주기를 써야 실행된다. 
 **EAS 개발 빌드 절차.** 로그인과 빌드는 질문에 답해야 하므로 macOS 터미널 앱에서 직접 실행한다.
 
 ```bash
-cd frontend
+cd ~/Desktop/mechuri/run-mechuri/frontend   # 아래 명령은 모두 frontend/에서 실행
 npx eas-cli@latest login
 # 카카오 키는 app.config.js가 빌드 서버에서 읽는다. development 환경에 한 번 등록한다
-npx eas-cli@latest env:create --name EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY --value "$(grep KAKAO .env.local | cut -d= -f2)" --environment development --visibility sensitive --non-interactive
+npx eas-cli@latest env:create --name EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY --value "$(grep '^EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY=' .env.local | cut -d= -f2-)" --environment development --visibility sensitive --non-interactive
 npx eas-cli@latest build --profile development --platform ios
 ```
 
@@ -30,6 +30,8 @@ npx eas-cli@latest build --profile development --platform ios
 - 서버 주소(`EXPO_PUBLIC_API_URL`)는 EAS에 넣지 않는다. 개발 앱은 화면 코드를 로컬 Metro에서 받고, Metro가 `.env.local`을 읽는다
 - 결과: `1.0.1(48)`, EAS 빌드 `348efa03-bb05-42e2-bfee-97b0f077a338`, `FINISHED`(약 8분). 설치 링크로 iPhone 17에 설치했고 TestFlight 제출은 하지 않았다
 - 지민 Mac에는 CocoaPods가 없어서 `brew install cocoapods`(1.17.0)로 설치했다
+
+**OTA 업데이트 주의 (2026-11-22).** 로그인 작업이 네이티브 패키지(`expo-apple-authentication`, `@react-native-kakao/*`, `expo-secure-store`)를 추가했다. `runtimeVersion` 정책이 `appVersion`이라, 앱 버전을 그대로 둔 채 `eas update`를 보내면 이 패키지가 없는 이전 바이너리(예: 1.0.2(48))가 새 JS를 받는다. 로그인 화면이나 저장 기능을 쓰는 순간 꺼질 수 있다. **로그인이 들어간 코드를 배포하기 전에 앱 버전을 올리고, OTA는 새 바이너리에만 보낸다.**
 
 ## 2026-11-21: Sign in with Apple capability 추가와 프로파일 재생성
 
