@@ -4,3 +4,6 @@ node_modules/
 
 # 배경 이미지 작업용 스크래치 (생성 스크립트는 scripts/generate-backgrounds.py)
 .bg-out/
+
+# Apple 서명 키(Sign in with Apple 등). 어느 폴더에 두든 커밋하지 않는다
+*.p8

@@ -87,7 +87,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
   - 근거: [App Review Guidelines 5.1.1(v)](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage), [계정 삭제 안내](https://developer.apple.com/support/offering-account-deletion-in-your-app/)
 - **탈퇴 시 서버의 계정 정보와 기록 삭제**
 - 카카오로 가입한 사용자는 탈퇴 시 카카오 "연결 끊기"도 호출
-- 탈퇴해도 기기 기록은 유지. 탈퇴 뒤에도 로그인 없이 앱을 계속 쓸 수 있음
+- 탈퇴해도 기기 기록은 유지. 로그인이 필수라 탈퇴하면 로그인 화면으로 가고, 다시 가입하면 기기 기록이 새 계정에 백업됨(2026-11-23 고침)
 - Apple로 가입한 사용자는 탈퇴 시 Apple 토큰 해지도 요청
 
 ## 6. 정책과 심사
