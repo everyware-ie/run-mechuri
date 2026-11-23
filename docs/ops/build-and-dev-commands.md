@@ -28,7 +28,7 @@
 
 - 저장소에 커밋하지 않는다. 루트 `.gitignore`에 `*.p8`, `backend/.gitignore`에 `config/`가 있다
 - 로컬 서버: `backend/config/AuthKey_2FZJKD22M4.p8`, 설정은 `backend/config/application.properties`의 `app.apple.key-id`, `app.apple.private-key-path`
-- 팀 공유: 지민이 노션으로 옮겼다. 위치 `[확인 필요]`. 노션 페이지는 팀원만 볼 수 있게 둔다
+- 팀 공유: 노션에 있다. 노션 페이지는 팀원만 볼 수 있게 둔다
 - 서버를 배포할 때는 배포 서버의 비밀 저장소로 옮긴다
 
 **카카오 디벨로퍼스**

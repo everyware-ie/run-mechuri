@@ -29,7 +29,7 @@
 - **Apple Developer**
   - App ID에 Sign in with Apple을 켬. 기존 프로비저닝 프로파일이 무효가 됨
     - **다음 TestFlight 빌드는 `--freeze-credentials` 없이 돌려야 함**(프로파일을 새로 만들어야 해서)
-  - Sign in with Apple 키 추가(Key ID `2FZJKD22M4`). `.p8` 파일은 저장소에 없고 노션으로 옮김. 위치 `[확인 필요]`
+  - Sign in with Apple 키 추가(Key ID `2FZJKD22M4`). `.p8` 파일은 저장소에 없고 노션에 있음
   - 지민 iPhone 17을 기기로 등록
 - **카카오 디벨로퍼스**: 앱 등록(앱 ID `1658837`), iOS 번들 ID, 카카오 로그인 켬, 동의항목 없음
 - **EAS**: 카카오 키를 `development` 환경에만 등록. TestFlight에 넣을 때는 `preview`·`production`에도 등록해야 함
