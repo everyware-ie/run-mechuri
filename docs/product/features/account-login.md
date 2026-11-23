@@ -115,7 +115,7 @@ Apple·카카오 토큰이 유효하지 않으면 401 `INVALID_PROVIDER_TOKEN`�
 
 ### 로컬 테스트 방법
 
-Apple 토큰 해지까지 확인하려면 Sign in with Apple 키가 필요하다. Apple Developer → Keys에서 Sign in with Apple을 켠 키를 만들고 `.p8`을 `backend/config/`에 둔다(gitignore). `backend/config/application.properties`에 두 줄을 넣는다. 없으면 해지만 건너뛴다.
+Apple 토큰 해지까지 확인하려면 Sign in with Apple 키가 필요하다. 2026-11-24 키(Key ID `2FZJKD22M4`)를 만들어 지민 Mac의 `backend/config/`에 넣었다. 실제 해지 호출은 아직 확인하지 않았다. Apple Developer → Keys에서 Sign in with Apple을 켠 키를 만들고 `.p8`을 `backend/config/`에 둔다(gitignore). `backend/config/application.properties`에 두 줄을 넣는다. 없으면 해지만 건너뛴다.
 
 ```
 app.apple.key-id=<Key ID>
@@ -194,7 +194,7 @@ app.apple.private-key-path=config/AuthKey_<Key ID>.p8
 - [x] 서버 테스트 17개(탈퇴 4개 추가): 탈퇴하면 계정·기록 삭제와 같은 Apple 계정 재가입, Apple 해지 실패해도 삭제, code 없으면 해지 없이 삭제, client secret 서명·클레임
 - [x] 앱: `tsc --noEmit`, `eslint src/ modules/`(오류 0, 기존 경고 30), Jest 58개 묶음 413개(탈퇴 4개 추가: Apple code 전달, Apple 취소 시 중단, 카카오 끊기 실패해도 삭제, 네트워크 실패)
 
-실기기에서 확인할 것(개발 앱 다시 빌드 불필요, Metro만):
+실기기 확인: 2026-11-24 사용자 결정으로 하지 않고 자동 테스트로 대신한다. 아래는 나중에 확인할 때 쓴다(개발 앱 다시 빌드 불필요, Metro만):
 
 - [ ] 내 계정 아래에 "로그아웃" 버튼과 덜 눈에 띄는 "탈퇴"가 있다
 - [ ] 로그아웃 → "로그아웃할까요?" 창. 확인하면 로그인 수단 선택으로 간다. 다시 로그인하면 기록이 다시 올라가지 않는다

@@ -2,6 +2,43 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+## 2026-11-24: 로그인에 쓰는 외부 서비스 설정 현황
+
+로그인·회원가입([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143)), 로그아웃·탈퇴([PR #146](https://github.com/everyware-ie/run-mechuri/pull/146))를 위해 지민이 11/20~11/24에 바꾼 외부 설정이다. 키와 시크릿 값은 이 문서와 저장소에 두지 않는다.
+
+**Apple Developer**
+
+| 항목 | 바꾼 것 | 영향 |
+|---|---|---|
+| App ID `com.mechuri.runmechuri` | Sign in with Apple capability 켬 | 기존 프로비저닝 프로파일이 무효가 됨. 다음 EAS 배포 빌드는 `--freeze-credentials` 없이 돌려 프로파일을 새로 만든다(아래 11/21 기록) |
+| Keys | Sign in with Apple 키 추가. Key ID `2FZJKD22M4` | 탈퇴할 때 서버가 Apple 토큰을 해지하는 데 쓴다. `.p8` 파일은 처음 한 번만 내려받을 수 있다 |
+| Devices | 지민 iPhone 17(`00008150-0012630E3EEB401C`) 등록 | Xcode 자동 서명이 등록했다 |
+| Profiles | 앱·워치·잠금화면 개발 프로파일 | Xcode 자동 서명이 다시 만들었다 |
+
+**`.p8` 키 보관**
+
+- 저장소에 커밋하지 않는다. 루트 `.gitignore`에 `*.p8`, `backend/.gitignore`에 `config/`가 있다
+- 로컬 서버: `backend/config/AuthKey_2FZJKD22M4.p8`, 설정은 `backend/config/application.properties`의 `app.apple.key-id`, `app.apple.private-key-path`
+- 팀 공유: 지민이 노션으로 옮겼다. 위치 `[확인 필요]`. 노션 페이지는 팀원만 볼 수 있게 둔다
+- 서버를 배포할 때는 배포 서버의 비밀 저장소로 옮긴다
+
+**카카오 디벨로퍼스**
+
+| 항목 | 값 |
+|---|---|
+| 앱 ID | `1658837`. 서버가 카카오 토큰이 우리 앱에서 발급된 것인지 확인할 때 쓴다(`backend` 설정에 있음) |
+| 플랫폼 | iOS, 번들 ID `com.mechuri.runmechuri` |
+| 카카오 로그인 | 켬. 동의항목은 하나도 설정하지 않음 |
+| 네이티브 앱 키 | 저장소에 두지 않는다. 로컬은 `frontend/.env.local`, EAS는 아래 환경변수 |
+
+**EAS**
+
+| 항목 | 값 |
+|---|---|
+| 환경변수 `EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY` | `development` 환경에만 등록(sensitive). **TestFlight·스토어 빌드에 카카오 로그인을 넣으려면 `preview`·`production` 환경에도 등록해야 한다** |
+| 등록 기기 | 지민 iPhone 17만. 팀원 기기는 `npx eas-cli@latest device:create` → Developer Portal에서 추가한 뒤 개발 빌드를 다시 돌린다 |
+| 개발 빌드 | `1.0.1(48)`, `348efa03-bb05-42e2-bfee-97b0f077a338` |
+
 ## 2026-11-21: Xcode 27 로컬 빌드 실행 실패와 EAS 개발 빌드 48
 
 로그인 실기기 확인([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143)) 중 지민의 Mac(Xcode 27.2, 2026-11-01 설치)에서 `npx expo prebuild` 후 Xcode로 설치한 개발 앱이 로고에서 멈췄다. Xcode 콘솔의 원인은 다음과 같다.
