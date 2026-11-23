@@ -18,11 +18,10 @@ type State = { kind: 'loading' } | { kind: 'loggedIn'; me: Me } | { kind: 'error
 
 const PROVIDER_LABEL = { APPLE: 'Apple', KAKAO: '카카오' } as const;
 
-/** FRD §2-1 백업 시각 형식 `11.20 13:02` */
+/** FRD §2-1 백업 시각 형식 `11월 23일 14시 03분` */
 const formatBackupTime = (ms: number) => {
   const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${d.getHours()}시 ${String(d.getMinutes()).padStart(2, '0')}분`;
 };
 
 export default function AccountScreen() {
@@ -89,7 +88,7 @@ export default function AccountScreen() {
                   {backup.lastBackupAt && (
                     <View style={[styles.row, styles.rowDivider]}>
                       <Text style={styles.rowKey}>마지막 백업</Text>
-                      <Text style={styles.rowMono}>{formatBackupTime(backup.lastBackupAt)}</Text>
+                      <Text style={styles.rowValue}>{formatBackupTime(backup.lastBackupAt)}</Text>
                     </View>
                   )}
                   {!backup.progress && backup.remaining > 0 && (
