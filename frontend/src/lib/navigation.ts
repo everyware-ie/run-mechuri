@@ -11,3 +11,9 @@ export function goHome() {
   if (router.canDismiss()) router.dismissAll();
   else router.replace('/');
 }
+
+/** 로그아웃·탈퇴 뒤: 쌓인 화면을 닫고 로그인 수단 선택으로. 로그인이 필수라 홈으로 가지 않는다(로그인 FRD §6, §7). */
+export function goToLogin() {
+  if (router.canDismiss()) router.dismissAll();
+  router.replace('/account/login');
+}

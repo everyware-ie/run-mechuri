@@ -1,18 +1,19 @@
 import { router, useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScreenHeader } from '@/components/screen-header';
 import { ThemedButton } from '@/components/ui';
 import { Colors, Fonts, Radius } from '@/constants/theme';
 import { fetchMe, forgetSession, getSavedToken, type Me } from '@/lib/account';
-import { useBackupState } from '@/lib/backup';
+import { stopBackup, useBackupState } from '@/lib/backup';
+import { goToLogin } from '@/lib/navigation';
 
 // 로그인 FRD §2-1 내 계정 화면. 시안 05b(로그인 후).
 // 로그인이 필수라 로그인한 사람만 온다. 서버가 로그인을 거절하면 로그인 수단 선택으로 보낸다.
-// 로그아웃, 탈퇴(FRD §6, §7)는 다음 단계에서 붙인다.
+// 로그아웃은 확인 창(FRD §6), 탈퇴는 확인 화면(§7, account/withdraw.tsx)으로 간다.
 
 type State = { kind: 'loading' } | { kind: 'loggedIn'; me: Me } | { kind: 'error' };
 
@@ -43,6 +44,22 @@ export default function AccountScreen() {
   }, []);
 
   // 화면을 빠르게 오가면 이전 조회 결과가 늦게 도착할 수 있다. 지금 포커스의 결과만 반영한다
+  // FRD §6 로그아웃. 기기 기록과 "올린 기록" 표시는 그대로 두고, 올리던 것만 멈춘다
+  const confirmLogout = () => {
+    const lines = [
+      backup.remaining > 0 ? `아직 백업되지 않은 러닝 기록 ${backup.remaining}건이 있어요. 로그아웃하면 백업되지 않아요.` : null,
+      '이 기기의 기록은 그대로 남아요.',
+    ].filter(Boolean).join('\n\n');
+    Alert.alert('로그아웃할까요?', lines, [
+      { text: '취소', style: 'cancel' },
+      { text: '로그아웃', style: 'destructive', onPress: () => { void (async () => {
+        await stopBackup();
+        await forgetSession();
+        goToLogin();
+      })(); } },
+    ]);
+  };
+
   useFocusEffect(useCallback(() => {
     let active = true;
     void load(() => active);
@@ -106,6 +123,16 @@ export default function AccountScreen() {
                 )}
               </View>
             )}
+            <View style={{ flex: 1 }} />
+            <View style={styles.footer}>
+              <ThemedButton title="로그아웃" variant="outline" onPress={confirmLogout} />
+              {/* FRD §2-1: 탈퇴는 다른 항목보다 덜 눈에 띄게 아래쪽에 */}
+              <Pressable onPress={() => router.push({ pathname: '/account/withdraw', params: { provider: state.me.provider } })}
+                accessibilityRole="button" hitSlop={8}
+                style={({ pressed }) => [styles.withdraw, pressed && styles.pressed]}>
+                <Text style={styles.withdrawText}>탈퇴</Text>
+              </Pressable>
+            </View>
           </>
         )}
 
@@ -122,7 +149,10 @@ export default function AccountScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: Colors.bg },
-  body: { flex: 1, paddingHorizontal: 24, paddingTop: 16, gap: 22 },
+  body: { flex: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 12, gap: 22 },
+  footer: { gap: 6, alignItems: 'stretch' },
+  withdraw: { height: 44, alignSelf: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+  withdrawText: { fontFamily: Fonts.sans, fontSize: 14, color: Colors.textMuted },
   promo: { borderRadius: Radius.card, backgroundColor: Colors.bgCard, paddingVertical: 24, paddingHorizontal: 22, gap: 20 },
   promoText: { fontFamily: Fonts.sansBold, fontSize: 17, lineHeight: 27, color: Colors.text },
   section: { gap: 10 },

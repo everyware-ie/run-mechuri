@@ -64,6 +64,24 @@ async function readUploaded(): Promise<Set<string>> {
 }
 
 let running: Promise<void> | null = null;
+let stopped = false;
+
+/** 로그아웃·탈퇴(FRD §6, §7): 올리던 것을 멈춘다. 지금 올리는 한 건이 끝나면 멈춘다. */
+export async function stopBackup() {
+  stopped = true;
+  await running?.catch(() => {});
+  stopped = false;
+  setState({ progress: null, remaining: 0 });
+}
+
+/**
+ * 탈퇴하면 서버 기록이 지워지므로 "올린 기록" 표시도 지운다. 다시 가입하면 기기 기록이 새 계정에 올라간다.
+ * 로그아웃은 지우지 않는다. 그 계정에 이미 있는 기록이 다른 계정으로 섞이지 않게 하기 위해서다(§5-1).
+ */
+export async function clearUploadedMarks() {
+  await AsyncStorage.multiRemove([UPLOADED_KEY, LAST_BACKUP_KEY]);
+  setState({ progress: null, remaining: 0, lastBackupAt: null });
+}
 
 /** 이미 올리는 중이면 그 작업을 기다린다. 실패는 남은 기록 수로만 남기고 앱을 막지 않는다(§5-2, §5-4). */
 export function startBackup(): Promise<void> {
@@ -87,6 +105,7 @@ async function runBackup() {
 
   // ponytail: 한 건씩 차례로 올린다. 기록이 수백 건이 되면 몇 건씩 동시에 올리기
   for (const summary of pending) {
+    if (stopped) return;
     try {
       const detail = await Tracking.detail(summary.id);
       await uploadRecord(token, summary.id, toUpload(detail.summary, detail.points, detail.heartChart));

@@ -4,6 +4,12 @@ import type { NicknameError } from '@/lib/nickname';
 
 // 로그인 FRD §3 가입과 로그인. 이름·이메일은 요청하지 않고 식별자만 쓴다(§3-3).
 // Apple·카카오 모듈은 로그인할 때만 불러온다. 홈·측정 화면도 이 파일을 쓰는데, 이 모듈이 없는 앱(예: 이전 버전 바이너리)에서 함께 로드되면 앱이 시작하자마자 꺼진다.
+// import()는 Jest에서 동작하지 않아 함수 안에서 require한다.
+/* eslint-disable @typescript-eslint/no-require-imports */
+const appleModule = () => require('expo-apple-authentication') as typeof import('expo-apple-authentication');
+const kakaoCore = () => require('@react-native-kakao/core') as typeof import('@react-native-kakao/core');
+const kakaoUserModule = () => require('@react-native-kakao/user') as typeof import('@react-native-kakao/user');
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 export type Provider = 'apple' | 'kakao';
 export type ProviderCredential = { provider: Provider; userId: string; token: string };
@@ -23,7 +29,7 @@ const errorCode = (e: unknown) => (e as { code?: string } | null)?.code;
 
 /** 사용자가 취소하면 null. 그 외 실패는 throw. */
 export async function signInWithApple(): Promise<ProviderCredential | null> {
-  const AppleAuthentication = await import('expo-apple-authentication');
+  const AppleAuthentication = appleModule();
   try {
     const c = await AppleAuthentication.signInAsync({ requestedScopes: [] });
     if (!c.identityToken) throw new Error('Apple identityToken이 없습니다');
@@ -34,14 +40,18 @@ export async function signInWithApple(): Promise<ProviderCredential | null> {
   }
 }
 
-/** 사용자가 취소하면 null. 그 외 실패는 throw. */
-export async function signInWithKakao(): Promise<ProviderCredential | null> {
+async function kakaoUser() {
   if (!KAKAO_KEY) throw new Error('EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY가 없습니다');
-  const [{ initializeKakaoSDK }, { login: kakaoLogin, me: kakaoMe }] = await Promise.all([
-    import('@react-native-kakao/core'), import('@react-native-kakao/user'),
-  ]);
+  const { initializeKakaoSDK } = kakaoCore();
+  const user = kakaoUserModule();
   kakaoReady ??= initializeKakaoSDK(KAKAO_KEY).catch((e) => { kakaoReady = null; throw e; });
   await kakaoReady;
+  return user;
+}
+
+/** 사용자가 취소하면 null. 그 외 실패는 throw. */
+export async function signInWithKakao(): Promise<ProviderCredential | null> {
+  const { login: kakaoLogin, me: kakaoMe } = await kakaoUser();
   try {
     const token = await kakaoLogin();
     const user = await kakaoMe();
@@ -101,6 +111,33 @@ export async function saveNickname(token: string, nickname: string): Promise<{ m
   if (res.status === 400 || res.status === 409) return { error: (await res.json()).code };
   if (!res.ok) throw new Error(`닉네임 저장 실패 ${res.status}`);
   return { me: await res.json() };
+}
+
+/**
+ * 탈퇴(로그인 FRD §7-2). Apple 화면에서 취소하면 'cancelled'. 네트워크 실패는 throw.
+ * - Apple: 토큰 해지에 쓸 code를 받으려고 Apple 로그인을 한 번 더 받는다
+ * - 카카오: 앱이 카카오 SDK로 연결을 끊는다. 실패해도(카카오 로그인 만료 등) 우리 계정은 지운다
+ */
+export async function withdraw(token: string, provider: Me['provider']): Promise<'done' | 'cancelled'> {
+  let appleAuthorizationCode: string | null = null;
+  if (provider === 'APPLE') {
+    const AppleAuthentication = appleModule();
+    try {
+      appleAuthorizationCode = (await AppleAuthentication.signInAsync({ requestedScopes: [] })).authorizationCode;
+    } catch (e) {
+      if (errorCode(e) === 'ERR_REQUEST_CANCELED') return 'cancelled';
+      throw e;
+    }
+  } else {
+    try {
+      await (await kakaoUser()).unlink();
+    } catch (e) {
+      console.warn('[account] kakao unlink failed', e);
+    }
+  }
+  const res = await request('/me', { method: 'DELETE', token, body: JSON.stringify({ appleAuthorizationCode }) });
+  if (!res.ok && res.status !== 401) throw new Error(`탈퇴 실패 ${res.status}`);
+  return 'done';
 }
 
 // 가입을 마친 계정의 토큰만 기기에 저장한다.
