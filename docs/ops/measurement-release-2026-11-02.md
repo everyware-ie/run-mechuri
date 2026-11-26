@@ -75,7 +75,8 @@ Notion에서는 개인정보 처리방침, FAQ와 공지의 실제 데스크톱 
 계정 소유자가 [Apple Developer 계정](https://developer.apple.com/account/)에서 계약을 직접 확인하고 동의하도록 안내했으며 다음 절차를 준비했다. 실제 재개에서는 11월 3일의 새 앱 소스와 1.0.1 버전을 사용한다.
 
 1. 새 배포 소스와 깨끗한 체크아웃을 확인한다. 기존 심사 결과도 다시 읽어 현재 버전을 확인한다.
-2. `frontend/`에서 기존 CLI로 `eas build --platform ios --profile internal-tracking --non-interactive --freeze-credentials --json --wait`를 실행한다. 서명 자산 변경이 필요하면 멈추는 옵션이다. Apple의 번들 확인은 그대로 필요하므로 계약 동의를 대신하지 않는다. 번호는 다시 증가할 수 있다. 45로 되돌리지 않는다.
+2. `frontend/`에서 기존 CLI로 `eas build --platform ios --profile internal-tracking --non-interactive --freeze-credentials --json --wait`를 실행한다.
+   - **2026-11-24 주의: Sign in with Apple을 켜서 이 명령은 다음 첫 빌드에서 실패한다.** 그 한 번은 `--non-interactive --freeze-credentials`를 빼고 터미널에서 직접 돌려 프로파일을 새로 만든다([빌드·개발 명령어 모음](build-and-dev-commands.md) 맨 위 주의). 서명 자산 변경이 필요하면 멈추는 옵션이다. Apple의 번들 확인은 그대로 필요하므로 계약 동의를 대신하지 않는다. 번호는 다시 증가할 수 있다. 45로 되돌리지 않는다.
 3. 생성된 빌드 ID와 커밋, 완료 상태를 확인한다. IPA의 앱·워치·실시간 현황 확장, 측정 플래그, 권한 설명과 개인정보 매니페스트를 점검한다.
 4. `eas submit --platform ios --profile production --id <새 빌드 ID> --non-interactive`로 그 빌드만 업로드한다. `--latest`로 이전 빌드를 고르지 않는다.
 5. Apple의 `VALID / IN_BETA_TESTING`, 미만료와 내부 설치 가능 상태를 확인한다. 이 단계가 끝나야 TestFlight 등록 완료로 안내한다.

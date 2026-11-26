@@ -12,6 +12,7 @@ import { ScreenHeader } from '@/components/screen-header';
 import { Card, ThemedButton } from '@/components/ui';
 import { trackingStyles as styles } from '@/components/internal-run-styles';
 import { heartImportNotice, runNumber, runPace, runStatus, runTime } from '@/lib/tracking-display';
+import { isLoggedIn } from '@/lib/account';
 import { useHomeTabs } from '@/state/home-tabs';
 import { Tracking, trackingEnabled, type RunSummary, type TrackingState } from '../../../modules/run-tracking/src/RunTracking';
 
@@ -163,7 +164,7 @@ export default function InternalRunScreen() {
         </View>}
       </> : <>
         <View style={runUI.actions}><RunAction title={awaitingPermission ? '위치 권한 확인 중' : immediateStart || ready ? '러닝 시작' : preparing ? 'GPS 준비 중' : 'GPS 준비'} symbol="play.fill" primary disabled={busy || !state || awaitingPermission || (!immediateStart && (preparing || (ready && !Tracking!.startWithHeartSource)))} onPress={() => void act(() => Tracking!.startImmediately ? Tracking!.startImmediately() : ready ? Tracking!.startWithHeartSource!('health') : Tracking!.prepare())} /></View>
-        {awaitingPermission || (preparing && !immediateStart) ? <Pressable accessibilityRole="button" onPress={() => void act(() => Tracking!.cancelPreparation())} style={{ paddingVertical: 4 }}><Text style={runUI.footnote}>시작 취소</Text></Pressable> : <Text style={runUI.footnote}>위치와 기록은 이 기기에만 보관해요</Text>}
+        {awaitingPermission || (preparing && !immediateStart) ? <Pressable accessibilityRole="button" onPress={() => void act(() => Tracking!.cancelPreparation())} style={{ paddingVertical: 4 }}><Text style={runUI.footnote}>시작 취소</Text></Pressable> : <Text style={runUI.footnote}>{isLoggedIn() ? '위치와 기록은 이 기기에 보관하고 내 계정에 백업해요' : '위치와 기록은 이 기기에만 보관해요'}</Text>}
       </>}
     </View>
     <RunSheet visible={connectionsOpen && !current} title="워치와 건강 앱 연결" onClose={() => setConnectionsOpen(false)}>

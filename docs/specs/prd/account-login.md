@@ -3,7 +3,7 @@ title: Apple·카카오 로그인과 회원가입
 product: running
 type: prd
 status: draft
-updated: 2026-11-17
+updated: 2026-11-21
 related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/2026-11-10/synthesis.md]
 ---
 
@@ -33,23 +33,18 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 - Google 로그인: 회의에서 카카오가 안 될 때의 대안으로 정했던 것. 카카오가 사업자 없이 가능해서 넣지 않음([결정문 2026-11-17 개정](../../decisions/2026-11-10-third-sprint-crew-diary.md))
 - 크루 가입, 크루원 경로 보기: 크루 PRD에서 다룸
-- 서버 선정: 구현 단계에서 결정
+- 서버 선정: Spring Boot(Java 21)로 정함. 구현 단계에서 정하기로 했던 것(2026-11-20, [구현 노트](../../product/features/account-login.md))
 - 이메일·비밀번호 가입
 
 ## 3. 언제 로그인을 묻나
 
-- **로그인은 선택 (잠정)**
-  - 필수로 할지는 Apple·카카오 연동을 끝낸 뒤 결정([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부). 연동 코드는 어느 쪽이든 같고 입구만 달라짐
-  - 비로그인 상태에서도 기록 선택, 측정, 편집, 영상 생성 모두 가능
-  - 기존 사용자가 업데이트 후 막히지 않게 하기 위함
-- **로그인 권유 지점 두 곳**
-
-| 지점 | 이유 |
-|---|---|
-| 크루 기능 진입 시 | 계정 없이 크루 사용 불가 |
-| 홈의 "내 계정" 화면 | 크루를 쓰지 않는 사용자도 백업 가능해야 함 |
-
-- 내 계정 화면에 로그인, 백업 상태, 로그아웃, 탈퇴를 모음([FRD](../frd/account-login.md) §2 로그인 입구)
+- **로그인은 필수** (2026-11-20 [결정](../../decisions/2026-11-20-crew-hold-login-required.md))
+  - 로그인하지 않은 상태로 앱을 열면 로그인 화면이 나옴. 한 번 로그인하면 다시 묻지 않음
+  - 이미 쓰던 사용자도 업데이트 뒤 첫 실행 때 로그인. 가입하면 기기에 있던 Runary 측정 기록이 백업됨(§4 기록 백업)
+  - 로그인하지 못하면(네트워크 없음, 서버 오류) 그 실행만 로그인 없이 쓸 수 있게 함. 밖에서 측정을 못 하게 되면 안 되기 때문([FRD](../frd/account-login.md) §2 로그인 입구, 2026-11-22 확정)
+- 크루가 보류돼 크루 진입 시 로그인 권유는 지금 쓰이지 않음
+- 내 계정 화면에 백업 상태, 로그아웃, 탈퇴를 모음([FRD](../frd/account-login.md) §2-1 내 계정 화면)
+- **심사 위험**: 계정이 핵심 기능이 아닌 앱이 로그인을 강제하면 반려될 수 있음([App Review Guidelines 5.1.1](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage)). 서버를 배포하기 전에는 스토어 빌드에 로그인이 나오지 않으므로, 대응은 서버 배포와 함께 정함 `[확인 필요]`
 
 ## 4. 계정에 무엇이 남나
 
@@ -64,7 +59,8 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
   - 쓸 곳이 없음. 동일인 확인은 식별자로 충분하고, 쓰지 않는 개인정보는 받지 않음
   - 나중에 필요해지면 앱 안에서 직접 입력받음. Apple은 가입 뒤에 이메일 범위를 늘릴 수 없어서([Apple 포럼 답변](https://developer.apple.com/forums/thread/678930)) 로그인 수단으로 받는 방법은 기존 사용자에게 쓸 수 없음
   - 받기로 하면 수집 목적, Apple 중계 이메일 발신 도메인 등록, 카카오 비즈 앱 전환, 처리방침과 App Store 개인정보 표시 개정이 따라옴
-- 닉네임은 가입 시 필수 입력. 2~10자, 중복 불가, 변경 가능([FRD](../frd/account-login.md) §4 닉네임)
+- 닉네임은 가입 시 필수 입력. 2~10자, 한글·영문 소문자·숫자, 중복 불가, 변경 가능([FRD](../frd/account-login.md) §4 닉네임)
+  - 영문은 소문자만. 대문자는 입력하면 바로 소문자로 바뀜 (2026-11-20 확정). `runner`와 `Runner`가 같은 사람인지 헷갈리지 않게 하기 위함
 - 닉네임 수치는 크루 화면 디자인(현수)과 맞춰 조정
 
 ### 기록 백업
@@ -91,7 +87,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
   - 근거: [App Review Guidelines 5.1.1(v)](https://developer.apple.com/app-store/review/guidelines/#data-collection-and-storage), [계정 삭제 안내](https://developer.apple.com/support/offering-account-deletion-in-your-app/)
 - **탈퇴 시 서버의 계정 정보와 기록 삭제**
 - 카카오로 가입한 사용자는 탈퇴 시 카카오 "연결 끊기"도 호출
-- 탈퇴해도 기기 기록은 유지. 탈퇴 뒤에도 로그인 없이 앱을 계속 쓸 수 있음
+- 탈퇴해도 기기 기록은 유지. 로그인이 필수라 탈퇴하면 로그인 화면으로 가고, 다시 가입하면 기기 기록이 새 계정에 백업됨(2026-11-23 고침)
 - Apple로 가입한 사용자는 탈퇴 시 Apple 토큰 해지도 요청
 
 ## 6. 정책과 심사
@@ -132,7 +128,7 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 ## 8. 성공 기준
 
-- 비로그인 사용자가 지금과 똑같이 앱 사용 가능
+- 로그인한 사용자가 지금과 똑같이 앱 사용 가능. 한 번 로그인하면 다시 묻지 않음
 - Apple, 카카오 중 하나로 가입하고 닉네임 설정 가능
 - 가입 시 기기의 Runary 측정 기록이 서버에 업로드됨
 - 앱 재설치 후 같은 계정으로 로그인하면 기록 복원
@@ -140,7 +136,6 @@ related: [../../decisions/2026-11-10-third-sprint-crew-diary.md, ../../meetings/
 
 ## 9. 다음 결정
 
-- 로그인 필수 여부: 연동 후 결정([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부)
-- 서버 선정: 3차 스프린트 결정문에서도 미정
-- 건강 앱 기록을 크루원에게 보여 줄지: 회의 안건([안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md)). 보여 주기로 하면 §4 기록 백업도 고침
+- 로그인 필수 여부: 2026-11-20 회의에서 필수로 정함([결정](../../decisions/2026-11-20-crew-hold-login-required.md)). 처음 안건은 [안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md) §2 로그인 필수 여부
+- 건강 앱 기록을 크루원에게 보여 줄지: 2026-11-20 크루와 함께 보류. 처음 안건은 [안건](../../ideation/jminkkk/2026-11-17-meeting-agenda.md). 보여 주기로 하면 §4 기록 백업도 고침
 - 크루원에게 경로 공개 시 집·회사 위치 처리: 크루 PRD에서 결정. 백업한 기록을 그대로 쓰므로 이 PRD에도 영향

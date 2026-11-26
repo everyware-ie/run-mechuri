@@ -101,6 +101,7 @@ python3 scripts/check-docs.py
 ├── AGENTS.md                        # AI 작업 규약 원문을 읽기 위한 체크리스트
 ├── .claude/conventions/git.md      # 브랜치·커밋 규칙
 ├── .claude/conventions/writing.md  # 문서 문체 규칙
+├── backend/                     # Spring Boot 서버. 로그인·계정 (2026-11-20, 로컬 개발 전용)
 ├── frontend/                    # React Native + Expo 앱 (2026-08-25 스캐폴딩)
 │   └── src/{app,components,constants,hooks}  # Expo Router 기본 템플릿 구조
 └── CLAUDE.md

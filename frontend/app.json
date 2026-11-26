@@ -2,7 +2,7 @@
   "expo": {
     "name": "Runary",
     "slug": "mechuri",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frontend",
@@ -10,6 +10,7 @@
     "ios": {
       "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.mechuri.runmechuri",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSHealthShareUsageDescription": "러닝 기록과 경로를 읽어와 결과물을 만드는 데 사용합니다.",
         "NSHealthUpdateUsageDescription": "러너리는 건강 데이터를 읽기만 하며 새로 쓰거나 수정하지 않습니다.",
@@ -87,7 +88,8 @@
           "microphonePermission": false
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true,

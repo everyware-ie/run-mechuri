@@ -2,6 +2,117 @@
 
 실기기/시뮬레이터 확인부터 TestFlight 배포까지, 이 프로젝트에서 실제로 쓰는 명령어를 상황별로 정리한다. `frontend/` 안에서 실행하는 게 기본.
 
+> **⚠️ 다음 TestFlight·스토어 빌드 전에 꼭 읽기 (2026-11-24)**
+>
+> App ID `com.mechuri.runmechuri`에 Sign in with Apple을 켜서 **기존 배포용 프로비저닝 프로파일이 무효가 됐다.** 다음 첫 배포 빌드는 프로파일을 새로 만들어야 한다.
+>
+> - **`--freeze-credentials`와 `--non-interactive`를 빼고 터미널에서 직접 돌린다.** 프로파일을 새로 만들지 묻는 질문에 Yes로 답한다. 이 옵션을 붙이면 재생성하지 않아 서명 단계에서 실패한다
+> - 한 번 새로 만든 뒤부터는 다시 `--freeze-credentials`를 써도 된다
+> - 앱 버전도 올린다. 로그인 네이티브 패키지가 들어가서, 버전을 그대로 두고 OTA를 보내면 1.0.2 앱이 꺼질 수 있다
+> - 자세한 내용: 아래 2026-11-24, 2026-11-21 기록
+
+## 2026-11-24: 로그인에 쓰는 외부 서비스 설정 현황
+
+로그인·회원가입([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143)), 로그아웃·탈퇴([PR #146](https://github.com/everyware-ie/run-mechuri/pull/146))를 위해 지민이 11/20~11/24에 바꾼 외부 설정이다. 키와 시크릿 값은 이 문서와 저장소에 두지 않는다.
+
+**Apple Developer**
+
+| 항목 | 바꾼 것 | 영향 |
+|---|---|---|
+| App ID `com.mechuri.runmechuri` | Sign in with Apple capability 켬 | 기존 프로비저닝 프로파일이 무효가 됨. 다음 EAS 배포 빌드는 `--freeze-credentials` 없이 돌려 프로파일을 새로 만든다(아래 11/21 기록) |
+| Keys | Sign in with Apple 키 추가. Key ID `2FZJKD22M4` | 탈퇴할 때 서버가 Apple 토큰을 해지하는 데 쓴다. `.p8` 파일은 처음 한 번만 내려받을 수 있다 |
+| Devices | 지민 iPhone 17(`00008150-0012630E3EEB401C`) 등록 | Xcode 자동 서명이 등록했다 |
+| Profiles | 앱·워치·잠금화면 개발 프로파일 | Xcode 자동 서명이 다시 만들었다 |
+
+**`.p8` 키 보관**
+
+- 저장소에 커밋하지 않는다. 루트 `.gitignore`에 `*.p8`, `backend/.gitignore`에 `config/`가 있다
+- 로컬 서버: `backend/config/AuthKey_2FZJKD22M4.p8`, 설정은 `backend/config/application.properties`의 `app.apple.key-id`, `app.apple.private-key-path`
+- 팀 공유: 노션에 있다. 노션 페이지는 팀원만 볼 수 있게 둔다
+- 서버를 배포할 때는 배포 서버의 비밀 저장소로 옮긴다
+
+**카카오 디벨로퍼스**
+
+| 항목 | 값 |
+|---|---|
+| 앱 ID | `1658837`. 서버가 카카오 토큰이 우리 앱에서 발급된 것인지 확인할 때 쓴다(`backend` 설정에 있음) |
+| 플랫폼 | iOS, 번들 ID `com.mechuri.runmechuri` |
+| 카카오 로그인 | 켬. 동의항목은 하나도 설정하지 않음 |
+| 네이티브 앱 키 | 저장소에 두지 않는다. 로컬은 `frontend/.env.local`, EAS는 아래 환경변수 |
+
+**EAS**
+
+| 항목 | 값 |
+|---|---|
+| 환경변수 `EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY` | `development` 환경에만 등록(sensitive). **TestFlight·스토어 빌드에 카카오 로그인을 넣으려면 `preview`·`production` 환경에도 등록해야 한다** |
+| 등록 기기 | 지민 iPhone 17만. 팀원 기기는 `npx eas-cli@latest device:create` → Developer Portal에서 추가한 뒤 개발 빌드를 다시 돌린다 |
+| 개발 빌드 | `1.0.1(48)`, `348efa03-bb05-42e2-bfee-97b0f077a338` |
+
+## 2026-11-21: Xcode 27 로컬 빌드 실행 실패와 EAS 개발 빌드 48
+
+로그인 실기기 확인([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143)) 중 지민의 Mac(Xcode 27.2, 2026-11-01 설치)에서 `npx expo prebuild` 후 Xcode로 설치한 개발 앱이 로고에서 멈췄다. Xcode 콘솔의 원인은 다음과 같다.
+
+```
+Application failed to launch: UIScene life cycle is required for apps built with this SDK.
+```
+
+iOS 27 SDK로 빌드한 앱은 UIKit scene 생명주기를 써야 실행된다. Expo SDK 57 템플릿은 예전 AppDelegate 방식이라 iOS가 시작 단계에서 막는다. 컴파일은 성공하므로 빌드만으로는 드러나지 않는다.
+
+- Expo는 `57.0.23`부터 `expo-build-properties`의 `ios.enableSceneSupport`로 scene 생명주기를 켤 수 있다. 설치된 `expo-build-properties@57.0.23`의 `iosSceneSupport.js`에서 확인했다. 우리는 `expo 57.0.17`이라 쓰려면 Expo 패치 업그레이드가 먼저 필요하다([Expo PR #50191](https://github.com/expo/expo/pull/50191), [이슈 #46664](https://github.com/expo/expo/issues/46664))
+- App Store는 2027년 4월부터 iOS 27 SDK 빌드를 요구한다고 알려져 있다([정리 글](https://useffect.sh/en/xcode-27-app-store-requirement)). 업그레이드는 별도 작업으로 남긴다. 측정·워치·잠금화면·공유 회귀 확인이 함께 필요하다
+- 그때까지 Xcode 27 Mac에서는 EAS 개발 빌드를 쓴다
+
+**EAS 개발 빌드 절차.** 로그인과 빌드는 질문에 답해야 하므로 macOS 터미널 앱에서 직접 실행한다.
+
+```bash
+cd ~/Desktop/mechuri/run-mechuri/frontend   # 아래 명령은 모두 frontend/에서 실행
+npx eas-cli@latest login
+# 카카오 키는 app.config.js가 빌드 서버에서 읽는다. development 환경에 한 번 등록한다
+npx eas-cli@latest env:create --name EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY --value "$(grep '^EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY=' .env.local | cut -d= -f2-)" --environment development --visibility sensitive --non-interactive
+npx eas-cli@latest build --profile development --platform ios
+```
+
+- 기기 등록은 "Developer Portal"에서 가져온다. 이번에는 지민 iPhone 17만 넣었다. 팀원 기기는 `npx eas-cli@latest device:create`로 추가한 뒤 다시 빌드해야 설치된다
+- 서버 주소(`EXPO_PUBLIC_API_URL`)는 EAS에 넣지 않는다. 개발 앱은 화면 코드를 로컬 Metro에서 받고, Metro가 `.env.local`을 읽는다
+- 결과: `1.0.1(48)`, EAS 빌드 `348efa03-bb05-42e2-bfee-97b0f077a338`, `FINISHED`(약 8분). 설치 링크로 iPhone 17에 설치했고 TestFlight 제출은 하지 않았다
+- 지민 Mac에는 CocoaPods가 없어서 `brew install cocoapods`(1.17.0)로 설치했다
+
+**OTA 업데이트 주의 (2026-11-22).** 로그인 작업이 네이티브 패키지(`expo-apple-authentication`, `@react-native-kakao/*`, `expo-secure-store`)를 추가했다. `runtimeVersion` 정책이 `appVersion`이라, 앱 버전을 그대로 둔 채 `eas update`를 보내면 이 패키지가 없는 이전 바이너리(예: 1.0.2(48))가 새 JS를 받는다. 로그인 화면이나 저장 기능을 쓰는 순간 꺼질 수 있다. **로그인이 들어간 코드를 배포하기 전에 앱 버전을 올리고, OTA는 새 바이너리에만 보낸다.**
+
+## 2026-11-21: Sign in with Apple capability 추가와 프로파일 재생성
+
+로그인 구현([PR #143](https://github.com/everyware-ie/run-mechuri/pull/143))을 위해 Apple Developer에서 App ID `com.mechuri.runmechuri`에 Sign in with Apple을 켰다. `app.json`의 `ios.usesAppleSignIn: true`가 이 capability를 요구한다.
+
+capability를 바꾸면 이 App ID를 포함한 기존 프로비저닝 프로파일이 모두 무효가 된다. Apple이 저장할 때 같은 내용을 경고한다. 이미 배포된 TestFlight·App Store 빌드와 설치된 앱에는 영향이 없다.
+
+- **Xcode로 실기기 설치**: 자동 서명이 개발용 프로파일을 새로 받아 온다. 따로 할 일은 없다
+- **다음 EAS 빌드**: 배포용 프로파일을 새로 만들어야 한다. EAS가 빌드 중에 재생성할지 묻는다
+  - **`--freeze-credentials`를 붙이면 재생성하지 않아 서명 단계에서 실패한다.** capability를 바꾼 뒤 첫 빌드는 이 옵션 없이 돌린다
+- 워치(`.watch`)·잠금화면(`.liveactivity`) 확장은 App ID가 따로라 바뀌지 않는다
+
+로그인이 들어간 개발 앱은 서버 주소(`EXPO_PUBLIC_API_URL`)와 카카오 키(`EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY`)가 `frontend/.env.local`에 있어야 한다. EAS 빌드에서 쓰려면 EAS 환경변수에도 등록해야 한다. 로컬 서버 실행 방법은 [로그인 구현 노트](../product/features/account-login.md)의 "로컬 테스트 방법"에 있다.
+
+## 2026-11-21: 다이어리 TestFlight 1.0.2(48)
+
+[11/20 회의](../meetings/2026-11-20/synthesis.md)에서 #143(로그인 구현)을 뺀 PR을 머지하기로 했다. #136 다이어리, #140 크루 기획서·시안, #141 QA 기록이 main에 들어간 뒤 앱 버전을 1.0.2로 올렸다([#144](https://github.com/everyware-ie/run-mechuri/pull/144)). 1.0.1이 App Store에 출시돼 같은 버전으로는 새 빌드를 올릴 수 없다.
+
+- 새 버전: `1.0.2(48)`. 프로필과 채널은 `internal-tracking`이며 측정 플래그를 포함한다.
+- 소스: `75fa92b39053a6d22750100f161e9eab6682d333`.
+- EAS 빌드: `5bb962b5-0986-4f7d-846c-6e8dbc72acac`, `FINISHED`. 생성부터 완료까지 약 7분 45초다. `--freeze-credentials`로 기존 서명을 그대로 썼다.
+- EAS 제출: `77f9bbf4-5c28-4399-b5a5-ec537d4cb9ca`. 테스트 안내문 옵션 없이 제출했다.
+- 1.0.1(47) 뒤 바뀐 앱 코드는 다이어리 탭과 러닝 탭 아이콘(달리는 메추리)뿐이다.
+
+main에서 `tsc --noEmit`, `eslint src/ modules/`(오류 0, 기존 경고 30), Jest 55개 묶음 402개, `check-docs.py`가 통과했다. GitHub CI도 `75fa92b`에서 통과했다.\
+새 작업 폴더에서 처음 돌린 Jest는 3개 묶음이 실패했고 다시 돌리니 모두 통과했다. 원인은 확인하지 않았다.\
+새 작업 폴더에는 git이 무시하는 `frontend/expo-env.d.ts`가 없어 타입 검사가 CSS 모듈을 찾지 못했다. 파일을 만든 뒤 다시 돌려 통과했다.
+
+Connect 화면에서 확인한 제출 상태(11/21 12:10경)다.
+
+- 내부 `Team (Expo)`: `1.0.2(48)` 테스트 중. 업로드 뒤 약 10분 만에 처리됐다.
+- 외부 `외부 베타`: 그룹에 추가하고 베타 심사에 제출했다. 심사 대기 중이다. 새 버전이라 1.0.0(23) 때와 달리 베타 심사를 거친다.
+- 외부 테스트 내용은 한국어로 다이어리 탭과 메추리 아이콘을 확인해 달라고 적었다.
+- 실제 TestFlight 설치 확인은 아직 하지 않았다.
+
 ## 2026-11-03: 보관함과 러닝 탭 TestFlight 1.0.1(47)
 
 사용자가 하단 탭과 경로 아이콘을 선택하고 [FRD](../specs/frd/home-running-tabs.md) 2~4절의 구현을 승인했다. 같은 측정 UI 브랜치에서 두 화면을 탭으로 연결하고 편집의 경로 아이콘을 공유했다. 첫 실행 안내의 낡은 측정 제외 문구와 안내 반복 경로도 리뷰에서 수정했다.
