@@ -94,6 +94,7 @@ Runary는 혼자 뛴 기록으로 경로 그림 영상을 만든다. 영상을 �
 - [11/20 결정: 크루 보류와 로그인 필수](../../decisions/2026-11-20-crew-hold-login-required.md)
 - [합동 그리기 노트](../../ideation/JiEung2/2026-11-27-group-drawing-note.md)
 - [2026-11-27 회의 안건](../../ideation/JiEung2/2026-11-27-meeting-agenda.md)
+- [합동 그리기 FRD](../frd/group-drawing.md) (초안)
 - [크루 PRD](crew.md)
 - [MVP PRD](running-drawing-mvp.md) §10 로드맵
 - [경로 렌더링 FRD](../frd/route-rendering.md), [배경 선택 FRD](../frd/background-selection.md), [기록 선택 FRD](../frd/run-record-selection.md)
